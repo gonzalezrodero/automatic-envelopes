@@ -4,6 +4,7 @@ using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using SamaBot.Api.Core.Events;
+using SamaBot.Api.Features.Chat;
 using SamaBot.Tests.Extensions;
 using System.Text;
 
@@ -23,6 +24,8 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         var tenantId = "club-sama";
         var botPhone = "34111222333";
         var userPhone = "34888777666";
+
+        await fixture.SeedTenantAsync(tenantId, botPhone, privacyPolicyUrl: PrivacyPolicyUrl);
 
         var incomingEvent = new MessageReceived(
             MessageId: "atomic.Chat1",
@@ -64,6 +67,8 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         var botPhone = "34111222333";
         var userPhone = "34999555111";
 
+        await fixture.SeedTenantAsync(tenantId, botPhone, privacyPolicyUrl: PrivacyPolicyUrl);
+
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
 
         // 1. Pre-populate the Marten Event Store
@@ -95,7 +100,7 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
     [InlineData("BORRAR DATOS")]
     [InlineData("esborrar dades")]
     [InlineData("DELETE data")]
-    public async Task GivenDeleteCommand_WhenHandlerRuns_ThenItArchivesStreamAndBypassesBedrock(string commandText)
+    public async Task GivenDeleteCommand_WhenHandlerRuns_ThenItSendsAckMessageAndTriggersDeleteCommand(string commandText)
     {
         // Arrange
         fixture.BedrockClientMock.Invocations.Clear();
@@ -103,6 +108,8 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         var tenantId = "club-sama";
         var botPhone = "34111222333";
         var userPhone = $"3477{Guid.NewGuid().ToString()[..7]}";
+
+        await fixture.SeedTenantAsync(tenantId, botPhone, privacyPolicyUrl: PrivacyPolicyUrl);
 
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
 
@@ -112,24 +119,29 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         var incomingEvent = new MessageReceived(
             MessageId: "atomic.DeleteCmd",
             PhoneNumber: userPhone,
-            Text: commandText, // Using the parameterized command
+            Text: commandText,
             TenantId: tenantId,
             BotPhoneNumberId: botPhone,
             ReceivedAt: DateTimeOffset.UtcNow
         );
 
         // Act
-        await fixture.Host.InvokeMessageAndWaitAsync(incomingEvent);
+        var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(incomingEvent);
 
-        // Assert 1: Verify the stream is archived
+        // Assert 1: Verify the Replies (ACK and Success) were executed internally
+        var executedReplies = trackedSession.Executed.MessagesOf<ReplyGenerated>().ToList();
+
+        executedReplies.Should().HaveCount(2, "The handler should send an ACK, and the background worker should send the final success message.");
+        executedReplies.Should().Contain(x => x.Text.Contains("Estamos borrando tu historial"), "The initial ACK message should be sent.");
+        executedReplies.Should().Contain(x => x.Text.Contains("eliminados de forma segura"), "The final success message should be sent by the worker.");
+
+        // Assert 2: Verify the background worker command was triggered
+        var executedCommands = trackedSession.Executed.MessagesOf<DeleteChatHistoryCommand>().ToList();
+        executedCommands.Should().ContainSingle("The handler should have delegated the actual deletion to the background worker.");
+
+        // Assert 3: Verify the Hard Delete actually happened
         var streamEvents = await session.Events.FetchStreamAsync(userPhone);
-        streamEvents.Should().BeEmpty("The stream should be archived and thus return no active events.");
-
-        // Assert 2: Verify Bedrock was NEVER called
-        fixture.BedrockClientMock.Verify(c => c.InvokeModelAsync(
-            It.IsAny<InvokeModelRequest>(),
-            It.IsAny<CancellationToken>()),
-            Times.Never, "Bedrock should not be invoked for system commands.");
+        streamEvents.Should().BeEmpty("The background worker should have hard-deleted the stream in the same transaction cascade.");
     }
 
     private static bool VerifyChatHistoryPayload(InvokeModelRequest request)
@@ -143,6 +155,6 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
     private static bool VerifyPrivacyPolicyInjected(InvokeModelRequest request)
     {
         var requestJson = Encoding.UTF8.GetString(request.Body.ToArray());
-        return requestJson.Contains(PrivacyPolicyUrl);
+        return requestJson.Contains("POLITICA+DE+PRIVACIDAD.pdf");
     }
 }

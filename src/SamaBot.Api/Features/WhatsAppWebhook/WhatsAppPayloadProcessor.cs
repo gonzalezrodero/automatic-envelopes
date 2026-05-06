@@ -101,7 +101,7 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
             }
 
             var timestamp = DateTimeOffset.FromUnixTimeSeconds(long.Parse(timestampStr));
-            return new ProcessWhatsAppMessage(messageId, botNumberId, fromNumber, messageText, timestamp, body);
+            return new ProcessWhatsAppMessage(messageId, botNumberId, fromNumber, messageText, timestamp);
         }
         catch (JsonException)
         {

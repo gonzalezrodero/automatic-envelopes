@@ -15,20 +15,17 @@ public class SqsLambdaHandler
     private static readonly Lazy<IServiceProvider> services = new(BuildWorkerProvider);
 
     private readonly IMessageBus bus;
-    private readonly ILogger<SqsLambdaHandler> logger;
     private readonly JsonSerializerOptions jsonOptions;
 
     public SqsLambdaHandler()
     {
         bus = services.Value.GetRequiredService<IMessageBus>();
-        logger = services.Value.GetRequiredService<ILogger<SqsLambdaHandler>>();
         jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
     }
 
-    public SqsLambdaHandler(IMessageBus bus, ILogger<SqsLambdaHandler> logger)
+    public SqsLambdaHandler(IMessageBus bus)
     {
         this.bus = bus;
-        this.logger = logger;
         this.jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
     }
 
@@ -72,9 +69,8 @@ public class SqsLambdaHandler
                     await bus.InvokeAsync(message, cts.Token);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                logger.LogError(ex, "[WORKER] Error processing record {MessageId}", record.MessageId);
                 response.BatchItemFailures.Add(new BatchItemFailure { ItemIdentifier = record.MessageId });
             }
         }

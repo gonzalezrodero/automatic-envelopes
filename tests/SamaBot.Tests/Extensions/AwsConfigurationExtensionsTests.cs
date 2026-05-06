@@ -27,19 +27,25 @@ public class AwsConfigurationExtensionsTests : IDisposable
     {
         // Arrange
         var testArn = "arn:aws:secretsmanager:eu-west-1:123:secret:marten";
-        var expectedDbString = "Host=localhost;Database=samabot;";
         Environment.SetEnvironmentVariable("SECRET_ARN_MARTEN", testArn);
+        Environment.SetEnvironmentVariable("DB_HOST", "localhost:5432");
+
+        var secretJson = "{\"username\":\"dbadmin\", \"password\":\"secret123\"}";
 
         secretsMock
             .Setup(x => x.GetSecretValueAsync(It.Is<GetSecretValueRequest>(req => req.SecretId == testArn), default))
-            .ReturnsAsync(new GetSecretValueResponse { SecretString = expectedDbString });
+            .ReturnsAsync(new GetSecretValueResponse { SecretString = secretJson });
 
         // Act
         builder.AddAwsSecureConfigurationCore(secretsMock.Object, ssmMock.Object);
 
         // Assert
         var injectedValue = builder.Configuration["ConnectionStrings:Marten"];
-        injectedValue.Should().Be(expectedDbString);
+        injectedValue.Should().NotBeNull();
+        injectedValue.Should().Contain("Host=localhost");
+        injectedValue.Should().Contain("Port=5432");
+        injectedValue.Should().Contain("Username=dbadmin");
+        injectedValue.Should().Contain("Database=chatbot");
 
         secretsMock.Verify(x => x.GetSecretValueAsync(It.IsAny<GetSecretValueRequest>(), default), Times.Once);
         ssmMock.Verify(x => x.GetParametersByPathAsync(It.IsAny<GetParametersByPathRequest>(), default), Times.Never);

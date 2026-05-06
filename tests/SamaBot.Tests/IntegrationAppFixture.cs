@@ -4,6 +4,8 @@ using Amazon.BedrockRuntime.Model;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using JasperFx;
+using JasperFx.CodeGeneration;
+using JasperFx.RuntimeCompiler;
 using Marten;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,7 +53,6 @@ public class IntegrationAppFixture : IAsyncLifetime
         await sqsClient.CreateQueueAsync("chatbot-messages-queue");
         await sqsClient.CreateQueueAsync("wolverine-dead-letter-queue");
 
-        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
         Environment.SetEnvironmentVariable("ConnectionStrings__Marten", _postgres.GetConnectionString());
         Environment.SetEnvironmentVariable("BedrockSettings__ModelId", "dummy-model");
 
@@ -66,6 +67,7 @@ public class IntegrationAppFixture : IAsyncLifetime
 
         Host = await AlbaHost.For<Program>(builder =>
         {
+            builder.UseEnvironment("Testing");
             builder.UseDefaultServiceProvider(options => options.ValidateScopes = false);
 
             builder.ConfigureServices(services =>
@@ -74,6 +76,14 @@ public class IntegrationAppFixture : IAsyncLifetime
 
                 services.Replace(ServiceDescriptor.Singleton(BedrockClientMock.Object));
                 services.Replace(ServiceDescriptor.Singleton(WhatsAppClientMock.Object));
+
+                services.AddSingleton<IAssemblyGenerator, AssemblyGenerator>();
+
+                services.CritterStackDefaults(opts =>
+                {
+                    opts.Development.GeneratedCodeMode = TypeLoadMode.Auto;
+                    opts.Production.GeneratedCodeMode = TypeLoadMode.Auto;
+                });
 
                 services.Configure<StoreOptions>(opts => {
                     opts.AutoCreateSchemaObjects = AutoCreate.All;
@@ -126,6 +136,14 @@ public class IntegrationAppFixture : IAsyncLifetime
                     }
                     """;
                 }
+                else if (requestJson.Contains("strict data privacy filter"))
+                {
+                    jsonResponse = $$"""
+                    {
+                        "content": [ { "text": "[NAME] ha solicitado el borrado." } ]
+                    }
+                    """;
+                }
                 else
                 {
                     var responseText = requestJson.Contains("secret")
@@ -152,6 +170,25 @@ public class IntegrationAppFixture : IAsyncLifetime
         if (Host != null) await Host.DisposeAsync();
         await _postgres.DisposeAsync();
         await _sqsContainer.DisposeAsync();
+    }
+
+    public async Task SeedTenantAsync(
+        string tenantSlug,
+        string botPhoneId,
+        string systemPrompt = "You are a helpful test assistant.",
+        string privacyPolicyUrl = "https://example.com/privacy")
+    {
+        using var session = Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
+
+        session.Store(new TenantProfile
+        {
+            Id = tenantSlug,
+            BotPhoneNumberId = botPhoneId,
+            SystemPrompt = systemPrompt,
+            PrivacyPolicyUrl = privacyPolicyUrl
+        });
+
+        await session.SaveChangesAsync();
     }
 }
 
