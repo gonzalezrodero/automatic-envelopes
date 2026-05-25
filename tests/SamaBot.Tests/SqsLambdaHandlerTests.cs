@@ -1,6 +1,5 @@
 ﻿using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
-using AwesomeAssertions;
 using Moq;
 using Moq.AutoMock;
 using SamaBot.Api;
@@ -24,7 +23,7 @@ public class SqsLambdaHandlerTests
         var mocker = new AutoMocker();
         var handler = mocker.CreateInstance<SqsLambdaHandler>();
 
-        var expectedMessage = new ProcessWhatsAppMessage("123", "34600000000", "34600000000", "Text", DateTimeOffset.UtcNow, "Payload");
+        var expectedMessage = new ProcessWhatsAppMessage("123", "34600000000", "34600000000", "Text", DateTimeOffset.UtcNow);
         var jsonBody = JsonSerializer.Serialize(expectedMessage);
 
         var sqsEvent = new SQSEvent

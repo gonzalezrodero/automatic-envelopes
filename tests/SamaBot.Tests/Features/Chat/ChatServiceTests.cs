@@ -1,6 +1,7 @@
 ﻿using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Moq;
 using Moq.AutoMock;
@@ -90,5 +91,39 @@ public class ChatServiceTests
                 r.ContentType == "application/json" &&
                 r.Accept == "application/json"
             ), It.IsAny<CancellationToken>()), Times.Once, "Debe llamar a Bedrock usando la configuración inyectada.");
+    }
+
+    [Fact]
+    public async Task GivenRawHistory_WhenSanitizeHistoryAsyncCalled_ThenUsesPrivacyPrompt()
+    {
+        // Arrange
+        var mockBedrockResponse = "{\"content\":[{\"text\":\"Historial limpio y anonimizado\"}]}";
+
+        _mocker.GetMock<IAmazonBedrockRuntime>()
+            .Setup(x => x.InvokeModelAsync(It.IsAny<InvokeModelRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new InvokeModelResponse
+            {
+                Body = new MemoryStream(Encoding.UTF8.GetBytes(mockBedrockResponse))
+            });
+
+        var rawHistory = "User: Hola, me llamo Daniel y mi DNI es 12345678Z";
+
+        // Act
+        var result = await _sut.SanitizeHistoryAsync(rawHistory, CancellationToken.None);
+
+        // Assert
+        result.Should().Be("Historial limpio y anonimizado");
+
+        _mocker.GetMock<IAmazonBedrockRuntime>()
+            .Verify(c => c.InvokeModelAsync(It.Is<InvokeModelRequest>(req =>
+                VerifySanitizationPromptInjected(req)
+            ), It.IsAny<CancellationToken>()), Times.Once, "Bedrock debe ser invocado con el System Prompt de anonimización.");
+    }
+
+    private static bool VerifySanitizationPromptInjected(InvokeModelRequest request)
+    {
+        var requestJson = Encoding.UTF8.GetString(request.Body.ToArray());
+        return requestJson.Contains("You are a strict data privacy filter") &&
+               requestJson.Contains("[NAME]"); // Comprobamos que se incluye el BotPrompts.SanitizationPrompt
     }
 }

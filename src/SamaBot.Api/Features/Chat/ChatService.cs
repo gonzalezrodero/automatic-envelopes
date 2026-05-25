@@ -9,6 +9,7 @@ namespace SamaBot.Api.Features.Chat;
 public interface IChatService
 {
     Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, CancellationToken ct);
+    Task<string> SanitizeHistoryAsync(string rawHistory, CancellationToken ct);
 }
 
 public class ChatService(IAmazonBedrockRuntime client, IOptions<BedrockSettings> settings) : IChatService
@@ -50,6 +51,16 @@ public class ChatService(IAmazonBedrockRuntime client, IOptions<BedrockSettings>
             .GetProperty("content")[0]
             .GetProperty("text")
             .GetString() ?? string.Empty;
+    }
+
+    public async Task<string> SanitizeHistoryAsync(string rawHistory, CancellationToken ct)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new("user", rawHistory)
+        };
+
+        return await GetResponseAsync(BotPrompts.SanitizationPrompt, messages, ct);
     }
 
     private static List<BedrockMessage> FormatChatMessages(List<ChatMessage> history)

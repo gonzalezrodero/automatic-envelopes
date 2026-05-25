@@ -2,6 +2,8 @@
 using Amazon.SecretsManager.Model;
 using Amazon.SimpleSystemsManagement;
 using Amazon.SimpleSystemsManagement.Model;
+using Npgsql;
+using System.Text.Json;
 
 namespace SamaBot.Api.Common.Extensions;
 
@@ -35,15 +37,35 @@ public static class AwsConfigurationExtensions
     {
         var secureConfig = new Dictionary<string, string?>();
 
-        // 1. Fetch Marten connection string from Secrets Manager
+        // 1. Fetch raw RDS credentials from Secrets Manager
         var martenArn = Environment.GetEnvironmentVariable("SECRET_ARN_MARTEN");
-        if (!string.IsNullOrEmpty(martenArn))
+        var dbEndpoint = Environment.GetEnvironmentVariable("DB_HOST");
+
+        if (!string.IsNullOrEmpty(martenArn) && !string.IsNullOrEmpty(dbEndpoint))
         {
             var response = secretsClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = martenArn })
                                         .GetAwaiter()
                                         .GetResult();
 
-            secureConfig["ConnectionStrings:Marten"] = response.SecretString;
+            var secretJson = response.SecretString;
+            using var document = JsonDocument.Parse(secretJson);
+            var root = document.RootElement;
+
+            var hostParts = dbEndpoint.Split(':');
+            var dbHost = hostParts[0];
+            var dbPort = int.Parse(hostParts[1]);
+
+            var connStringBuilder = new NpgsqlConnectionStringBuilder
+            {
+                Host = dbHost,
+                Port = dbPort,
+                Database = "chatbot",
+                Username = root.GetProperty("username").GetString(),
+                Password = root.GetProperty("password").GetString(),
+                SslMode = SslMode.Require
+            };
+
+            secureConfig["ConnectionStrings:Marten"] = connStringBuilder.ToString();
         }
 
         // 2. Fetch WhatsApp tokens from SSM Parameter Store

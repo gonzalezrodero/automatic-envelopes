@@ -6,5 +6,4 @@ public class ProcessedMessage
     public DateTimeOffset ProcessedAt { get; set; }
     public string TenantId { get; init; } = null!;
     public string BotPhoneNumberId { get; init; } = null!;
-    public string PhoneNumber { get; init; } = null!;
 }

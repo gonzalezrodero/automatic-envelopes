@@ -15,6 +15,6 @@ output "ecs_task_role_name" {
 }
 
 output "bedrock_policy_arn" {
-  value       = aws_iam_policy.bedrock_cheap_models.arn
-  description = "The ARN of the IAM Policy granting access to Bedrock cheap models"
+  value       = aws_iam_policy.bedrock_standard_models.arn
+  description = "The ARN of the IAM Policy granting access to Bedrock standard models"
 }

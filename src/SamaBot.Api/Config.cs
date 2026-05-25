@@ -4,8 +4,8 @@ using JasperFx;
 using JasperFx.CodeGeneration;
 using JasperFx.Events;
 using JasperFx.Events.Projections;
+using JasperFx.MultiTenancy;
 using Marten;
-using Marten.Storage;
 using Npgsql;
 using SamaBot.Api.Common.Configuration;
 using SamaBot.Api.Core.Entities;
@@ -40,7 +40,7 @@ public static class Config
         services.CritterStackDefaults(opts =>
         {
             opts.Development.GeneratedCodeMode = TypeLoadMode.Auto;
-            opts.Production.GeneratedCodeMode = TypeLoadMode.Auto;
+            opts.Production.GeneratedCodeMode = TypeLoadMode.Static;
         });
 
         services.AddMarten(opts =>
@@ -50,7 +50,7 @@ public static class Config
             opts.Events.TenancyStyle = TenancyStyle.Conjoined;
 
             opts.Storage.Add(new HnswIndexCustomizer());
-            opts.Projections.Add<ProcessedMessageProjection>(ProjectionLifecycle.Inline);
+            opts.Projections.Add(new ProcessedMessageProjection(), ProjectionLifecycle.Inline);
 
             opts.Schema.For<TenantProfile>().SingleTenanted();
             opts.Schema.For<ProcessedMessage>().MultiTenanted();
@@ -90,6 +90,8 @@ public static class Config
         return services.AddWolverine(opts =>
         {
             opts.Discovery.IncludeAssembly(typeof(Program).Assembly);
+
+            opts.CodeGeneration.AlwaysUseServiceLocationFor<IWhatsAppClient>();
 
             opts.Policies.AutoApplyTransactions();
             opts.Policies.OnException<ThrottlingException>()

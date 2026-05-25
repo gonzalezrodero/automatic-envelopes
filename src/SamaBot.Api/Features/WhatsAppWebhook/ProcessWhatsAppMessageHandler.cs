@@ -9,7 +9,7 @@ public static class ProcessWhatsAppMessageHandler
 {
     public static async Task Handle(
         ProcessWhatsAppMessage command,
-        IDocumentStore store, 
+        IDocumentStore store,
         IMessageBus bus,
         CancellationToken ct)
     {

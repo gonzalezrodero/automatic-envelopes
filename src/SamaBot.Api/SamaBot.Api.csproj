@@ -8,25 +8,26 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Amazon.Lambda.AspNetCoreServer.Hosting" Version="1.7.0" />
-    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="2.2.1" />
-    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="1.11.0" />
-    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.4" />
-    <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.17.5" />
-    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.35" />
-    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.4.19" />
-    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.13" />
-    <PackageReference Include="Marten" Version="8.33.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
+    <PackageReference Include="Amazon.Lambda.AspNetCoreServer.Hosting" Version="2.1.0" />
+    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="3.0.0" />
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="2.1.0" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="3.0.0" />
+    <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.19" />
+    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.4" />
+    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.4.23" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.7.17" />
+    <PackageReference Include="JasperFx.RuntimeCompiler" Version="5.0.0" />
+    <PackageReference Include="Marten" Version="9.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
     <PackageReference Include="Npgsql.DependencyInjection" Version="10.0.2" />
     <PackageReference Include="PdfPig" Version="0.1.14" />
     <PackageReference Include="Pgvector" Version="0.3.2" />
     <PackageReference Include="Refit" Version="10.1.6" />
     <PackageReference Include="Refit.HttpClientFactory" Version="10.1.6" />
-    <PackageReference Include="WolverineFx" Version="5.33.0" />
-    <PackageReference Include="WolverineFx.AmazonSqs" Version="5.33.0" />
-    <PackageReference Include="WolverineFx.Http" Version="5.33.0" />
-    <PackageReference Include="WolverineFx.Marten" Version="5.33.0" />
+    <PackageReference Include="WolverineFx" Version="6.0.0" />
+    <PackageReference Include="WolverineFx.AmazonSqs" Version="6.0.0" />
+    <PackageReference Include="WolverineFx.Http" Version="6.0.0" />
+    <PackageReference Include="WolverineFx.Marten" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,7 +3,6 @@ using AwesomeAssertions;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using SamaBot.Api.Core.Entities;
-using SamaBot.Api.Features.Tenancy;
 using System.Net.Http.Headers;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Fonts.Standard14Fonts;
@@ -22,7 +21,7 @@ public class IngestPdfEndpointTests(IntegrationAppFixture fixture)
         var fileName = $"test_integration_{Guid.NewGuid()}.pdf";
         var pdfBytes = CreateSimplePdfBytes("Integration test content for RAG.");
 
-        await SeedTenantAsync(tenantId, "dummy-bot-phone");
+        await fixture.SeedTenantAsync(tenantId, "dummy-bot-phone");
 
         // Act
         await fixture.Host.Scenario(s =>
@@ -55,21 +54,6 @@ public class IngestPdfEndpointTests(IntegrationAppFixture fixture)
             .ToListAsync();
 
         chunks.Should().NotBeEmpty();
-    }
-
-    private async Task SeedTenantAsync(string tenantSlug, string botPhoneId)
-    {
-        using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
-
-        if (await session.LoadAsync<TenantProfile>(tenantSlug) == null)
-        {
-            session.Store(new TenantProfile
-            {
-                Id = tenantSlug,
-                BotPhoneNumberId = botPhoneId
-            });
-            await session.SaveChangesAsync();
-        }
     }
 
     private static byte[] CreateSimplePdfBytes(string content)

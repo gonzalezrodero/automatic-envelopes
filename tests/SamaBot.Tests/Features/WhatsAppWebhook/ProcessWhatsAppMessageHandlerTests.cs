@@ -18,15 +18,14 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
         var tenantSlug = "test-tenant-handler-1";
         var botPhoneId = "12345";
 
-        await SeedTenantAsync(tenantSlug, botPhoneId);
+        await fixture.SeedTenantAsync(tenantSlug, botPhoneId);
 
         var command = new ProcessWhatsAppMessage(
             MessageId: "wamid.HANDLER",
             BotPhoneNumberId: botPhoneId, // El comando viene con el ID de Meta
             PhoneNumber: "34999111222",
             Text: "Pure Handler Text",
-            Timestamp: DateTimeOffset.UtcNow,
-            RawPayload: "{}"
+            Timestamp: DateTimeOffset.UtcNow
         );
 
         // Act: Directly invoke the message bypassing the HTTP layer
@@ -52,9 +51,9 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
         var tenantSlug = "test-tenant-handler-2";
         var botPhoneId = "123";
 
-        await SeedTenantAsync(tenantSlug, botPhoneId);
+        await fixture.SeedTenantAsync(tenantSlug, botPhoneId);
 
-        var command = new ProcessWhatsAppMessage("wamid.DUP", botPhoneId, "34999111222", "Texto", DateTimeOffset.UtcNow, "{}");
+        var command = new ProcessWhatsAppMessage("wamid.DUP", botPhoneId, "34999111222", "Texto", DateTimeOffset.UtcNow);
 
         // Act: Send the same message twice to simulate Meta webhook retries
         await fixture.Host.InvokeMessageAndWaitAsync(command);
@@ -69,18 +68,39 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
         receivedCount.Should().Be(1);
     }
 
-    private async Task SeedTenantAsync(string slug, string botPhoneId)
+    [Fact]
+    public async Task GivenDuplicateMessageId_WhenHandled_ThenIdempotencyIgnoresSecondAttempt()
     {
-        using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
+        // Arrange
+        var tenantId = "club-sama";
+        var botPhone = "34111222333";
+        var messageId = $"wamid.{Guid.NewGuid()}";
 
-        if (await session.LoadAsync<TenantProfile>(slug) == null)
-        {
-            session.Store(new TenantProfile
-            {
-                Id = slug,
-                BotPhoneNumberId = botPhoneId
-            });
-            await session.SaveChangesAsync();
-        }
+        using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
+
+        session.Store(new TenantProfile { Id = tenantId, BotPhoneNumberId = botPhone });
+
+        // Simulamos que el webhook ya se procesó en el pasado y la proyección lo guardó
+        session.Store(new ProcessedMessage { Id = messageId, TenantId = tenantId, BotPhoneNumberId = botPhone, ProcessedAt = DateTimeOffset.UtcNow.AddMinutes(-5) });
+        await session.SaveChangesAsync();
+
+        var duplicateWebhookCommand = new ProcessWhatsAppMessage(
+                    MessageId: messageId,
+                    PhoneNumber: "34999888777",
+                    Text: "Este mensaje es un reintento del servidor de Meta",
+                    BotPhoneNumberId: botPhone,
+                    Timestamp: DateTimeOffset.UtcNow
+                );
+
+        // Act
+        var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(duplicateWebhookCommand);
+
+        // Assert 1: No se deben haber guardado eventos nuevos en el stream del usuario
+        var streamEvents = await session.Events.FetchStreamAsync(duplicateWebhookCommand.PhoneNumber);
+        streamEvents.Should().BeEmpty("Because the message ID was duplicated, the handler should have aborted before appending events.");
+
+        // Assert 2: Wolverine no debe haber publicado NADA hacia el bot de IA
+        var dispatchedEvents = trackedSession.Executed.MessagesOf<MessageReceived>();
+        dispatchedEvents.Should().BeEmpty("No events should be published to the bus for duplicate incoming webhooks.");
     }
 }
