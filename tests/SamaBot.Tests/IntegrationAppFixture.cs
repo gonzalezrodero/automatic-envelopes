@@ -163,6 +163,41 @@ public class IntegrationAppFixture : IAsyncLifetime
                     Body = new MemoryStream(Encoding.UTF8.GetBytes(jsonResponse)) { Position = 0 }
                 };
             });
+
+        BedrockClientMock
+            .Setup(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ConverseRequest request, CancellationToken ct) =>
+            {
+                // Extract all the text from the incoming request (which includes the system prompt + RAG chunks)
+                var allRequestText = string.Join(" ", request.System.Select(s => s.Text)) + " " +
+                                     string.Join(" ", request.Messages.SelectMany(m => m.Content).Select(c => c.Text));
+
+                // Dynamically determine the response text
+                string responseText = "This is a mocked response.";
+
+                if (allRequestText.Contains("998877"))
+                {
+                    responseText = "Here is what I found in the knowledge base: 998877.";
+                }
+                else if (allRequestText.Contains("Historial limpio y anonimizado"))
+                {
+                    // Specifically for the SanitizeHistory test if needed
+                    responseText = "Historial limpio y anonimizado";
+                }
+
+                return new ConverseResponse
+                {
+                    StopReason = StopReason.End_turn,
+                    Output = new ConverseOutput
+                    {
+                        Message = new Message
+                        {
+                            Role = ConversationRole.Assistant,
+                            Content = [new ContentBlock { Text = responseText }]
+                        }
+                    }
+                };
+            });
     }
 
     public async Task DisposeAsync()

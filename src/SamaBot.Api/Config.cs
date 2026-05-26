@@ -27,6 +27,7 @@ public static class Config
     public static IServiceCollection AddFeatures(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<WhatsAppOptions>(configuration.GetSection(WhatsAppOptions.SectionName));
+        services.AddChatFeature();
         services.AddWhatsAppWebhookFeature();
         services.AddKnowledgeFeature();
         services.AddWhatsAppDispatcherFeature(configuration);
@@ -96,6 +97,8 @@ public static class Config
             opts.Policies.AutoApplyTransactions();
             opts.Policies.OnException<ThrottlingException>()
                 .RetryWithCooldown(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30));
+
+            opts.Durability.Mode = DurabilityMode.Solo;
 
             var sqsUrl = Environment.GetEnvironmentVariable("AWS_ENDPOINT_URL_SQS");
 

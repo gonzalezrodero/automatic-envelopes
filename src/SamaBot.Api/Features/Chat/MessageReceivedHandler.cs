@@ -1,4 +1,5 @@
 ﻿using Marten;
+using Microsoft.Extensions.AI;
 using SamaBot.Api.Core.Events;
 using SamaBot.Api.Features.Knowledge.Services;
 using SamaBot.Api.Features.Tenancy;
@@ -53,7 +54,7 @@ public static class MessageReceivedHandler
         var isFirstMessage = chatHistory.Count <= 1;
         var systemMessage = BuildSystemPrompt(tenant, isFirstMessage, context);
 
-        var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, ct);
+        var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, @event.TenantId, ct);
 
         if (string.IsNullOrWhiteSpace(replyText))
         {
@@ -89,8 +90,8 @@ public static class MessageReceivedHandler
 
         return [.. streamEvents.Select(evt => evt.Data switch
         {
-            MessageReceived userMsg => new ChatMessage("user", userMsg.Text),
-            ReplyGenerated botReply => new ChatMessage("assistant", botReply.Text),
+            MessageReceived userMsg => new ChatMessage(ChatRole.User, userMsg.Text),
+            ReplyGenerated botReply => new ChatMessage(ChatRole.Assistant, botReply.Text),
             _ => null
         }).OfType<ChatMessage>()];
     }
