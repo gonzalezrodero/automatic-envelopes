@@ -90,7 +90,8 @@ public class CampusCalculatorTool : IBedrockTool
         if (args.FamilyDiscountType == "Germa" && args.Participants.Count > 1)
         {
             var campusParticipants = args.Participants.Where(p => p.CampusWeeks > 0).ToList();
-            if (campusParticipants.Count > 0)
+
+            if (campusParticipants.Count > 1)
             {
                 siblingWithLeastWeeks = campusParticipants.OrderBy(p => p.CampusWeeks).First();
             }
