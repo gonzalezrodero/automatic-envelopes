@@ -1,77 +1,107 @@
 ﻿using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
-using System.Text.Encodings.Web;
-using System.Text.Json;
+using SamaBot.Api.Features.Chat.Tools;
 
 namespace SamaBot.Api.Features.Chat;
 
 public interface IChatService
 {
-    Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, CancellationToken ct);
+    Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, string tenantId, CancellationToken ct);
     Task<string> SanitizeHistoryAsync(string rawHistory, CancellationToken ct);
 }
 
-public class ChatService(IAmazonBedrockRuntime client, IOptions<BedrockSettings> settings) : IChatService
+public class ChatService(
+    IAmazonBedrockRuntime client,
+    IOptions<BedrockSettings> settings,
+    IEnumerable<IBedrockTool> tools,
+    IToolExecutionService toolExecutionService) : IChatService
 {
     private readonly BedrockSettings settings = settings.Value;
 
-    private static readonly JsonSerializerOptions jsonOptions = new()
+    public async Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, string tenantId, CancellationToken ct)
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
+        var tenantTools = tools.Where(t => t.Tenant == tenantId).ToList();
 
-    public async Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, CancellationToken ct)
-    {
-        var payload = new
-        {
-            anthropic_version = "bedrock-2023-05-31",
-            max_tokens = settings.MaxTokens,
-            temperature = settings.Temperature,
-            system = systemPrompt,
-            messages = FormatChatMessages(history)
-        };
-
-        var request = new InvokeModelRequest
+        // 1. Build the generic Converse Request
+        var request = new ConverseRequest
         {
             ModelId = settings.ModelId,
-            ContentType = "application/json",
-            Accept = "application/json",
-            Body = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(payload, jsonOptions))
+            System = [new SystemContentBlock { Text = systemPrompt }],
+            Messages = FormatChatMessages(history),
+            InferenceConfig = new InferenceConfiguration
+            {
+                MaxTokens = settings.MaxTokens,
+                Temperature = settings.Temperature
+            }
         };
 
-        var response = await client.InvokeModelAsync(request, ct);
+        // Attach tools if we have any for this tenant
+        if (tenantTools.Count != 0)
+        {
+            request.ToolConfig = new ToolConfiguration
+            {
+                Tools = [.. tenantTools.Select(t => new Tool { ToolSpec = t.GetSpecification() })]
+            };
+        }
 
-        using var reader = new StreamReader(response.Body);
-        var responseBody = await reader.ReadToEndAsync(ct);
+        // 2. Initial generic call to Bedrock
+        var response = await client.ConverseAsync(request, ct);
 
-        var result = JsonDocument.Parse(responseBody);
-        return result.RootElement
-            .GetProperty("content")[0]
-            .GetProperty("text")
-            .GetString() ?? string.Empty;
+        // 3. Handle Tool Interception via the Converse API's StopReason
+        if (response.StopReason == StopReason.Tool_use)
+        {
+            var toolResultMessage = await toolExecutionService.ExecuteToolsAsync(response.Output.Message, tenantTools, ct);
+
+            if (toolResultMessage != null)
+            {
+                // Append the AI's tool request and our C# tool result to the history
+                request.Messages.Add(response.Output.Message);
+                request.Messages.Add(toolResultMessage);
+
+                // 4. Send it back to the model for the final human-readable answer
+                var finalResponse = await client.ConverseAsync(request, ct);
+                return finalResponse.Output.Message.Content.First(c => c.Text != null).Text;
+            }
+        }
+
+        // 5. Normal text response
+        return response.Output.Message.Content.First(c => c.Text != null).Text;
     }
 
     public async Task<string> SanitizeHistoryAsync(string rawHistory, CancellationToken ct)
     {
-        var messages = new List<ChatMessage>
+        // Create a generic Converse request for the sanitization task
+        var request = new ConverseRequest
         {
-            new("user", rawHistory)
+            ModelId = settings.ModelId,
+            System = [new SystemContentBlock { Text = BotPrompts.SanitizationPrompt }],
+            Messages =
+            [
+                new Message
+                {
+                    Role = ConversationRole.User,
+                    Content = [new ContentBlock { Text = rawHistory }]
+                }
+            ],
+            InferenceConfig = new InferenceConfiguration
+            {
+                MaxTokens = settings.MaxTokens,
+                Temperature = 0 // Sanitization works best with 0 temperature for consistency
+            }
         };
 
-        return await GetResponseAsync(BotPrompts.SanitizationPrompt, messages, ct);
+        var response = await client.ConverseAsync(request, ct);
+        return response.Output.Message.Content.First(c => c.Text != null).Text;
     }
 
-    private static List<BedrockMessage> FormatChatMessages(List<ChatMessage> history)
+    private static List<Message> FormatChatMessages(List<ChatMessage> history)
     {
-        return [.. history.Select(m => new BedrockMessage(
-            Role: m.Role.ToLowerInvariant(),
-            Content: [new BedrockContentBlock("text", m.Content)]
-        ))];
+        return [.. history.Select(m => new Message
+        {
+            Role = m.Role == ChatRole.User ? ConversationRole.User : ConversationRole.Assistant,
+            Content = [new ContentBlock { Text = m.Text ?? string.Empty }]
+        })];
     }
 }
-
-public record ChatMessage(string Role, string Content);
-public record BedrockMessage(string Role, BedrockContentBlock[] Content);
-public record BedrockContentBlock(string Type, string Text);

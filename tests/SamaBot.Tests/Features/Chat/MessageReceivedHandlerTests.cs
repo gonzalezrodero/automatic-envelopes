@@ -6,7 +6,6 @@ using Moq;
 using SamaBot.Api.Core.Events;
 using SamaBot.Api.Features.Chat;
 using SamaBot.Tests.Extensions;
-using System.Text;
 
 namespace SamaBot.Tests.Features.Chat;
 
@@ -52,7 +51,7 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         replyGenerated.PhoneNumber.Should().Be(userPhone);
         replyGenerated.TenantId.Should().Be(tenantId);
 
-        fixture.BedrockClientMock.Verify(c => c.InvokeModelAsync(It.Is<InvokeModelRequest>(req =>
+        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.Is<ConverseRequest>(req =>
             VerifyPrivacyPolicyInjected(req)
         ), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -91,8 +90,8 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         replies.Last().MessageId.Should().Be("atomic.Chat2");
 
         // Verify history is sent AND Privacy Policy is NOT injected since it is a returning user
-        fixture.BedrockClientMock.Verify(c => c.InvokeModelAsync(It.Is<InvokeModelRequest>(req =>
-            VerifyChatHistoryPayload(req) && !VerifyPrivacyPolicyInjected(req)
+        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.Is<ConverseRequest>(req =>
+            !VerifyPrivacyPolicyInjected(req) && VerifyChatHistoryPayload(req)
         ), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -144,17 +143,22 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         streamEvents.Should().BeEmpty("The background worker should have hard-deleted the stream in the same transaction cascade.");
     }
 
-    private static bool VerifyChatHistoryPayload(InvokeModelRequest request)
+    private static bool VerifyChatHistoryPayload(ConverseRequest request)
     {
-        var requestJson = Encoding.UTF8.GetString(request.Body.ToArray());
-        return requestJson.Contains("Hola") &&
-               requestJson.Contains("¡Hola! Soy SamàBot.") &&
-               requestJson.Contains("¿Me recuerdas?");
+        // Extract all text from the messages
+        var allText = string.Join(" ", request.Messages
+            .SelectMany(m => m.Content)
+            .Select(c => c.Text));
+
+        return allText.Contains("Hola") &&
+               allText.Contains("¡Hola! Soy SamàBot.") &&
+               allText.Contains("¿Me recuerdas?");
     }
 
-    private static bool VerifyPrivacyPolicyInjected(InvokeModelRequest request)
+    private static bool VerifyPrivacyPolicyInjected(ConverseRequest request)
     {
-        var requestJson = Encoding.UTF8.GetString(request.Body.ToArray());
-        return requestJson.Contains("POLITICA+DE+PRIVACIDAD.pdf");
+        // Check if the privacy policy is injected into the System prompt
+        var systemPrompt = string.Join(" ", request.System.Select(s => s.Text));
+        return systemPrompt.Contains("POLITICA+DE+PRIVACIDAD.pdf");
     }
 }
