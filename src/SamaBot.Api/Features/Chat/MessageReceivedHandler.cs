@@ -122,7 +122,8 @@ public static class MessageReceivedHandler
             ? tenant.SystemPrompt
             : "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the information provided inside the <context> tags.";
 
-        return string.Format(BotPrompts.SystemPromptTemplate, personaPrompt, privacyWarningRule, context);
+        var currentDate = DateTimeOffset.UtcNow.ToString("dd MMMM yyyy");
+        return string.Format(BotPrompts.SystemPromptTemplate, personaPrompt, privacyWarningRule, currentDate, context);
     }
 
     private static async Task SaveAndPublishReplyAsync(MessageReceived @event, string replyText, IDocumentSession session, IMessageBus bus, CancellationToken ct)

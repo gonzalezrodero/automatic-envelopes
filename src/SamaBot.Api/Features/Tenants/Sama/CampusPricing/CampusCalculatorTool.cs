@@ -31,6 +31,10 @@ public class CampusCalculatorTool : IBedrockTool
                     "enum": ["None", "Germa", "Familia Nombrosa", "Familia Monoparental"],
                     "description": "The family discount requested by the user. Pass exactly what they ask for (e.g., 'Germa' if they mention siblings), even if you think it doesn't apply. The calculator logic will validate it."
                 },
+                "isAfterMay1st": {
+                    "type": "boolean",
+                    "description": "True if the current system date is strictly after May 1st of the current year. This applies a 10% late registration surcharge."
+                },
                 "participants": {
                     "type": "array",
                     "description": "List of children being enrolled.",
@@ -63,7 +67,7 @@ public class CampusCalculatorTool : IBedrockTool
                     }
                 }
             },
-            "required": ["isSocio", "familyDiscountType", "participants"]
+            "required": ["isSocio", "familyDiscountType", "isAfterMay1st", "participants"]
         }
         """;
 
@@ -71,7 +75,7 @@ public class CampusCalculatorTool : IBedrockTool
         return new ToolSpecification
         {
             Name = "calculate_family_campus_price",
-            Description = "Calculates the total summer campus price for an entire family, automatically applying sibling and volume discounts.",
+            Description = "Calculates the total summer campus price for an entire family, automatically applying sibling and volume discounts, as well as late registration surcharges.",
             InputSchema = new ToolInputSchema
             {
                 Json = JsonConverter.ToAwsDocument(jsonDoc.RootElement)
@@ -106,6 +110,13 @@ public class CampusCalculatorTool : IBedrockTool
             // 1. Fetch both base prices independently (0 weeks = 0€)
             decimal campusBasePrice = GetCampusBasePrice(p.CampusWeeks, args.IsSocio);
             decimal tecniBasePrice = GetTecnificacioBasePrice(p.TecnificacioWeeks, args.IsSocio);
+
+            // Apply a 10% surcharge if the registration is done after May 1st
+            if (args.IsAfterMay1st)
+            {
+                campusBasePrice *= 1.10m;
+                tecniBasePrice *= 1.10m;
+            }
 
             decimal discountMultiplier = 0m;
 
@@ -156,10 +167,7 @@ public class CampusCalculatorTool : IBedrockTool
 
     private static decimal GetCampusBasePrice(int weeks, bool isSocio)
     {
-        // Clamp between 0 and 6. 
-        // 0 weeks means they are only doing Tecnificació.
         var clampedWeeks = Math.Clamp(weeks, 0, 6);
-
         if (clampedWeeks == 0) return 0m;
 
         if (isSocio)
@@ -169,9 +177,9 @@ public class CampusCalculatorTool : IBedrockTool
                 1 => 63.00m,
                 2 => 125.00m,
                 3 => 188.00m,
-                4 => 244.00m, // Includes 10% volume discount
-                5 => 290.00m, // Includes 25% volume discount
-                6 => 322.00m, // Includes 50% volume discount
+                4 => 244.00m,
+                5 => 290.00m,
+                6 => 322.00m,
                 _ => 0m
             };
         }
@@ -192,10 +200,7 @@ public class CampusCalculatorTool : IBedrockTool
 
     private static decimal GetTecnificacioBasePrice(int weeks, bool isSocio)
     {
-        // Clamp between 0 and 4 (Tecnificació is a max of 4 weeks). 
-        // 0 weeks means they are only doing the regular Campus.
         var clampedWeeks = Math.Clamp(weeks, 0, 4);
-
         if (clampedWeeks == 0) return 0m;
 
         if (isSocio)
@@ -203,9 +208,9 @@ public class CampusCalculatorTool : IBedrockTool
             return clampedWeeks switch
             {
                 1 => 50.00m,
-                2 => 95.00m,   // Includes 10% volume discount
-                3 => 140.00m,  // Includes 10% volume discount
-                4 => 185.00m,  // Includes 10% volume discount
+                2 => 95.00m,
+                3 => 140.00m,
+                4 => 185.00m,
                 _ => 0m
             };
         }
@@ -226,6 +231,7 @@ public class CampusCalculatorTool : IBedrockTool
 public record CampusFamilyArguments(
     [property: JsonPropertyName("isSocio")] bool IsSocio,
     [property: JsonPropertyName("familyDiscountType")] string FamilyDiscountType,
+    [property: JsonPropertyName("isAfterMay1st")] bool IsAfterMay1st, // <-- Nova propietat 
     [property: JsonPropertyName("participants")] List<ParticipantArgs> Participants
 );
 

@@ -20,8 +20,10 @@ public static class BotPrompts
         7. WHATSAPP UI: NEVER use Markdown tables (e.g., | Column | Column |). WhatsApp does not support them and they look broken on mobile devices. Always format price breakdowns and receipts using simple bullet points, emojis, italics (_text_), and bold text (*text*) for emphasis. Structure it like a clean, readable mobile receipt.
         {1}
 
+        System info: Today's date is {2}. Use this to evaluate date-based rules.
+
         <context>
-        {2}
+        {3}
         </context>
         """;
 
