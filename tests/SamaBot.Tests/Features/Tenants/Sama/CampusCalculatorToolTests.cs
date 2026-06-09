@@ -202,4 +202,55 @@ public class CampusCalculatorToolTests
 
         result.FamilyGrandTotal.Should().Be(136.40m);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsError_WhenDeserializationFails()
+    {
+        // Act: Sending an empty string or null will make args or participants null
+        var resultNullArgs = await _sut.ExecuteAsync("null", CancellationToken.None);
+
+        // Assert: It should hit the guard clause safely
+        resultNullArgs.Should().Be("Error: Invalid arguments.");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AppliesLateSurcharge_AndFamilyDiscountTogether()
+    {
+        // Arrange: After May 1st (surcharge) AND Familia Nombrosa (discount)
+        var payload = """
+        {
+            "isSocio": true,
+            "familyDiscountType": "Familia Nombrosa",
+            "isAfterMay1st": true,
+            "participants": [
+                {
+                    "name": "HybridParticipant",
+                    "campusWeeks": 2,
+                    "tecnificacioWeeks": 0,
+                    "menjadorDays": 0,
+                    "tardaDays": 0,
+                    "excursionsCost": 0
+                }
+            ]
+        }
+        """;
+
+        // Act
+        var jsonResult = await _sut.ExecuteAsync(payload, CancellationToken.None);
+        var result = JsonSerializer.Deserialize<CampusFamilyResult>(jsonResult, CampusToolJsonContext.Default.CampusFamilyResult);
+
+        // Assert
+        result.Should().NotBeNull();
+        var participant = result!.Breakdown.First();
+
+        // Socio 2 weeks base is 125. Surcharge +10% = 137.50
+        participant.CampusBasePrice.Should().Be(137.50m);
+
+        // Familia Nombrosa discount is 15% applied OVER the 137.50 = 20.625 (rounds depending on decimal)
+        // 137.50 * 0.15 = 20.625. Let's verify the exact decimal math.
+        participant.DiscountApplied.Should().Be(20.625m);
+
+        // Total should be Base - Discount
+        participant.Total.Should().Be(116.875m);
+    }
 }

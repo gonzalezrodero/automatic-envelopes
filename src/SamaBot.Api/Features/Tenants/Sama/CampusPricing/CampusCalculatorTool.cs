@@ -86,83 +86,92 @@ public class CampusCalculatorTool : IBedrockTool
     public Task<string> ExecuteAsync(string jsonArguments, CancellationToken ct)
     {
         var args = JsonSerializer.Deserialize(jsonArguments, CampusToolJsonContext.Default.CampusFamilyArguments);
-        if (args == null || args.Participants == null || args.Participants.Count == 0)
-            return Task.FromResult("Error: Invalid arguments.");
 
-        // 1. Identify the sibling with the least weeks (for the 10% Germa discount)
-        ParticipantArgs? siblingWithLeastWeeks = null;
-        if (args.FamilyDiscountType == "Germa" && args.Participants.Count > 1)
+        // Guard clause simplified
+        if (args?.Participants == null || args.Participants.Count == 0)
         {
-            var campusParticipants = args.Participants.Where(p => p.CampusWeeks > 0).ToList();
-
-            if (campusParticipants.Count > 1)
-            {
-                siblingWithLeastWeeks = campusParticipants.OrderBy(p => p.CampusWeeks).First();
-            }
+            return Task.FromResult("Error: Invalid arguments.");
         }
+
+        // Pre-calculate sibling logic to avoid doing it inside the loop
+        var siblingWithLeastWeeks = GetSiblingWithLeastWeeks(args);
 
         var participantResults = new List<ParticipantPricingResult>();
         decimal familyGrandTotal = 0;
 
-        // 2. Process each child
         foreach (var p in args.Participants)
         {
-            // 1. Fetch both base prices independently (0 weeks = 0€)
-            decimal campusBasePrice = GetCampusBasePrice(p.CampusWeeks, args.IsSocio);
-            decimal tecniBasePrice = GetTecnificacioBasePrice(p.TecnificacioWeeks, args.IsSocio);
+            // Delegate the heavy mathematical logic to a separate method
+            var result = CalculateParticipantPricing(p, args, siblingWithLeastWeeks);
 
-            // Apply a 10% surcharge if the registration is done after May 1st
-            if (args.IsAfterMay1st)
-            {
-                campusBasePrice *= 1.10m;
-                tecniBasePrice *= 1.10m;
-            }
-
-            decimal discountMultiplier = 0m;
-
-            // 2. Apply Family Discounts ONLY to the Campus base price
-            if (p.CampusWeeks > 0)
-            {
-                if (args.FamilyDiscountType == "Familia Nombrosa" || args.FamilyDiscountType == "Familia Monoparental")
-                {
-                    discountMultiplier = 0.15m;
-                }
-                else if (args.FamilyDiscountType == "Germa" && p == siblingWithLeastWeeks)
-                {
-                    discountMultiplier = 0.10m;
-                }
-            }
-
-            var campusDiscountAmount = campusBasePrice * discountMultiplier;
-            var finalCampusPrice = campusBasePrice - campusDiscountAmount;
-
-            // 3. Tecnificació, Services, and Excursions (No family discounts apply to these)
-            var servicesCost = (p.MenjadorDays * 10m) + (p.TardaDays * 6m);
-            var excursionsCost = (decimal)p.ExcursionsCost;
-
-            // 4. Grand Total for this child
-            var participantTotal = finalCampusPrice + tecniBasePrice + servicesCost + excursionsCost;
-            familyGrandTotal += participantTotal;
-
-            participantResults.Add(new ParticipantPricingResult(
-                Name: p.Name,
-                CampusWeeks: p.CampusWeeks,
-                TecnificacioWeeks: p.TecnificacioWeeks,
-                CampusBasePrice: campusBasePrice,
-                TecnificacioBasePrice: tecniBasePrice,
-                DiscountApplied: campusDiscountAmount,
-                ServicesCost: servicesCost,
-                ExcursionsCost: excursionsCost,
-                Total: participantTotal
-            ));
+            participantResults.Add(result);
+            familyGrandTotal += result.Total;
         }
 
-        var result = new CampusFamilyResult(
-            FamilyGrandTotal: familyGrandTotal,
-            Breakdown: participantResults
-        );
+        var finalResult = new CampusFamilyResult(familyGrandTotal, participantResults);
+        return Task.FromResult(JsonSerializer.Serialize(finalResult, CampusToolJsonContext.Default.CampusFamilyResult));
+    }
 
-        return Task.FromResult(JsonSerializer.Serialize(result, CampusToolJsonContext.Default.CampusFamilyResult));
+    private static ParticipantArgs? GetSiblingWithLeastWeeks(CampusFamilyArguments args)
+    {
+        if (args.FamilyDiscountType != "Germa" || args.Participants.Count <= 1)
+        {
+            return null;
+        }
+
+        var campusParticipants = args.Participants.Where(p => p.CampusWeeks > 0).ToList();
+
+        return campusParticipants.Count > 1
+            ? campusParticipants.OrderBy(p => p.CampusWeeks).First()
+            : null;
+    }
+
+    private static ParticipantPricingResult CalculateParticipantPricing(ParticipantArgs p, CampusFamilyArguments args, ParticipantArgs? siblingWithLeastWeeks)
+    {
+        decimal campusBasePrice = GetCampusBasePrice(p.CampusWeeks, args.IsSocio);
+        decimal tecniBasePrice = GetTecnificacioBasePrice(p.TecnificacioWeeks, args.IsSocio);
+
+        // Apply a 10% surcharge if the registration is done after May 1st
+        if (args.IsAfterMay1st)
+        {
+            campusBasePrice *= 1.10m;
+            tecniBasePrice *= 1.10m;
+        }
+
+        decimal discountMultiplier = 0m;
+
+        // Apply Family Discounts ONLY to the Campus base price
+        if (p.CampusWeeks > 0)
+        {
+            if (args.FamilyDiscountType == "Familia Nombrosa" || args.FamilyDiscountType == "Familia Monoparental")
+            {
+                discountMultiplier = 0.15m;
+            }
+            else if (args.FamilyDiscountType == "Germa" && p == siblingWithLeastWeeks)
+            {
+                discountMultiplier = 0.10m;
+            }
+        }
+
+        var campusDiscountAmount = campusBasePrice * discountMultiplier;
+        var finalCampusPrice = campusBasePrice - campusDiscountAmount;
+
+        var servicesCost = (p.MenjadorDays * 10m) + (p.TardaDays * 6m);
+        var excursionsCost = (decimal)p.ExcursionsCost;
+
+        var participantTotal = finalCampusPrice + tecniBasePrice + servicesCost + excursionsCost;
+
+        return new ParticipantPricingResult(
+            Name: p.Name,
+            CampusWeeks: p.CampusWeeks,
+            TecnificacioWeeks: p.TecnificacioWeeks,
+            CampusBasePrice: campusBasePrice,
+            TecnificacioBasePrice: tecniBasePrice,
+            DiscountApplied: campusDiscountAmount,
+            ServicesCost: servicesCost,
+            ExcursionsCost: excursionsCost,
+            Total: participantTotal
+        );
     }
 
     private static decimal GetCampusBasePrice(int weeks, bool isSocio)
