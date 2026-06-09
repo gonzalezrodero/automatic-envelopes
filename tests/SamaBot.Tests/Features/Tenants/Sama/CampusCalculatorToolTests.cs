@@ -156,4 +156,101 @@ public class CampusCalculatorToolTests
         tester.DiscountApplied.Should().Be(0m);
         tester.ServicesCost.Should().Be(16.00m); // 1 Menjador (10) + 1 Tarda (6)
     }
+
+    [Fact]
+    public async Task ExecuteAsync_AppliesLateSurcharge_WhenIsAfterMay1stIsTrue()
+    {
+        // Arrange: Late registration (After May 1st), Non-socio, No discounts.
+        // Participant with 1 week of Campus and 1 week of Tecnificacio.
+        var payload = """
+        {
+            "isSocio": false,
+            "familyDiscountType": "None",
+            "isAfterMay1st": true,
+            "participants": [
+                {
+                    "name": "LateParticipant",
+                    "campusWeeks": 1,
+                    "tecnificacioWeeks": 1,
+                    "menjadorDays": 0,
+                    "tardaDays": 0,
+                    "excursionsCost": 0
+                }
+            ]
+        }
+        """;
+
+        // Act
+        var jsonResult = await _sut.ExecuteAsync(payload, CancellationToken.None);
+        var result = JsonSerializer.Deserialize<CampusFamilyResult>(jsonResult, CampusToolJsonContext.Default.CampusFamilyResult);
+
+        // Assert
+        result.Should().NotBeNull();
+        var participant = result!.Breakdown.First();
+
+        // Original base price for 1 week Campus (non-socio) is 69. 
+        // With 10% surcharge: 69 * 1.10 = 75.90
+        participant.CampusBasePrice.Should().Be(75.90m);
+
+        // Original base price for 1 week Tecnificacio (non-socio) is 55. 
+        // With 10% surcharge: 55 * 1.10 = 60.50
+        participant.TecnificacioBasePrice.Should().Be(60.50m);
+
+        // Without any other discounts, the total must be the exact sum of the surcharged bases
+        participant.DiscountApplied.Should().Be(0m);
+        participant.Total.Should().Be(136.40m); // 75.90 + 60.50
+
+        result.FamilyGrandTotal.Should().Be(136.40m);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsError_WhenDeserializationFails()
+    {
+        // Act: Sending an empty string or null will make args or participants null
+        var resultNullArgs = await _sut.ExecuteAsync("null", CancellationToken.None);
+
+        // Assert: It should hit the guard clause safely
+        resultNullArgs.Should().Be("Error: Invalid arguments.");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AppliesLateSurcharge_AndFamilyDiscountTogether()
+    {
+        // Arrange: After May 1st (surcharge) AND Familia Nombrosa (discount)
+        var payload = """
+        {
+            "isSocio": true,
+            "familyDiscountType": "Familia Nombrosa",
+            "isAfterMay1st": true,
+            "participants": [
+                {
+                    "name": "HybridParticipant",
+                    "campusWeeks": 2,
+                    "tecnificacioWeeks": 0,
+                    "menjadorDays": 0,
+                    "tardaDays": 0,
+                    "excursionsCost": 0
+                }
+            ]
+        }
+        """;
+
+        // Act
+        var jsonResult = await _sut.ExecuteAsync(payload, CancellationToken.None);
+        var result = JsonSerializer.Deserialize<CampusFamilyResult>(jsonResult, CampusToolJsonContext.Default.CampusFamilyResult);
+
+        // Assert
+        result.Should().NotBeNull();
+        var participant = result!.Breakdown.First();
+
+        // Socio 2 weeks base is 125. Surcharge +10% = 137.50
+        participant.CampusBasePrice.Should().Be(137.50m);
+
+        // Familia Nombrosa discount is 15% applied OVER the 137.50 = 20.625 (rounds depending on decimal)
+        // 137.50 * 0.15 = 20.625. Let's verify the exact decimal math.
+        participant.DiscountApplied.Should().Be(20.625m);
+
+        // Total should be Base - Discount
+        participant.Total.Should().Be(116.875m);
+    }
 }
