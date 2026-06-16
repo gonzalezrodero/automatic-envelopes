@@ -1,7 +1,5 @@
-# Remote backend configuration for Development
 bucket         = "automatic-envelopes-tf-state-543704476214"
 key            = "bootstrap/terraform.tfstate"
 region         = "eu-west-1"
 encrypt        = true
 use_lockfile   = true
-dynamodb_table = "automatic-envelopes-tf-lock"
