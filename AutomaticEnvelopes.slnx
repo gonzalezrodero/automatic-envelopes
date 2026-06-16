@@ -1,0 +1,66 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Development" />
+    <BuildType Name="Release" />
+  </Configurations>
+  <Folder Name="/infra/" />
+  <Folder Name="/infra/bootstrap/">
+    <File Path="infra/bootstrap/backend.tf" />
+    <File Path="infra/bootstrap/iam.tf" />
+    <File Path="infra/bootstrap/main.tf" />
+    <File Path="infra/bootstrap/outputs.tf" />
+    <File Path="infra/bootstrap/variables.tf" />
+  </Folder>
+  <Folder Name="/infra/bootstrap/config/" />
+  <Folder Name="/infra/bootstrap/config/dev/">
+    <File Path="infra/bootstrap/config/dev/config.remote" />
+    <File Path="infra/bootstrap/config/dev/config.tfvars" />
+  </Folder>
+  <Folder Name="/infra/db/">
+    <File Path="infra/db/backend.tf" />
+    <File Path="infra/db/data.tf" />
+    <File Path="infra/db/main.tf" />
+    <File Path="infra/db/outputs.tf" />
+    <File Path="infra/db/variables.tf" />
+  </Folder>
+  <Folder Name="/infra/db/config/" />
+  <Folder Name="/infra/db/config/dev/">
+    <File Path="infra/db/config/dev/config.remote" />
+    <File Path="infra/db/config/dev/config.tfvars" />
+  </Folder>
+  <Folder Name="/infra/network/">
+    <File Path="infra/network/backend.tf" />
+    <File Path="infra/network/main.tf" />
+    <File Path="infra/network/outputs.tf" />
+    <File Path="infra/network/variables.tf" />
+  </Folder>
+  <Folder Name="/infra/network/config/" />
+  <Folder Name="/infra/network/config/dev/">
+    <File Path="infra/network/config/dev/config.remote" />
+    <File Path="infra/network/config/dev/config.tfvars" />
+  </Folder>
+  <Folder Name="/infra/serverless/">
+    <File Path="infra/serverless/backend.tf" />
+    <File Path="infra/serverless/data.tf" />
+    <File Path="infra/serverless/ecr.tf" />
+    <File Path="infra/serverless/iam.tf" />
+    <File Path="infra/serverless/lambda_api.tf" />
+    <File Path="infra/serverless/lambda_worker.tf" />
+    <File Path="infra/serverless/sqs.tf" />
+    <File Path="infra/serverless/variables.tf" />
+  </Folder>
+  <Folder Name="/infra/serverless/config/" />
+  <Folder Name="/infra/serverless/config/dev/">
+    <File Path="infra/serverless/config/dev/config.remote" />
+    <File Path="infra/serverless/config/dev/config.tfvars" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AutomaticEnvelopes.Tests/AutomaticEnvelopes.Tests.csproj">
+      <BuildType Solution="Development|*" Project="Release" />
+    </Project>
+  </Folder>
+</Solution>
