@@ -16,7 +16,7 @@ resource "aws_lambda_function" "api" {
 
       SECRET_ARN_MARTEN = data.terraform_remote_state.database.outputs.db_password_secret_arn
       DB_HOST           = data.terraform_remote_state.database.outputs.db_endpoint
-      SSM_PATH_WHATSAPP = "/automatic-envelopes/dev/whatsapp/"
+      SSM_PATH_WHATSAPP = "/automatic-envelopes/whatsapp/"
     }
   }
 
