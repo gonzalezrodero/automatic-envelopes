@@ -61,7 +61,7 @@ resource "aws_db_instance" "postgres" {
   max_allocated_storage = 100
   storage_type          = "gp3"
 
-  db_name  = "chatbot"
+  db_name  = "automatic-envelopes"
   username = "dbadmin"
 
   storage_encrypted       = true

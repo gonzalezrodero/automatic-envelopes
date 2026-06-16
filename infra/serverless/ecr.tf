@@ -36,5 +36,5 @@ resource "aws_ecr_lifecycle_policy" "backend_policy" {
 
 import {
   to = aws_ecr_repository.backend
-  id = "chatbot-api"
+  id = "automatic-envelopes-api"
 }

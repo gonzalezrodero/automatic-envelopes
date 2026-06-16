@@ -1,0 +1,6 @@
+@AutomaticEnvelopes.Api_HostAddress = http://localhost:5240
+
+GET {{AutomaticEnvelopes.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -18,5 +18,5 @@ variable "github_owner" {
 }
 
 variable "github_repo" {
-  default = "SamaBot"
+  default = "automatic-envelopes"
 }

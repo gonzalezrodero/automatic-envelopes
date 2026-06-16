@@ -1,7 +1,7 @@
 # Remote backend configuration for Development
-bucket         = "chatbot-tf-state-543704476214"
+bucket         = "automatic-envelopes-tf-state-543704476214"
 key            = "bootstrap/terraform.tfstate"
 region         = "eu-west-1"
 encrypt        = true
 use_lockfile   = true
-dynamodb_table = "chatbot-tf-lock"
+dynamodb_table = "automatic-envelopes-tf-lock"

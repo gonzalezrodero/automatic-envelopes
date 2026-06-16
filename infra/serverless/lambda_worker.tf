@@ -16,12 +16,12 @@ resource "aws_lambda_function" "worker" {
 
       SECRET_ARN_MARTEN = data.terraform_remote_state.database.outputs.db_password_secret_arn
       DB_HOST           = data.terraform_remote_state.database.outputs.db_endpoint
-      SSM_PATH_WHATSAPP = "/chatbot/dev/whatsapp/"
+      SSM_PATH_WHATSAPP = "/automatic-envelopes/whatsapp/"
     }
   }
 
   image_config {
-    command = ["SamaBot.Api::SamaBot.Api.SqsLambdaHandler::FunctionHandler"]
+    command = ["AutomaticEnvelopes.Api::AutomaticEnvelopes.Api.SqsLambdaHandler::FunctionHandler"]
   }
 }
 
