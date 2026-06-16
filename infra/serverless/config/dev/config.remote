@@ -1,5 +1,5 @@
-bucket         = "automatic-envelopes-tf-state-543704476214"
-key            = "serverless/terraform.tfstate"
-region         = "eu-west-1"
-encrypt        = true
-dynamodb_table = "automatic-envelopes-tf-lock"
+bucket       = "automatic-envelopes-tf-state-543704476214"
+key          = "serverless/terraform.tfstate"
+region       = "eu-west-1"
+encrypt      = true
+use_lockfile = true
