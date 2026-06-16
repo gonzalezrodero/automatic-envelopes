@@ -45,8 +45,8 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           dotnet-sonarscanner begin \
-            /k:"gonzalezrodero_AutomaticEnvelopes" \
-            /o:"gonzalezrodero-automatic-envelopes" \
+            /k:"TU_NUEVO_PROJECT_KEY_AQUI" \
+            /o:"TU_NUEVA_ORGANIZATION_KEY_AQUI" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml \
