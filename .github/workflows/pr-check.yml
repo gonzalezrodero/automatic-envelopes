@@ -16,4 +16,4 @@ jobs:
 
       - name: Test Docker Build (No Push)
         run: |
-          docker build -t chatbot-api:test .
+          docker build -t automatic-envelopes-api:test .

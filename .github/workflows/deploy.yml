@@ -12,7 +12,7 @@ on:
 
 env:
   AWS_REGION: eu-west-1
-  ECR_REPOSITORY: chatbot-api 
+  ECR_REPOSITORY: automatic-envelopes-api 
   ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_ARN }} 
   TF_WORKING_DIR: 'infra/serverless'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 

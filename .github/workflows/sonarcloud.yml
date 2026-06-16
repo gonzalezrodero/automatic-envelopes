@@ -38,27 +38,27 @@ jobs:
         run: dotnet tool install --global dotnet-coverage
             
       - name: Pre-generate JasperFx static code
-        run: dotnet run --project src/SamaBot.Api/SamaBot.Api.csproj -- codegen write
+        run: dotnet run --project src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj -- codegen write
 
       - name: Begin SonarCloud analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           dotnet-sonarscanner begin \
-            /k:"gonzalezrodero_SamaBot" \
-            /o:"gonzalezrodero-samabot" \
+            /k:"gonzalezrodero_AutomaticEnvelopes" \
+            /o:"gonzalezrodero-automatic-envelopes" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml \
             /d:sonar.terraform.provider.aws.version="6.0"
 
       - name: Build
-        run: dotnet build SamaBot.slnx --no-incremental
+        run: dotnet build AutomaticEnvelopes.slnx --no-incremental
 
       - name: Run tests with coverage
         run: |
           dotnet-coverage collect \
-            "dotnet test SamaBot.slnx --no-build" \
+            "dotnet test AutomaticEnvelopes.slnx --no-build" \
             -f xml -o coverage.xml
 
       - name: End SonarCloud analysis
