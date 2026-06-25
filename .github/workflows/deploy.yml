@@ -12,13 +12,9 @@ on:
       - '.github/workflows/reusable-serverless.yml'
   workflow_dispatch:
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   # ==========================================
-  # 1. CI: BUILD & TEST
+  # 1. CI: BUILD & TEST (No AWS permissions needed)
   # ==========================================
   build-and-test:
     name: "Build & Run Tests"
@@ -41,20 +37,32 @@ jobs:
       - name: Run Unit Tests
         run: dotnet test tests/AutomaticEnvelopes.Tests/AutomaticEnvelopes.Tests.csproj --no-build --configuration Release --verbosity normal
 
+  # ==========================================
+  # 2. CD: DEPLOY TO DEVELOPMENT
+  # ==========================================
   deploy-dev:
     name: "Development"
-    needs: build-and-test # Only proceed if .NET tests pass
+    needs: build-and-test 
     uses: ./.github/workflows/reusable-serverless.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       env_name: development
       tf_folder: dev
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
+  # ==========================================
+  # 3. CD: DEPLOY TO PRODUCTION
+  # ==========================================
   deploy-prod:
     name: "Production"
-    needs: deploy-dev # Waits for Dev deployment
+    needs: deploy-dev 
     uses: ./.github/workflows/reusable-serverless.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       env_name: production
       tf_folder: prod

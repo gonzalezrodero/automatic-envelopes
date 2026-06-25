@@ -56,14 +56,19 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
-        run: terraform init -backend-config=config/${{ inputs.tf_folder }}/config.remote
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Terraform Apply
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
         run: |
           terraform apply \
-            -var-file=config/${{ inputs.tf_folder }}/config.tfvars \
-            -var="image_tag=${{ steps.calver.outputs.tag }}" \
+            -var-file=config/$TF_FOLDER/config.tfvars \
+            -var="image_tag=$IMAGE_TAG" \
             -auto-approve \
             -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}

@@ -9,14 +9,13 @@ on:
       - '.github/workflows/reusable-terraform.yml'
   workflow_dispatch:
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   deploy-dev:
     name: "Development"
     uses: ./.github/workflows/reusable-terraform.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       env_name: development
       tf_folder: dev
@@ -26,8 +25,11 @@ jobs:
 
   deploy-prod:
     name: "Production"
-    needs: deploy-dev # Waits for Dev to finish successfully
+    needs: deploy-dev
     uses: ./.github/workflows/reusable-terraform.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       env_name: production
       tf_folder: prod
