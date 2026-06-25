@@ -1,91 +1,38 @@
-﻿name: Bootstrap Deployment
+﻿name: "CI/CD: Bootstrap Infrastructure"
 
 on:
   push:
-    branches: [ main ]
-    paths: 
+    branches: [ 'main' ]
+    paths:
       - 'infra/bootstrap/**'
       - '.github/workflows/bootstrap.yml'
-  pull_request:
-    branches: [ main ]
-    paths: 
-      - 'infra/bootstrap/**'
-      - '.github/workflows/bootstrap.yml'
+      - '.github/workflows/reusable-terraform.yml'
   workflow_dispatch:
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
-  plan:
-    name: Terraform Plan
-    runs-on: ubuntu-latest
-    env:
-      TF_WORKING_DIR: 'infra/bootstrap'
-    outputs:
-      exitcode: ${{ steps.plan.outputs.exitcode }}
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+  deploy-dev:
+    name: "Development"
+    uses: ./.github/workflows/reusable-terraform.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      env_name: development
+      tf_folder: dev
+      working_dir: infra/bootstrap
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: eu-west-1
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
-        working-directory: 'infra'
-
-      - name: Terraform Init
-        run: terraform init -backend-config=config/dev/config.remote
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - name: Terraform Validate
-        run: terraform validate
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - name: Terraform Plan
-        id: plan
-        run: terraform plan -var-file=config/dev/config.tfvars -no-color
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-  apply:
-    name: Terraform Apply
-    needs: plan
-    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
-    runs-on: ubuntu-latest
-    environment: development
-    env:
-      TF_WORKING_DIR: 'infra/bootstrap'
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: eu-west-1
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform Init
-        run: terraform init -backend-config=config/dev/config.remote
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - name: Terraform Apply
-        run: terraform apply -var-file=config/dev/config.tfvars -auto-approve -no-color
-        working-directory: ${{ env.TF_WORKING_DIR }}
+  deploy-prod:
+    name: "Production"
+    needs: deploy-dev
+    uses: ./.github/workflows/reusable-terraform.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      env_name: production
+      tf_folder: prod
+      working_dir: infra/bootstrap
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}

@@ -1,0 +1,74 @@
+name: "Template: Deploy Serverless"
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        required: true
+        type: string
+        description: "GitHub Environment name (e.g., development, production)"
+      tf_folder:
+        required: true
+        type: string
+        description: "Terraform config folder (e.g., dev, prod)"
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: automatic-envelopes-api 
+  TF_WORKING_DIR: 'infra/serverless'
+
+jobs:
+  deploy:
+    name: "Deploy Serverless API"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }} 
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Generate CalVer Tag
+        id: calver
+        run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        run: terraform init -backend-config=config/$TF_FOLDER/config.remote
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Apply
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
+        run: |
+          terraform apply \
+            -var-file=config/$TF_FOLDER/config.tfvars \
+            -var="image_tag=$IMAGE_TAG" \
+            -auto-approve \
+            -no-color
+        working-directory: ${{ env.TF_WORKING_DIR }}

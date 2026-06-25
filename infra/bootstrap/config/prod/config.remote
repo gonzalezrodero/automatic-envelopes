@@ -1,0 +1,5 @@
+bucket         = "automatic-envelopes-tf-state-149168707361"
+key            = "bootstrap/terraform.tfstate"
+region         = "eu-west-1"
+encrypt        = true
+use_lockfile   = true

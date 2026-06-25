@@ -17,6 +17,10 @@
     <File Path="infra/bootstrap/config/dev/config.remote" />
     <File Path="infra/bootstrap/config/dev/config.tfvars" />
   </Folder>
+  <Folder Name="/infra/bootstrap/config/prod/">
+    <File Path="infra/bootstrap/config/prod/config.remote" />
+    <File Path="infra/bootstrap/config/prod/config.tfvars" />
+  </Folder>
   <Folder Name="/infra/db/">
     <File Path="infra/db/backend.tf" />
     <File Path="infra/db/data.tf" />
@@ -29,6 +33,10 @@
     <File Path="infra/db/config/dev/config.remote" />
     <File Path="infra/db/config/dev/config.tfvars" />
   </Folder>
+  <Folder Name="/infra/db/config/prod/">
+    <File Path="infra/db/config/prod/config.remote" />
+    <File Path="infra/db/config/prod/config.tfvars" />
+  </Folder>
   <Folder Name="/infra/network/">
     <File Path="infra/network/backend.tf" />
     <File Path="infra/network/main.tf" />
@@ -39,6 +47,10 @@
   <Folder Name="/infra/network/config/dev/">
     <File Path="infra/network/config/dev/config.remote" />
     <File Path="infra/network/config/dev/config.tfvars" />
+  </Folder>
+  <Folder Name="/infra/network/config/prod/">
+    <File Path="infra/network/config/prod/config.remote" />
+    <File Path="infra/network/config/prod/config.tfvars" />
   </Folder>
   <Folder Name="/infra/serverless/">
     <File Path="infra/serverless/backend.tf" />
@@ -54,6 +66,10 @@
   <Folder Name="/infra/serverless/config/dev/">
     <File Path="infra/serverless/config/dev/config.remote" />
     <File Path="infra/serverless/config/dev/config.tfvars" />
+  </Folder>
+  <Folder Name="/infra/serverless/config/prod/">
+    <File Path="infra/serverless/config/prod/config.remote" />
+    <File Path="infra/serverless/config/prod/config.tfvars" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj" />
