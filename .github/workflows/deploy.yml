@@ -13,7 +13,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -32,6 +31,9 @@ jobs:
   deploy-dev:
     needs: build-and-test
     uses: ./.github/workflows/reusable-serverless.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       env_name: development
       tf_folder: dev
@@ -41,6 +43,9 @@ jobs:
   deploy-prod:
     needs: deploy-dev
     uses: ./.github/workflows/reusable-serverless.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       env_name: production
       tf_folder: prod
