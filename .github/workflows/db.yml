@@ -1,8 +1,8 @@
 name: "CI/CD: Database Infrastructure"
-
 on:
   push:
-    branches: [ 'main' ]
+    branches:
+      - main
     paths:
       - 'infra/db/**'
       - '.github/workflows/db.yml'
@@ -11,11 +11,7 @@ on:
 
 jobs:
   deploy-dev:
-    name: "Development"
     uses: ./.github/workflows/reusable-terraform.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       env_name: development
       tf_folder: dev
@@ -24,12 +20,8 @@ jobs:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
   deploy-prod:
-    name: "Production"
     needs: deploy-dev
     uses: ./.github/workflows/reusable-terraform.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       env_name: production
       tf_folder: prod

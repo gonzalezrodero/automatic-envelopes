@@ -1,4 +1,4 @@
-name: "Template: Deploy Serverless"
+name: "Template: Build, Plan & Apply Serverless"
 
 on:
   workflow_call:
@@ -6,11 +6,9 @@ on:
       env_name:
         required: true
         type: string
-        description: "GitHub Environment name (e.g., development, production)"
       tf_folder:
         required: true
         type: string
-        description: "Terraform config folder (e.g., dev, prod)"
     secrets:
       AWS_ROLE_ARN:
         required: true
@@ -21,29 +19,23 @@ env:
   TF_WORKING_DIR: 'infra/serverless'
 
 jobs:
-  deploy:
-    name: "Deploy Serverless API"
+  plan:
+    name: "Build & Terraform Plan"
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env_name }} 
-    
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image_tag: ${{ steps.calver.outputs.tag }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Generate CalVer Tag
-        id: calver
+      - uses: actions/checkout@v4
+      - id: calver
         run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
+      - uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076
       - name: Build and Push Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -51,24 +43,46 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
+      - uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d8
       - name: Terraform Init
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ env.TF_WORKING_DIR }}
+      - name: Terraform Plan
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+          TAG: ${{ steps.calver.outputs.tag }}
+        run: terraform plan -var-file=config/$TF_FOLDER/config.tfvars -var="image_tag=$TAG" -no-color
+        working-directory: ${{ env.TF_WORKING_DIR }}
 
+  apply:
+    name: "Terraform Apply"
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d8
+      - name: Terraform Init
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        run: terraform init -backend-config=config/$TF_FOLDER/config.remote
+        working-directory: ${{ env.TF_WORKING_DIR }}
       - name: Terraform Apply
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
-          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
+          TAG: ${{ needs.plan.outputs.image_tag }}
         run: |
           terraform apply \
             -var-file=config/$TF_FOLDER/config.tfvars \
-            -var="image_tag=$IMAGE_TAG" \
-            -auto-approve \
-            -no-color
+            -var="image_tag=$TAG" \
+            -auto-approve -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}

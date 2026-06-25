@@ -1,10 +1,9 @@
 name: "CI/CD: Infrastructure Destruction"
-
 on:
   workflow_dispatch:
     inputs:
       env_name:
-        description: 'Environment to DESTROY'
+        description: 'Env'
         required: true
         default: 'development'
         type: choice
@@ -12,7 +11,7 @@ on:
           - development
           - production
       target_folder:
-        description: 'Terraform folder to DESTROY'
+        description: 'Folder'
         required: true
         default: 'infra/serverless'
         type: choice
@@ -21,7 +20,7 @@ on:
           - infra/db
           - infra/network
       confirmation:
-        description: 'Type "yes" to confirm destruction'
+        description: 'Type "yes"'
         required: true
         default: 'no'
 
@@ -29,61 +28,29 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  AWS_REGION: eu-west-1
-
 jobs:
   destroy:
-    name: "Terraform Destroy"
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env_name }} 
-    
+    environment: ${{ inputs.env_name }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Verify Confirmation
+      - uses: actions/checkout@v4
+      - name: Verify
         env:
-          CONFIRM_INPUT: ${{ inputs.confirmation }}
+          CONF: ${{ inputs.confirmation }}
         run: |
-          if [ "$CONFIRM_INPUT" != "yes" ]; then
-            echo "Destruction aborted. Confirmation was not 'yes'."
-            exit 1
-          fi
-
-      - name: Set Terraform Folder Name
-        id: tf-env
-        env:
-          ENV_NAME: ${{ inputs.env_name }}
-        run: |
-          if [ "$ENV_NAME" == "production" ]; then
-            echo "folder=prod" >> $GITHUB_OUTPUT
-          else
-            echo "folder=dev" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+          [ "$CONF" == "yes" ] || exit 1
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }} 
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        env:
-          TF_FOLDER: ${{ steps.tf-env.outputs.folder }}
-        run: terraform init -backend-config="config/$TF_FOLDER/config.remote"
-        working-directory: ${{ inputs.target_folder }}
-
-      - name: Terraform Destroy
-        env:
-          TF_FOLDER: ${{ steps.tf-env.outputs.folder }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-1
+      - uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d8
+      - name: Set Folder
+        id: env
         run: |
-          terraform destroy \
-            -var-file="config/$TF_FOLDER/config.tfvars" \
-            -var="image_tag=destroy-dummy" \
-            -auto-approve \
-            -no-color
+          echo "folder=$([ "${{ inputs.env_name }}" == "production" ] && echo "prod" || echo "dev")" >> $GITHUB_OUTPUT
+      - name: Terraform Init
+        run: terraform init -backend-config="config/${{ steps.env.outputs.folder }}/config.remote"
+        working-directory: ${{ inputs.target_folder }}
+      - name: Terraform Destroy
+        run: terraform destroy -var-file="config/${{ steps.env.outputs.folder }}/config.tfvars" -var="image_tag=destroy" -auto-approve
         working-directory: ${{ inputs.target_folder }}
