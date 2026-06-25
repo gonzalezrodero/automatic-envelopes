@@ -1,58 +1,52 @@
-name: "Template: Terraform Apply"
+name: "Template: Terraform Plan & Apply"
 
 on:
   workflow_call:
     inputs:
-      env_name:
-        required: true
-        type: string
-        description: "GitHub Environment name (e.g., development, production)"
-      tf_folder:
-        required: true
-        type: string
-        description: "Terraform config folder (e.g., dev, prod)"
-      working_dir:
-        required: true
-        type: string
-        description: "Terraform module path (e.g., infra/db)"
+      env_name: { required: true, type: string }
+      tf_folder: { required: true, type: string }
+      working_dir: { required: true, type: string }
     secrets:
-      AWS_ROLE_ARN:
-        required: true
+      AWS_ROLE_ARN: { required: true }
 
 env:
   AWS_REGION: eu-west-1
 
 jobs:
-  deploy:
-    name: "Deploy Terraform"
+  plan:
+    name: "Plan"
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env_name }} 
-    
+    permissions: { id-token: write, contents: read }
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: ${{ secrets.AWS_ROLE_ARN }}, aws-region: ${{ env.AWS_REGION }} }
+      - uses: hashicorp/setup-terraform@v3
       - name: Terraform Init
-        env:
-          TF_FOLDER: ${{ inputs.tf_folder }}
+        env: { TF_FOLDER: ${{ inputs.tf_folder }} }
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ inputs.working_dir }}
+      - name: Terraform Plan
+        env: { TF_FOLDER: ${{ inputs.tf_folder }} }
+        run: terraform plan -var-file=config/$TF_FOLDER/config.tfvars -no-color
+        working-directory: ${{ inputs.working_dir }}
 
+  apply:
+    name: "Apply"
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }} # Aquest environment és el que activa el botó d'aprovació
+    permissions: { id-token: write, contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: ${{ secrets.AWS_ROLE_ARN }}, aws-region: ${{ env.AWS_REGION }} }
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform Init
+        env: { TF_FOLDER: ${{ inputs.tf_folder }} }
+        run: terraform init -backend-config=config/$TF_FOLDER/config.remote
+        working-directory: ${{ inputs.working_dir }}
       - name: Terraform Apply
-        env:
-          TF_FOLDER: ${{ inputs.tf_folder }}
-        run: |
-          terraform apply \
-            -var-file=config/$TF_FOLDER/config.tfvars \
-            -auto-approve \
-            -no-color
+        env: { TF_FOLDER: ${{ inputs.tf_folder }} }
+        run: terraform apply -var-file=config/$TF_FOLDER/config.tfvars -auto-approve -no-color
         working-directory: ${{ inputs.working_dir }}

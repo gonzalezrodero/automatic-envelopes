@@ -22,3 +22,8 @@ variable "allocated_storage" {
   description = "The allocated storage in gigabytes"
   type        = number
 }
+
+variable "aws_account_id" {
+  type    = string
+  default = "543704476214"
+}
