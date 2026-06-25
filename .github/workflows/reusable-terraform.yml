@@ -1,0 +1,54 @@
+name: "Template: Terraform Apply"
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        required: true
+        type: string
+        description: "GitHub Environment name (e.g., development, production)"
+      tf_folder:
+        required: true
+        type: string
+        description: "Terraform config folder (e.g., dev, prod)"
+      working_dir:
+        required: true
+        type: string
+        description: "Terraform module path (e.g., infra/db)"
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  deploy:
+    name: "Deploy Terraform"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }} 
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -backend-config=config/${{ inputs.tf_folder }}/config.remote
+        working-directory: ${{ inputs.working_dir }}
+
+      - name: Terraform Apply
+        run: |
+          terraform apply \
+            -var-file=config/${{ inputs.tf_folder }}/config.tfvars \
+            -auto-approve \
+            -no-color
+        working-directory: ${{ inputs.working_dir }}

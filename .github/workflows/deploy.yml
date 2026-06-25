@@ -1,105 +1,62 @@
-name: "CI/CD: Build API & Deploy Serverless"
+name: "CI/CD: API & Serverless"
 
 on:
   push:
-    branches: [ '**' ]
+    branches: [ 'main' ]
     paths:
       - 'src/**'
+      - 'tests/**'
       - 'Dockerfile'
       - 'infra/serverless/**'
       - '.github/workflows/deploy.yml'
+      - '.github/workflows/reusable-serverless.yml'
   workflow_dispatch:
-
-env:
-  AWS_REGION: eu-west-1
-  ECR_REPOSITORY: automatic-envelopes-api 
-  ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_ARN }} 
-  TF_WORKING_DIR: 'infra/serverless'
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  build-and-plan:
-    name: "Build & Terraform Plan"
+  # ==========================================
+  # 1. CI: BUILD & TEST
+  # ==========================================
+  build-and-test:
+    name: "Build & Run Tests"
     runs-on: ubuntu-latest
-    outputs:
-      calver_tag: ${{ steps.calver.outputs.tag }}
-    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Generate CalVer Tag
-        id: calver
-        run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          dotnet-version: '8.0.x' 
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Restore dependencies
+        run: dotnet restore src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj
 
-      - name: Build and Push Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Build project
+        run: dotnet build src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj --no-restore --configuration Release
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Run Unit Tests
+        run: dotnet test tests/AutomaticEnvelopes.Tests/AutomaticEnvelopes.Tests.csproj --no-build --configuration Release --verbosity normal
 
-      - name: Terraform Init
-        run: terraform init -backend-config=config/dev/config.remote
-        working-directory: ${{ env.TF_WORKING_DIR }}
+  deploy-dev:
+    name: "Development"
+    needs: build-and-test # Only proceed if .NET tests pass
+    uses: ./.github/workflows/reusable-serverless.yml
+    with:
+      env_name: development
+      tf_folder: dev
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
-      - name: Terraform Plan
-        id: plan
-        run: |
-          terraform plan \
-            -var-file=config/dev/config.tfvars \
-            -var="image_tag=${{ steps.calver.outputs.tag }}" \
-            -no-color
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-  apply:
-    name: "Terraform Apply"
-    needs: build-and-plan
-    # Triggers on manual execution from UI OR any push to any branch
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: development
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        run: terraform init -backend-config=config/dev/config.remote
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - name: Terraform Apply
-        run: |
-          terraform apply \
-            -var-file=config/dev/config.tfvars \
-            -var="image_tag=${{ needs.build-and-plan.outputs.calver_tag }}" \
-            -auto-approve \
-            -no-color
-        working-directory: ${{ env.TF_WORKING_DIR }}
+  deploy-prod:
+    name: "Production"
+    needs: deploy-dev # Waits for Dev deployment
+    uses: ./.github/workflows/reusable-serverless.yml
+    with:
+      env_name: production
+      tf_folder: prod
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
