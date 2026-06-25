@@ -22,6 +22,7 @@ jobs:
   plan:
     name: "Build & Terraform Plan"
     runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }}
     permissions:
       id-token: write
       contents: read
