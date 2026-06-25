@@ -30,14 +30,37 @@ jobs:
       image_tag: ${{ steps.calver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+      
       - id: calver
         run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
+        
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          
+      - uses: hashicorp/setup-terraform@v3
+      
+      - name: Terraform Init
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        run: terraform init -backend-config=config/$TF_FOLDER/config.remote
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        
+      - name: Pre-create ECR
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        run: |
+          terraform apply \
+            -target=aws_ecr_repository.backend \
+            -var-file=config/$TF_FOLDER/config.tfvars \
+            -var="image_tag=dummy" \
+            -auto-approve -no-color
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
       - uses: aws-actions/amazon-ecr-login@v2
         id: login-ecr
+        
       - name: Build and Push Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -45,12 +68,7 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-      - uses: hashicorp/setup-terraform@v3
-      - name: Terraform Init
-        env:
-          TF_FOLDER: ${{ inputs.tf_folder }}
-        run: terraform init -backend-config=config/$TF_FOLDER/config.remote
-        working-directory: ${{ env.TF_WORKING_DIR }}
+          
       - name: Terraform Plan
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
@@ -68,16 +86,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          
       - uses: hashicorp/setup-terraform@v3
+      
       - name: Terraform Init
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ env.TF_WORKING_DIR }}
+        
       - name: Terraform Apply
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
