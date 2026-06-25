@@ -39,11 +39,11 @@ jobs:
           CONF: ${{ inputs.confirmation }}
         run: |
           [ "$CONF" == "yes" ] || exit 1
-      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: eu-west-1
-      - uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d8
+      - uses: hashicorp/setup-terraform@v3
       - name: Set Folder
         id: env
         run: |
