@@ -59,7 +59,7 @@ public static class AwsConfigurationExtensions
             {
                 Host = dbHost,
                 Port = dbPort,
-                Database = "automatic-envelopes",
+                Database = "automaticenvelopes",
                 Username = root.GetProperty("username").GetString(),
                 Password = root.GetProperty("password").GetString(),
                 SslMode = SslMode.Require

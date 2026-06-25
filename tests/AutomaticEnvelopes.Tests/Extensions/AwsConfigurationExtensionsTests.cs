@@ -45,7 +45,7 @@ public class AwsConfigurationExtensionsTests : IDisposable
         injectedValue.Should().Contain("Host=localhost");
         injectedValue.Should().Contain("Port=5432");
         injectedValue.Should().Contain("Username=dbadmin");
-        injectedValue.Should().Contain("Database=automatic-envelopes");
+        injectedValue.Should().Contain("Database=automaticenvelopes");
 
         secretsMock.Verify(x => x.GetSecretValueAsync(It.IsAny<GetSecretValueRequest>(), default), Times.Once);
         ssmMock.Verify(x => x.GetParametersByPathAsync(It.IsAny<GetParametersByPathRequest>(), default), Times.Never);
