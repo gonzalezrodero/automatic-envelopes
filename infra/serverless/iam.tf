@@ -42,20 +42,28 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
     ]
   }
 
-  statement {
+statement {
     sid    = "AllowSecretsAndSSM"
     effect = "Allow"
     actions = [
       "secretsmanager:GetSecretValue",
       "ssm:GetParameters",
       "ssm:GetParameter",
-      "ssm:GetParametersByPath",
-      "kms:Decrypt"
+      "ssm:GetParametersByPath"
     ]
     resources = [
       data.terraform_remote_state.database.outputs.db_password_secret_arn,
       "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/automatic-envelopes/*"
     ]
+  }
+
+  statement {
+    sid    = "AllowKMSDecryptForSecrets"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt"
+    ]
+    resources = ["*"]
   }
 
   statement {
