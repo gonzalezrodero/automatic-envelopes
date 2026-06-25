@@ -3,10 +3,15 @@ name: "Template: Build, Plan & Apply Serverless"
 on:
   workflow_call:
     inputs:
-      env_name: { required: true, type: string }
-      tf_folder: { required: true, type: string }
+      env_name:
+        required: true
+        type: string
+      tf_folder:
+        required: true
+        type: string
     secrets:
-      AWS_ROLE_ARN: { required: true }
+      AWS_ROLE_ARN:
+        required: true
 
 env:
   AWS_REGION: eu-west-1
@@ -17,28 +22,37 @@ jobs:
   plan:
     name: "Build & Terraform Plan"
     runs-on: ubuntu-latest
-    permissions: { id-token: write, contents: read }
+    permissions:
+      id-token: write
+      contents: read
     outputs:
-      image_tag: ${{ steps.calver.outputs.tag }} # Passem el tag al següent job
+      image_tag: ${{ steps.calver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - id: calver
         run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
-      - uses: aws-actions/configure-aws-credentials@v4
-        with: { role-to-assume: ${{ secrets.AWS_ROLE_ARN }}, aws-region: ${{ env.AWS_REGION }} }
-      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076
       - name: Build and Push Image
-        env: { ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}, IMAGE_TAG: ${{ steps.calver.outputs.tag }} }
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d8
       - name: Terraform Init
-        env: { TF_FOLDER: ${{ inputs.tf_folder }} }
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ env.TF_WORKING_DIR }}
       - name: Terraform Plan
-        env: { TF_FOLDER: ${{ inputs.tf_folder }}, TAG: ${{ steps.calver.outputs.tag }} }
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+          TAG: ${{ steps.calver.outputs.tag }}
         run: terraform plan -var-file=config/$TF_FOLDER/config.tfvars -var="image_tag=$TAG" -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}
 
@@ -46,19 +60,26 @@ jobs:
     name: "Terraform Apply"
     needs: plan
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env_name }} # <-- Aquí és on s'atura per aprovació manual
-    permissions: { id-token: write, contents: read }
+    environment: ${{ inputs.env_name }}
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with: { role-to-assume: ${{ secrets.AWS_ROLE_ARN }}, aws-region: ${{ env.AWS_REGION }} }
-      - uses: hashicorp/setup-terraform@v3
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@651471c36a6092792c552e8b1bef71e592b462d8
       - name: Terraform Init
-        env: { TF_FOLDER: ${{ inputs.tf_folder }} }
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ env.TF_WORKING_DIR }}
       - name: Terraform Apply
-        env: { TF_FOLDER: ${{ inputs.tf_folder }}, TAG: ${{ needs.plan.outputs.image_tag }} }
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+          TAG: ${{ needs.plan.outputs.image_tag }}
         run: |
           terraform apply \
             -var-file=config/$TF_FOLDER/config.tfvars \

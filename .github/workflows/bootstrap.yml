@@ -1,9 +1,9 @@
 ﻿name: "CI/CD: Bootstrap Infrastructure"
-
 on:
-  push:
-    branches: [ 'main' ]
-    paths:
+  push: 
+    branches:
+      - main
+    paths: 
       - 'infra/bootstrap/**'
       - '.github/workflows/bootstrap.yml'
       - '.github/workflows/reusable-terraform.yml'
@@ -13,26 +13,20 @@ jobs:
   deploy-dev:
     name: "Development"
     uses: ./.github/workflows/reusable-terraform.yml
-    permissions:
-      id-token: write
-      contents: read
-    with:
+    with: 
       env_name: development
       tf_folder: dev
       working_dir: infra/bootstrap
-    secrets:
+    secrets: 
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
   deploy-prod:
     name: "Production"
     needs: deploy-dev
     uses: ./.github/workflows/reusable-terraform.yml
-    permissions:
-      id-token: write
-      contents: read
-    with:
+    with: 
       env_name: production
       tf_folder: prod
       working_dir: infra/bootstrap
-    secrets:
+    secrets: 
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}

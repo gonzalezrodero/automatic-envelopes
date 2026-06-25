@@ -1,8 +1,8 @@
 name: "CI/CD: API & Serverless"
-
 on:
   push:
-    branches: [ 'main' ]
+    branches:
+      - main
     paths:
       - 'src/**'
       - 'tests/**'
@@ -13,56 +13,30 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ==========================================
-  # 1. CI: BUILD & TEST (No AWS permissions needed)
-  # ==========================================
   build-and-test:
     name: "Build & Run Tests"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x' 
-
-      - name: Restore dependencies
-        run: dotnet restore src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj
-
-      - name: Build project
-        run: dotnet build src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj --no-restore --configuration Release
-
-      - name: Run Unit Tests
-        run: dotnet test tests/AutomaticEnvelopes.Tests/AutomaticEnvelopes.Tests.csproj --no-build --configuration Release --verbosity normal
-
-  # ==========================================
-  # 2. CD: DEPLOY TO DEVELOPMENT
-  # ==========================================
+          dotnet-version: '10.0.x'
+      - run: dotnet restore src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj
+      - run: dotnet build src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj --no-restore --configuration Release
+      - run: dotnet test tests/AutomaticEnvelopes.Tests/AutomaticEnvelopes.Tests.csproj --no-build --configuration Release
+  
   deploy-dev:
-    name: "Development"
-    needs: build-and-test 
+    needs: build-and-test
     uses: ./.github/workflows/reusable-serverless.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       env_name: development
       tf_folder: dev
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
-  # ==========================================
-  # 3. CD: DEPLOY TO PRODUCTION
-  # ==========================================
   deploy-prod:
-    name: "Production"
-    needs: deploy-dev 
+    needs: deploy-dev
     uses: ./.github/workflows/reusable-serverless.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       env_name: production
       tf_folder: prod
