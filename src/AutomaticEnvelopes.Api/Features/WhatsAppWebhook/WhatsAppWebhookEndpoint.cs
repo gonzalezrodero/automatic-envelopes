@@ -8,7 +8,7 @@ namespace AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
 
 public class WhatsAppWebhookEndpoint
 {
-[WolverineGet("/api/whatsapp/webhook")]
+    [WolverineGet("/api/whatsapp/webhook")]
     public IResult VerifyChallenge(
         [FromQuery(Name = "hub.mode")] string? mode,
         [FromQuery(Name = "hub.verify_token")] string? token,
@@ -16,14 +16,25 @@ public class WhatsAppWebhookEndpoint
         IOptions<WhatsAppOptions> options,
         ILogger<WhatsAppWebhookEndpoint> logger)
     {
+        logger.LogInformation("=== STARTING WEBHOOK VERIFICATION (GET) ===");
+
         var verifyToken = options.Value.VerifyToken;
 
-        if (mode == "subscribe" && token == verifyToken && !string.IsNullOrEmpty(challenge))
+        bool isModeSubscribe = mode == "subscribe";
+        bool isTokenMatch = token == verifyToken;
+        bool hasChallenge = !string.IsNullOrEmpty(challenge);
+
+        // Apenas regista valores booleanos seguros para depuração
+        logger.LogInformation("Evaluating conditions -> Mode is Subscribe? {IsMode}, Token Matches? {IsTokenMatch}, Has Challenge? {HasChallenge}",
+            isModeSubscribe, isTokenMatch, hasChallenge);
+
+        if (isModeSubscribe && isTokenMatch && hasChallenge)
         {
+            logger.LogInformation("Webhook verification successful. Returning HTTP 200 with challenge.");
             return Results.Content(challenge, "text/plain");
         }
 
-        logger.LogWarning("Webhook verification failed. Expected Token: '{Expected}', Received Token: '{Received}'", verifyToken, token);
+        logger.LogWarning("Webhook verification failed due to mismatched conditions. Returning HTTP 403.");
 
         return Results.Forbid();
     }
