@@ -35,33 +35,47 @@ public static class MessageReceivedHandler
             return;
         }
 
-        await ProcessResponseAsync(@event, tenant, session, knowledgeBase, chatService, bus, ct);
+        await ProcessResponseAsync(@event, tenant, session, knowledgeBase, chatService, bus, logger, ct);
     }
 
     private static async Task ProcessResponseAsync(
-        MessageReceived @event,
-        TenantProfile tenant,
-        IDocumentSession session,
-        IKnowledgeBaseService knowledgeBase,
-        IChatService chatService,
-        IMessageBus bus,
-        CancellationToken ct)
+            MessageReceived @event,
+            TenantProfile tenant,
+            IDocumentSession session,
+            IKnowledgeBaseService knowledgeBase,
+            IChatService chatService,
+            IMessageBus bus,
+            ILogger logger,
+            CancellationToken ct)
     {
         var chatHistory = await ExtractChatHistory(@event.PhoneNumber, session, ct);
 
+        logger.LogInformation("Buscando contexto relevante en la base de datos vectorial para el tenant {TenantId}...", @event.TenantId);
         var context = await GetRelevantContextAsync(knowledgeBase, @event.TenantId, @event.Text, ct);
 
         var isFirstMessage = chatHistory.Count <= 1;
         var systemMessage = BuildSystemPrompt(tenant, isFirstMessage, context);
 
-        var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, @event.TenantId, ct);
+        logger.LogInformation("Llamando a AWS Bedrock (ChatService) para generar la respuesta...");
 
-        if (string.IsNullOrWhiteSpace(replyText))
+        try
         {
-            replyText = "I'm sorry, I couldn't process that request.";
-        }
+            var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, @event.TenantId, ct);
+            logger.LogInformation("AWS Bedrock respondió correctamente.");
 
-        await SaveAndPublishReplyAsync(@event, replyText, session, bus, ct);
+            if (string.IsNullOrWhiteSpace(replyText))
+            {
+                logger.LogWarning("Bedrock devolvió una respuesta vacía o nula.");
+                replyText = "I'm sorry, I couldn't process that request.";
+            }
+
+            await SaveAndPublishReplyAsync(@event, replyText, session, bus, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[ERROR BEDROCK] Fallo al generar la respuesta con la IA para el tenant {TenantId}", @event.TenantId);
+            throw;
+        }
     }
 
     private static async Task SendDeleteCommandAsync(MessageReceived @event, IMessageBus bus, CancellationToken ct)

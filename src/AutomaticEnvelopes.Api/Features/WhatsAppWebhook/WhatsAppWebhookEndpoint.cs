@@ -24,10 +24,6 @@ public class WhatsAppWebhookEndpoint
         bool isTokenMatch = token == verifyToken;
         bool hasChallenge = !string.IsNullOrEmpty(challenge);
 
-        // Apenas regista valores booleanos seguros para depuração
-        logger.LogInformation("Evaluating conditions -> Mode is Subscribe? {IsMode}, Token Matches? {IsTokenMatch}, Has Challenge? {HasChallenge}",
-            isModeSubscribe, isTokenMatch, hasChallenge);
-
         if (isModeSubscribe && isTokenMatch && hasChallenge)
         {
             logger.LogInformation("Webhook verification successful. Returning HTTP 200 with challenge.");

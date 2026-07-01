@@ -69,8 +69,11 @@ public class SqsLambdaHandler
                     await bus.InvokeAsync(message, cts.Token);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine($"[ERROR FATAL EN WORKER] Fallo al procesar SQS MessageId: {record.MessageId}");
+                Console.WriteLine(ex.ToString());
+
                 response.BatchItemFailures.Add(new BatchItemFailure { ItemIdentifier = record.MessageId });
             }
         }

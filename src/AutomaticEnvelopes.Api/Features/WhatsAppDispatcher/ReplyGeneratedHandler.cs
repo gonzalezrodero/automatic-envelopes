@@ -10,6 +10,7 @@ public static class ReplyGeneratedHandler
         ReplyGenerated @event,
         IWhatsAppClient whatsappClient,
         IOptions<WhatsAppOptions> options,
+        ILogger logger,
         CancellationToken ct)
     {
         var config = options.Value;
@@ -22,6 +23,18 @@ public static class ReplyGeneratedHandler
             Text: new WhatsAppMessageBody(@event.Text)
         );
 
-        await whatsappClient.SendMessageAsync(@event.BotPhoneNumberId, request, token, ct);
+        logger.LogInformation("Enviando respuesta a WhatsApp para el número {PhoneNumber} (Tenant: {TenantId})",
+            @event.PhoneNumber, @event.TenantId);
+
+        try
+        {
+            await whatsappClient.SendMessageAsync(@event.BotPhoneNumberId, request, token, ct);
+            logger.LogInformation("Mensaje enviado con éxito a la API de Meta.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[ERROR WHATSAPP API] Fallo al enviar el mensaje a Meta para el número {PhoneNumber}", @event.PhoneNumber);
+            throw; 
+        }
     }
 }
