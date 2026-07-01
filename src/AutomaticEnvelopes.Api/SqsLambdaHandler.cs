@@ -66,6 +66,7 @@ public class SqsLambdaHandler
                 var message = JsonSerializer.Deserialize<ProcessWhatsAppMessage>(record.Body, jsonOptions);
                 if (message != null)
                 {
+                    Console.WriteLine($"[SQS] Mensaje deserializado OK. PhoneId detectado: {message.BotPhoneNumberId}");
                     await bus.InvokeAsync(message, cts.Token);
                 }
             }
