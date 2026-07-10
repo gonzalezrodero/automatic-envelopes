@@ -4,6 +4,7 @@ using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using AutomaticEnvelopes.Api.Features.Tenants.Helpers;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using System.Text.Json;
 
@@ -11,7 +12,7 @@ namespace AutomaticEnvelopes.Tests.Features.Chat.Tools;
 
 public class ToolExecutionServiceTests
 {
-    private readonly ToolExecutionService _sut = new();
+    private readonly ToolExecutionService _sut = new(NullLogger<ToolExecutionService>.Instance);
 
     [Fact]
     public async Task ExecuteToolsAsync_ReturnsNull_WhenNoToolUseBlockExists()

@@ -23,18 +23,18 @@ public static class ReplyGeneratedHandler
             Text: new WhatsAppMessageBody(@event.Text)
         );
 
-        logger.LogInformation("Enviando respuesta a WhatsApp para el número {PhoneNumber} (Tenant: {TenantId})",
-            @event.PhoneNumber, @event.TenantId);
+        logger.LogInformation("Dispatching reply to WhatsApp Graph API. PhoneNumber: {PhoneNumber}, TenantId: {TenantId}", @event.PhoneNumber, @event.TenantId);
 
         try
         {
             await whatsappClient.SendMessageAsync(@event.BotPhoneNumberId, request, token, ct);
-            logger.LogInformation("Mensaje enviado con éxito a la API de Meta.");
+            logger.LogInformation("Message successfully dispatched to Meta API for PhoneNumber: {PhoneNumber}.", @event.PhoneNumber);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "[ERROR WHATSAPP API] Fallo al enviar el mensaje a Meta para el número {PhoneNumber}", @event.PhoneNumber);
-            throw; 
+            // Logs the raw HTTP exception details for troubleshooting Meta token/permission errors
+            logger.LogError(ex, "Failed to send WhatsApp message to Meta API. PhoneNumber: {PhoneNumber}, TenantId: {TenantId}", @event.PhoneNumber, @event.TenantId);
+            throw;
         }
     }
 }

@@ -31,6 +31,7 @@ public static class MessageReceivedHandler
         var userText = @event.Text.Trim().ToUpperInvariant();
         if (BotPrompts.DeleteCommands.Contains(userText))
         {
+            logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", @event.PhoneNumber);
             await SendDeleteCommandAsync(@event, bus, ct);
             return;
         }
@@ -50,30 +51,29 @@ public static class MessageReceivedHandler
     {
         var chatHistory = await ExtractChatHistory(@event.PhoneNumber, session, ct);
 
-        logger.LogInformation("Buscando contexto relevante en la base de datos vectorial para el tenant {TenantId}...", @event.TenantId);
+        logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", @event.TenantId);
         var context = await GetRelevantContextAsync(knowledgeBase, @event.TenantId, @event.Text, ct);
 
         var isFirstMessage = chatHistory.Count <= 1;
         var systemMessage = BuildSystemPrompt(tenant, isFirstMessage, context);
 
-        logger.LogInformation("Llamando a AWS Bedrock (ChatService) para generar la respuesta...");
+        logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", @event.TenantId);
 
         try
         {
             var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, @event.TenantId, ct);
-            logger.LogInformation("AWS Bedrock respondió correctamente.");
 
             if (string.IsNullOrWhiteSpace(replyText))
             {
-                logger.LogWarning("Bedrock devolvió una respuesta vacía o nula.");
+                logger.LogWarning("Bedrock returned an empty or null response. Applying fallback message for TenantId: {TenantId}.", @event.TenantId);
                 replyText = "I'm sorry, I couldn't process that request.";
             }
 
-            await SaveAndPublishReplyAsync(@event, replyText, session, bus, ct);
+            await SaveAndPublishReplyAsync(@event, replyText, session, bus, logger, ct);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "[ERROR BEDROCK] Fallo al generar la respuesta con la IA para el tenant {TenantId}", @event.TenantId);
+            logger.LogError(ex, "Fatal error invoking AI generation for TenantId: {TenantId}. MessageId: {MessageId}", @event.TenantId, @event.MessageId);
             throw;
         }
     }
@@ -140,7 +140,7 @@ public static class MessageReceivedHandler
         return string.Format(BotPrompts.SystemPromptTemplate, personaPrompt, privacyWarningRule, currentDate, context);
     }
 
-    private static async Task SaveAndPublishReplyAsync(MessageReceived @event, string replyText, IDocumentSession session, IMessageBus bus, CancellationToken ct)
+    private static async Task SaveAndPublishReplyAsync(MessageReceived @event, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)
     {
         var replyEvent = new ReplyGenerated(
             @event.MessageId,
@@ -151,6 +151,8 @@ public static class MessageReceivedHandler
 
         session.Events.Append(@event.PhoneNumber, replyEvent);
         await session.SaveChangesAsync(ct);
+
+        logger.LogInformation("Bot reply saved to event stream. Dispatching ReplyGenerated event to Wolverine.");
         await bus.InvokeAsync(replyEvent, ct);
     }
 }

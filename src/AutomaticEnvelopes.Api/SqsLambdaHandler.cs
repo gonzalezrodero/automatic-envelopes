@@ -15,17 +15,20 @@ public class SqsLambdaHandler
     private static readonly Lazy<IServiceProvider> services = new(BuildWorkerProvider);
 
     private readonly IMessageBus bus;
+    private readonly ILogger<SqsLambdaHandler> logger;
     private readonly JsonSerializerOptions jsonOptions;
 
     public SqsLambdaHandler()
     {
         bus = services.Value.GetRequiredService<IMessageBus>();
+        logger = services.Value.GetRequiredService<ILogger<SqsLambdaHandler>>();
         jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
     }
 
-    public SqsLambdaHandler(IMessageBus bus)
+    public SqsLambdaHandler(IMessageBus bus, ILogger<SqsLambdaHandler> logger)
     {
         this.bus = bus;
+        this.logger = logger;
         this.jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
     }
 
@@ -46,12 +49,17 @@ public class SqsLambdaHandler
         var host = builder.Build();
         host.Start();
 
+        var initLogger = host.Services.GetRequiredService<ILogger<SqsLambdaHandler>>();
+        initLogger.LogInformation("AWS Lambda Worker cold start completed. Host initialized successfully.");
+
         return host.Services;
     }
 
     public async Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
     {
         var response = new SQSBatchResponse { BatchItemFailures = [] };
+
+        logger.LogInformation("SQS Lambda Handler triggered. Processing a batch of {RecordCount} records.", sqsEvent.Records.Count);
 
         using var cts = new CancellationTokenSource();
         if (context != null && context.RemainingTime > TimeSpan.FromMilliseconds(500))
@@ -63,21 +71,31 @@ public class SqsLambdaHandler
         {
             try
             {
+                logger.LogInformation("Attempting to deserialize SQS record. MessageId: {MessageId}", record.MessageId);
+
                 var message = JsonSerializer.Deserialize<ProcessWhatsAppMessage>(record.Body, jsonOptions);
+
                 if (message != null)
                 {
-                    Console.WriteLine($"[SQS] Mensaje deserializado OK. PhoneId detectado: {message.BotPhoneNumberId}");
+                    logger.LogInformation("Successfully deserialized SQS message. BotPhoneNumberId: {BotPhoneNumberId}. Invoking Wolverine bus.", message.BotPhoneNumberId);
+
                     await bus.InvokeAsync(message, cts.Token);
+
+                    logger.LogInformation("Successfully processed SQS record. MessageId: {MessageId}", record.MessageId);
+                }
+                else
+                {
+                    logger.LogWarning("Deserialization returned null for SQS record. MessageId: {MessageId}. Body might be invalid JSON.", record.MessageId);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR FATAL EN WORKER] Fallo al procesar SQS MessageId: {record.MessageId}");
-                Console.WriteLine(ex.ToString());
-
+                logger.LogError(ex, "Fatal error while processing SQS record. MessageId: {MessageId}. Adding to batch item failures.", record.MessageId);
                 response.BatchItemFailures.Add(new BatchItemFailure { ItemIdentifier = record.MessageId });
             }
         }
+
+        logger.LogInformation("Finished processing SQS batch. Failures: {FailureCount} out of {TotalCount}.", response.BatchItemFailures.Count, sqsEvent.Records.Count);
 
         return response;
     }

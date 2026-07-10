@@ -16,23 +16,31 @@ public class WhatsAppWebhookEndpoint
         IOptions<WhatsAppOptions> options,
         ILogger<WhatsAppWebhookEndpoint> logger)
     {
-        logger.LogInformation("=== STARTING WEBHOOK VERIFICATION (GET) ===");
-
         var verifyToken = options.Value.VerifyToken;
 
         bool isModeSubscribe = mode == "subscribe";
         bool isTokenMatch = token == verifyToken;
         bool hasChallenge = !string.IsNullOrEmpty(challenge);
 
+        logger.LogInformation(
+            "Received WhatsApp webhook verification request. Mode: {HubMode}, HasChallenge: {HasChallenge}, IsTokenMatch: {IsTokenMatch}",
+            mode,
+            hasChallenge,
+            isTokenMatch);
+
         if (isModeSubscribe && isTokenMatch && hasChallenge)
         {
-            logger.LogInformation("Webhook verification successful. Returning HTTP 200 with challenge.");
-            return Results.Content(challenge, "text/plain");
+            logger.LogInformation("WhatsApp webhook verification successful. Returning HTTP 200 with challenge.");
+            return Results.Content(challenge!, "text/plain");
         }
 
-        logger.LogWarning("Webhook verification failed due to mismatched conditions. Returning HTTP 403.");
+        logger.LogWarning(
+            "WhatsApp webhook verification failed. IsModeSubscribe: {IsModeSubscribe}, IsTokenMatch: {IsTokenMatch}, HasChallenge: {HasChallenge}. Returning HTTP 403.",
+            isModeSubscribe,
+            isTokenMatch,
+            hasChallenge);
 
-        return Results.Forbid();
+        return Results.StatusCode(403);
     }
 
     [WolverinePost("/api/whatsapp/webhook")]
@@ -42,9 +50,11 @@ public class WhatsAppWebhookEndpoint
         IMessageBus bus,
         ILogger<WhatsAppWebhookEndpoint> logger)
     {
+        logger.LogInformation("Received incoming WhatsApp webhook POST request.");
+
         if (!await processor.IsSignatureValidAsync(request))
         {
-            logger.LogWarning("Invalid WhatsApp signature.");
+            logger.LogWarning("WhatsApp signature validation failed. The computed hash does not match the 'X-Hub-Signature-256' header. Rejecting with HTTP 401.");
             return Results.Unauthorized();
         }
 
@@ -52,11 +62,12 @@ public class WhatsAppWebhookEndpoint
 
         if (message != null)
         {
+            logger.LogInformation("Successfully extracted processable WhatsApp message. Publishing to message bus.");
             await bus.PublishAsync(message);
         }
         else
-        {
-            logger.LogDebug("Received Payload does not contain a processable message.");
+        { 
+            logger.LogInformation("Received valid WhatsApp webhook payload, but it does not contain a processable user message (e.g., status update or unsupported type). Ignored.");
         }
 
         return Results.Ok();

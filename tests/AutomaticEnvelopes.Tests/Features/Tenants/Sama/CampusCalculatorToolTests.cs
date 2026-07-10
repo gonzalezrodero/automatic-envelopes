@@ -1,12 +1,13 @@
 ﻿using AutomaticEnvelopes.Api.Features.Tenants.Sama.CampusPricing;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
 
 namespace AutomaticEnvelopes.Tests.Features.Tenants.Sama;
 
 public class CampusCalculatorToolTests
 {
-    private readonly CampusCalculatorTool _sut = new();
+    private readonly CampusCalculatorTool _sut = new(NullLogger<CampusCalculatorTool>.Instance);
 
     [Fact]
     public void GetSpecification_ReturnsValidToolSchema()
@@ -247,7 +248,6 @@ public class CampusCalculatorToolTests
         participant.CampusBasePrice.Should().Be(137.50m);
 
         // Familia Nombrosa discount is 15% applied OVER the 137.50 = 20.625 (rounds depending on decimal)
-        // 137.50 * 0.15 = 20.625. Let's verify the exact decimal math.
         participant.DiscountApplied.Should().Be(20.625m);
 
         // Total should be Base - Discount

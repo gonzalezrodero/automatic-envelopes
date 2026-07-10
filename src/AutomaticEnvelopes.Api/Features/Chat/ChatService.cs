@@ -16,7 +16,8 @@ public class ChatService(
     IAmazonBedrockRuntime client,
     IOptions<BedrockSettings> settings,
     IEnumerable<IBedrockTool> tools,
-    IToolExecutionService toolExecutionService) : IChatService
+    IToolExecutionService toolExecutionService,
+    ILogger<ChatService> logger) : IChatService
 {
     private readonly BedrockSettings settings = settings.Value;
 
@@ -40,6 +41,7 @@ public class ChatService(
         // Attach tools if we have any for this tenant
         if (tenantTools.Count != 0)
         {
+            logger.LogInformation("Attaching {ToolCount} tools to Bedrock request for TenantId: {TenantId}.", tenantTools.Count, tenantId);
             request.ToolConfig = new ToolConfiguration
             {
                 Tools = [.. tenantTools.Select(t => new Tool { ToolSpec = t.GetSpecification() })]
@@ -47,11 +49,13 @@ public class ChatService(
         }
 
         // 2. Initial generic call to Bedrock
+        logger.LogInformation("Invoking AWS Bedrock Converse API. ModelId: {ModelId}, TenantId: {TenantId}", settings.ModelId, tenantId);
         var response = await client.ConverseAsync(request, ct);
 
         // 3. Handle Tool Interception via the Converse API's StopReason
         if (response.StopReason == StopReason.Tool_use)
         {
+            logger.LogInformation("Bedrock requested tool execution. Intercepting response.");
             var toolResultMessage = await toolExecutionService.ExecuteToolsAsync(response.Output.Message, tenantTools, ct);
 
             if (toolResultMessage != null)
@@ -61,18 +65,23 @@ public class ChatService(
                 request.Messages.Add(toolResultMessage);
 
                 // 4. Send it back to the model for the final human-readable answer
+                logger.LogInformation("Tool results appended to history. Re-invoking Bedrock for final response.");
                 var finalResponse = await client.ConverseAsync(request, ct);
+
+                logger.LogInformation("Final Bedrock response received successfully.");
                 return finalResponse.Output.Message.Content.First(c => c.Text != null).Text;
             }
         }
 
         // 5. Normal text response
+        logger.LogInformation("Bedrock text response generated successfully without tool usage.");
         return response.Output.Message.Content.First(c => c.Text != null).Text;
     }
 
     public async Task<string> SanitizeHistoryAsync(string rawHistory, CancellationToken ct)
     {
-        // Create a generic Converse request for the sanitization task
+        logger.LogInformation("Invoking Bedrock to sanitize chat history.");
+
         var request = new ConverseRequest
         {
             ModelId = settings.ModelId,
@@ -93,6 +102,8 @@ public class ChatService(
         };
 
         var response = await client.ConverseAsync(request, ct);
+
+        logger.LogInformation("History sanitization completed successfully.");
         return response.Output.Message.Content.First(c => c.Text != null).Text;
     }
 
