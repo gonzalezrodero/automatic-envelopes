@@ -17,3 +17,15 @@ resource "aws_sqs_queue" "bot_queue" {
     maxReceiveCount     = 3
   })
 }
+
+resource "aws_sqs_queue" "system_queue" {
+  name                       = "${var.project_name}-system-queue"
+  visibility_timeout_seconds = 60
+
+  message_retention_seconds = 345600 # 4 days
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.bot_dlq.arn
+    maxReceiveCount     = 3
+  })
+}

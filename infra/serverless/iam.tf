@@ -38,7 +38,8 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
     ]
     resources = [
       aws_sqs_queue.bot_queue.arn,
-      aws_sqs_queue.bot_dlq.arn
+      aws_sqs_queue.bot_dlq.arn,
+      aws_sqs_queue.system_queue.arn
     ]
   }
 

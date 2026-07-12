@@ -1,4 +1,4 @@
-using Amazon.BedrockRuntime;
+﻿using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
 using AutomaticEnvelopes.Api;
 using AutomaticEnvelopes.Api.Common.Configuration;
@@ -131,10 +131,15 @@ public static class Config
                 .SendInline()
                 .UseInterop(queue => new RawJsonSqsMapper());
 
+            opts.PublishMessage<ChatWindowExpired>()
+                .ToSqsQueue("automatic-envelopes-system-queue");
+
             if (config.GetValue<bool>("EnableSqsListener"))
             {
                 opts.ListenToSqsQueue("automatic-envelopes-messages-queue")
                     .ReceiveRawJsonMessage(typeof(ProcessWhatsAppMessage));
+
+                opts.ListenToSqsQueue("automatic-envelopes-system-queue");
             }
         });
     }
