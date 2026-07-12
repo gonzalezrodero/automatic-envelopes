@@ -1,6 +1,7 @@
 ﻿using Alba;
 using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
+using Amazon.SQS;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Features.Tenancy;
@@ -47,10 +48,11 @@ public class IntegrationAppFixture : IAsyncLifetime
         var sqsPort = _sqsContainer.GetMappedPublicPort(9324);
         var sqsServiceUrl = $"http://127.0.0.1:{sqsPort}";
 
-        var sqsConfig = new Amazon.SQS.AmazonSQSConfig { ServiceURL = sqsServiceUrl, AuthenticationRegion = "us-east-1" };
-        using var sqsClient = new Amazon.SQS.AmazonSQSClient("dummy", "dummy", sqsConfig);
+        var sqsConfig = new AmazonSQSConfig { ServiceURL = sqsServiceUrl, AuthenticationRegion = "us-east-1" };
+        using var sqsClient = new AmazonSQSClient("dummy", "dummy", sqsConfig);
 
         await sqsClient.CreateQueueAsync("automatic-envelopes-messages-queue");
+        await sqsClient.CreateQueueAsync("automatic-envelopes-system-queue");
         await sqsClient.CreateQueueAsync("wolverine-dead-letter-queue");
 
         Environment.SetEnvironmentVariable("ConnectionStrings__Marten", _postgres.GetConnectionString());
