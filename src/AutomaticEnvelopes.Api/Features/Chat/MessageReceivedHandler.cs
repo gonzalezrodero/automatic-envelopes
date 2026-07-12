@@ -31,37 +31,51 @@ public static class MessageReceivedHandler
         var userText = @event.Text.Trim().ToUpperInvariant();
         if (BotPrompts.DeleteCommands.Contains(userText))
         {
+            logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", @event.PhoneNumber);
             await SendDeleteCommandAsync(@event, bus, ct);
             return;
         }
 
-        await ProcessResponseAsync(@event, tenant, session, knowledgeBase, chatService, bus, ct);
+        await ProcessResponseAsync(@event, tenant, session, knowledgeBase, chatService, bus, logger, ct);
     }
 
     private static async Task ProcessResponseAsync(
-        MessageReceived @event,
-        TenantProfile tenant,
-        IDocumentSession session,
-        IKnowledgeBaseService knowledgeBase,
-        IChatService chatService,
-        IMessageBus bus,
-        CancellationToken ct)
+            MessageReceived @event,
+            TenantProfile tenant,
+            IDocumentSession session,
+            IKnowledgeBaseService knowledgeBase,
+            IChatService chatService,
+            IMessageBus bus,
+            ILogger logger,
+            CancellationToken ct)
     {
         var chatHistory = await ExtractChatHistory(@event.PhoneNumber, session, ct);
 
+        logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", @event.TenantId);
         var context = await GetRelevantContextAsync(knowledgeBase, @event.TenantId, @event.Text, ct);
 
         var isFirstMessage = chatHistory.Count <= 1;
         var systemMessage = BuildSystemPrompt(tenant, isFirstMessage, context);
 
-        var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, @event.TenantId, ct);
+        logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", @event.TenantId);
 
-        if (string.IsNullOrWhiteSpace(replyText))
+        try
         {
-            replyText = "I'm sorry, I couldn't process that request.";
-        }
+            var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, @event.TenantId, ct);
 
-        await SaveAndPublishReplyAsync(@event, replyText, session, bus, ct);
+            if (string.IsNullOrWhiteSpace(replyText))
+            {
+                logger.LogWarning("Bedrock returned an empty or null response. Applying fallback message for TenantId: {TenantId}.", @event.TenantId);
+                replyText = "I'm sorry, I couldn't process that request.";
+            }
+
+            await SaveAndPublishReplyAsync(@event, replyText, session, bus, logger, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Fatal error invoking AI generation for TenantId: {TenantId}. MessageId: {MessageId}", @event.TenantId, @event.MessageId);
+            throw;
+        }
     }
 
     private static async Task SendDeleteCommandAsync(MessageReceived @event, IMessageBus bus, CancellationToken ct)
@@ -126,7 +140,7 @@ public static class MessageReceivedHandler
         return string.Format(BotPrompts.SystemPromptTemplate, personaPrompt, privacyWarningRule, currentDate, context);
     }
 
-    private static async Task SaveAndPublishReplyAsync(MessageReceived @event, string replyText, IDocumentSession session, IMessageBus bus, CancellationToken ct)
+    private static async Task SaveAndPublishReplyAsync(MessageReceived @event, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)
     {
         var replyEvent = new ReplyGenerated(
             @event.MessageId,
@@ -137,6 +151,8 @@ public static class MessageReceivedHandler
 
         session.Events.Append(@event.PhoneNumber, replyEvent);
         await session.SaveChangesAsync(ct);
+
+        logger.LogInformation("Bot reply saved to event stream. Dispatching ReplyGenerated event to Wolverine.");
         await bus.InvokeAsync(replyEvent, ct);
     }
 }

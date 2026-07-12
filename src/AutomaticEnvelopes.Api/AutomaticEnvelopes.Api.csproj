@@ -5,30 +5,32 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Configurations>Debug;Release;Development</Configurations>
+    <NoWarn>$(NoWarn);CA1873</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.AspNetCoreServer.Hosting" Version="2.1.0" />
     <PackageReference Include="Amazon.Lambda.SQSEvents" Version="3.0.0" />
-    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="2.1.1" />
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="2.1.2" />
     <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="3.0.0" />
-    <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.20.4" />
-    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.4.5" />
-    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.5.2" />
-    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.8.2" />
+    <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.100.3" />
+    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.100.3" />
+    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.100.3" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.101.1" />
     <PackageReference Include="JasperFx.RuntimeCompiler" Version="5.0.0" />
-    <PackageReference Include="Marten" Version="9.6.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0" />
+    <PackageReference Include="Marten" Version="9.14.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.7.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="2.10.0" />
     <PackageReference Include="Npgsql.DependencyInjection" Version="10.0.3" />
-    <PackageReference Include="PdfPig" Version="0.1.14" />
+    <PackageReference Include="PdfPig" Version="0.1.15" />
     <PackageReference Include="Pgvector" Version="0.3.2" />
     <PackageReference Include="Refit" Version="11.0.1" />
     <PackageReference Include="Refit.HttpClientFactory" Version="11.0.1" />
-    <PackageReference Include="WolverineFx" Version="6.5.1" />
-    <PackageReference Include="WolverineFx.AmazonSqs" Version="6.5.1" />
-    <PackageReference Include="WolverineFx.Http" Version="6.5.1" />
-    <PackageReference Include="WolverineFx.Marten" Version="6.5.1" />
+    <PackageReference Include="WolverineFx" Version="6.17.0" />
+    <PackageReference Include="WolverineFx.AmazonSqs" Version="6.17.0" />
+    <PackageReference Include="WolverineFx.Http" Version="6.17.0" />
+    <PackageReference Include="WolverineFx.Marten" Version="6.17.0" />
   </ItemGroup>
 
   <ItemGroup>

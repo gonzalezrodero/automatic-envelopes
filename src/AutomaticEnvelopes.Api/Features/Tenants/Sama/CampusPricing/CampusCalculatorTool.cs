@@ -12,7 +12,7 @@ public partial class CampusToolJsonContext : JsonSerializerContext
 {
 }
 
-public class CampusCalculatorTool : IBedrockTool
+public class CampusCalculatorTool(ILogger<CampusCalculatorTool> logger) : IBedrockTool
 {
     public string Tenant => "club-basquet-sama";
 
@@ -85,13 +85,17 @@ public class CampusCalculatorTool : IBedrockTool
 
     public Task<string> ExecuteAsync(string jsonArguments, CancellationToken ct)
     {
+        logger.LogInformation("Executing CampusCalculatorTool logic.");
         var args = JsonSerializer.Deserialize(jsonArguments, CampusToolJsonContext.Default.CampusFamilyArguments);
 
-        // Guard clause simplified
         if (args?.Participants == null || args.Participants.Count == 0)
         {
+            logger.LogWarning("Invalid or empty participants array provided by Bedrock.");
             return Task.FromResult("Error: Invalid arguments.");
         }
+
+        logger.LogInformation("Calculating pricing for {ParticipantCount} participants. IsSocio: {IsSocio}, DiscountType: {DiscountType}",
+            args.Participants.Count, args.IsSocio, args.FamilyDiscountType);
 
         // Pre-calculate sibling logic to avoid doing it inside the loop
         var siblingWithLeastWeeks = GetSiblingWithLeastWeeks(args);
@@ -101,12 +105,15 @@ public class CampusCalculatorTool : IBedrockTool
 
         foreach (var p in args.Participants)
         {
-            // Delegate the heavy mathematical logic to a separate method
             var result = CalculateParticipantPricing(p, args, siblingWithLeastWeeks);
 
             participantResults.Add(result);
             familyGrandTotal += result.Total;
+
+            logger.LogDebug("Participant '{Name}' calculated. Total: {ParticipantTotal}", p.Name, result.Total);
         }
+
+        logger.LogInformation("Campus pricing calculation completed. Family Grand Total: {FamilyGrandTotal}", familyGrandTotal);
 
         var finalResult = new CampusFamilyResult(familyGrandTotal, participantResults);
         return Task.FromResult(JsonSerializer.Serialize(finalResult, CampusToolJsonContext.Default.CampusFamilyResult));
@@ -240,7 +247,7 @@ public class CampusCalculatorTool : IBedrockTool
 public record CampusFamilyArguments(
     [property: JsonPropertyName("isSocio")] bool IsSocio,
     [property: JsonPropertyName("familyDiscountType")] string FamilyDiscountType,
-    [property: JsonPropertyName("isAfterMay1st")] bool IsAfterMay1st, // <-- Nova propietat 
+    [property: JsonPropertyName("isAfterMay1st")] bool IsAfterMay1st,
     [property: JsonPropertyName("participants")] List<ParticipantArgs> Participants
 );
 
