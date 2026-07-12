@@ -1,5 +1,6 @@
 ﻿using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
+using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;

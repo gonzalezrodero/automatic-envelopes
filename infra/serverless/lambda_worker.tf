@@ -7,10 +7,6 @@ resource "aws_lambda_function" "worker" {
   timeout     = 30
   memory_size = 512
 
-  # Limits the maximum number of parallel containers
-  # This prevents exhausting the RDS PostgreSQL connection pool (Error 53300)
-  reserved_concurrent_executions = 5
-
   environment {
     variables = {
       ASPNETCORE_ENVIRONMENT   = var.app_environment

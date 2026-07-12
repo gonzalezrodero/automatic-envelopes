@@ -1,8 +1,9 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
+using AutomaticEnvelopes.Api.Features.Chat.Models;
 using Marten;
 using Wolverine;
 
-namespace AutomaticEnvelopes.Api.Features.Chat;
+namespace AutomaticEnvelopes.Api.Features.Chat.Handlers;
 
 /// <summary>
 /// Background worker that executes the GDPR hard delete and AI anonymization.

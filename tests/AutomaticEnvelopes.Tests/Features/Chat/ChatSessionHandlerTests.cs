@@ -1,6 +1,8 @@
-﻿using Amazon.BedrockRuntime.Model;
+﻿using Amazon.BedrockRuntime;
+using Amazon.BedrockRuntime.Model;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
+using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Tests.Extensions;
 using AwesomeAssertions;
 using Marten;
@@ -10,7 +12,7 @@ using Moq;
 namespace AutomaticEnvelopes.Tests.Features.Chat;
 
 [Collection("Integration")]
-public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
+public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
 {
     private const string PrivacyPolicyUrl = "https://static1.squarespace.com/static/5d774ba386ebf92cf9611ccf/t/65cb39917d01065ce0d02a07/1707817361861/POLITICA+DE+PRIVACIDAD.pdf";
 
@@ -26,34 +28,43 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
 
         await fixture.SeedTenantAsync(tenantId, botPhone, privacyPolicyUrl: PrivacyPolicyUrl);
 
-        var incomingEvent = new MessageReceived(
-            MessageId: "atomic.Chat1",
+        // FIX: Simular que el Webhook guardó el mensaje en BD antes de que el Handler de la IA se ejecute
+        using var arrangeSession = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
+        arrangeSession.Events.Append(userPhone, new MessageReceived("wamid.1", userPhone, "Quina és la contrasenya?", tenantId, botPhone, DateTimeOffset.UtcNow));
+        await arrangeSession.SaveChangesAsync();
+
+        var incomingCommand = new AnalyzeChatSession(
             PhoneNumber: userPhone,
-            Text: "Quina és la contrasenya?",
             TenantId: tenantId,
             BotPhoneNumberId: botPhone,
-            ReceivedAt: DateTimeOffset.UtcNow
+            CombinedText: "Quina és la contrasenya?"
         );
 
         // Act
-        await fixture.Host.InvokeMessageAndWaitAsync(incomingEvent);
+        await fixture.Host.InvokeMessageAndWaitAsync(incomingCommand);
 
-        // Assert
+        // Assert 1: Stream state
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
         var streamEvents = await session.Events.FetchStreamAsync(userPhone);
 
         var replyGenerated = streamEvents.FirstOrDefault(e => e.Data is ReplyGenerated)?.Data as ReplyGenerated;
 
         replyGenerated.Should().NotBeNull("The handler should have appended a ReplyGenerated event to the stream.");
-
-        replyGenerated!.MessageId.Should().Be("atomic.Chat1");
+        replyGenerated!.MessageId.Should().StartWith("wamid.grouped.");
         replyGenerated.BotPhoneNumberId.Should().Be(botPhone);
         replyGenerated.PhoneNumber.Should().Be(userPhone);
         replyGenerated.TenantId.Should().Be(tenantId);
 
-        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.Is<ConverseRequest>(req =>
-            VerifyPrivacyPolicyInjected(req)
-        ), It.IsAny<CancellationToken>()), Times.Once);
+        // Assert 2: Verify Bedrock call and Privacy Policy
+        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        var request = (ConverseRequest)fixture.BedrockClientMock.Invocations
+            .First(i => i.Method.Name == nameof(IAmazonBedrockRuntime.ConverseAsync))
+            .Arguments[0];
+
+        // Safely extract system prompt text guarding against nulls
+        var systemPrompt = request.System != null ? string.Join(" ", request.System.Select(s => s.Text)) : "";
+        systemPrompt.Should().Contain("POLITICA+DE+PRIVACIDAD.pdf", "A new user should receive the privacy policy injection.");
     }
 
     [Fact]
@@ -70,29 +81,49 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
 
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
 
-        // 1. Pre-populate the Marten Event Store
+        // 1. Pre-populate the Marten Event Store with OLD history
         session.Events.Append(userPhone, new MessageReceived("old.1", userPhone, "Hola", tenantId, botPhone, DateTimeOffset.UtcNow));
         session.Events.Append(userPhone, new ReplyGenerated("old.1", botPhone, userPhone, "¡Hola! Soy SamàBot.", tenantId));
 
-        // This is the event that will trigger the handler, but we also save it so the handler reads it as context
-        var incomingEvent = new MessageReceived("atomic.Chat2", userPhone, "¿Me recuerdas?", tenantId, botPhone, DateTimeOffset.UtcNow);
-        session.Events.Append(userPhone, incomingEvent);
+        // FIX: Pre-populate the CURRENT message that the Webhook just received
+        session.Events.Append(userPhone, new MessageReceived("new.2", userPhone, "¿Me recuerdas?", tenantId, botPhone, DateTimeOffset.UtcNow));
         await session.SaveChangesAsync();
 
-        // Act
-        await fixture.Host.InvokeMessageAndWaitAsync(incomingEvent);
+        var incomingCommand = new AnalyzeChatSession(
+            PhoneNumber: userPhone,
+            TenantId: tenantId,
+            BotPhoneNumberId: botPhone,
+            CombinedText: "¿Me recuerdas?"
+        );
 
-        // Assert
+        // Act
+        await fixture.Host.InvokeMessageAndWaitAsync(incomingCommand);
+
+        // Assert 1: Stream State
         var streamEvents = await session.Events.FetchStreamAsync(userPhone);
         var replies = streamEvents.Select(e => e.Data).OfType<ReplyGenerated>().ToList();
 
         replies.Should().HaveCount(2);
-        replies.Last().MessageId.Should().Be("atomic.Chat2");
+        replies.Last().MessageId.Should().StartWith("wamid.grouped.");
 
-        // Verify history is sent AND Privacy Policy is NOT injected since it is a returning user
-        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.Is<ConverseRequest>(req =>
-            !VerifyPrivacyPolicyInjected(req) && VerifyChatHistoryPayload(req)
-        ), It.IsAny<CancellationToken>()), Times.Once);
+        // Assert 2: Verify Bedrock call
+        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Extract the actual request sent to AWS
+        var request = (ConverseRequest)fixture.BedrockClientMock.Invocations
+            .First(i => i.Method.Name == nameof(IAmazonBedrockRuntime.ConverseAsync))
+            .Arguments[0];
+
+        // Assert 3: Returning users should NOT get the privacy policy again
+        var systemPrompt = request.System != null ? string.Join(" ", request.System.Select(s => s.Text)) : "";
+        systemPrompt.Should().NotContain("POLITICA+DE+PRIVACIDAD.pdf", "Returning users should not receive the privacy policy repeatedly.");
+
+        // Assert 4: Chat History must be properly loaded
+        var allText = request.Messages != null ? string.Join(" ", request.Messages.SelectMany(m => m.Content).Select(c => c.Text)) : "";
+
+        allText.Should().Contain("Hola");
+        allText.Should().Contain("SamàBot");
+        allText.Should().Contain("recuerdas");
     }
 
     [Theory]
@@ -113,19 +144,19 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
 
         session.Events.Append(userPhone, new MessageReceived("old.1", userPhone, "Hola", tenantId, botPhone, DateTimeOffset.UtcNow));
+        // FIX: Add the delete command message to DB
+        session.Events.Append(userPhone, new MessageReceived("new.delete", userPhone, commandText, tenantId, botPhone, DateTimeOffset.UtcNow));
         await session.SaveChangesAsync();
 
-        var incomingEvent = new MessageReceived(
-            MessageId: "atomic.DeleteCmd",
+        var incomingCommand = new AnalyzeChatSession(
             PhoneNumber: userPhone,
-            Text: commandText,
             TenantId: tenantId,
             BotPhoneNumberId: botPhone,
-            ReceivedAt: DateTimeOffset.UtcNow
+            CombinedText: commandText
         );
 
         // Act
-        var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(incomingEvent);
+        var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(incomingCommand);
 
         // Assert 1: Verify the Replies (ACK and Success) were executed internally
         var executedReplies = trackedSession.Executed.MessagesOf<ReplyGenerated>().ToList();
@@ -141,24 +172,5 @@ public class MessageReceivedHandlerTests(IntegrationAppFixture fixture)
         // Assert 3: Verify the Hard Delete actually happened
         var streamEvents = await session.Events.FetchStreamAsync(userPhone);
         streamEvents.Should().BeEmpty("The background worker should have hard-deleted the stream in the same transaction cascade.");
-    }
-
-    private static bool VerifyChatHistoryPayload(ConverseRequest request)
-    {
-        // Extract all text from the messages
-        var allText = string.Join(" ", request.Messages
-            .SelectMany(m => m.Content)
-            .Select(c => c.Text));
-
-        return allText.Contains("Hola") &&
-               allText.Contains("¡Hola! Soy SamàBot.") &&
-               allText.Contains("¿Me recuerdas?");
-    }
-
-    private static bool VerifyPrivacyPolicyInjected(ConverseRequest request)
-    {
-        // Check if the privacy policy is injected into the System prompt
-        var systemPrompt = string.Join(" ", request.System.Select(s => s.Text));
-        return systemPrompt.Contains("POLITICA+DE+PRIVACIDAD.pdf");
     }
 }
