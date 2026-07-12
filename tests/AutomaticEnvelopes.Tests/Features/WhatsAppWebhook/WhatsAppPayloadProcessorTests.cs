@@ -28,7 +28,6 @@ public class WhatsAppPayloadProcessorTests
         });
         mocker.Use(options);
 
-        // Extraemos el mock del logger para poder verificar las alertas
         loggerMock = mocker.GetMock<ILogger<WhatsAppPayloadProcessor>>();
 
         sut = mocker.CreateInstance<WhatsAppPayloadProcessor>();
@@ -113,7 +112,7 @@ public class WhatsAppPayloadProcessorTests
     }
 
     [Fact]
-    public async Task ExtractMessageAsync_WithStatusUpdate_ReturnsNullAndLogsWarning()
+    public async Task ExtractMessageAsync_WithStatusUpdate_ReturnsNullAndLogsDebug()
     {
         // Arrange
         var payload = """
@@ -151,19 +150,18 @@ public class WhatsAppPayloadProcessorTests
 
         loggerMock.Verify(
             x => x.Log(
-                LogLevel.Warning,
+                LogLevel.Debug,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("No messages array found") || v.ToString().Contains("Status update")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("missing 'messages' array")),
                 null,
-                It.Is<Func<It.IsAnyType, Exception, string>>((v, t) => true)!),
-            Times.AtLeastOnce);
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
     }
 
     [Fact]
-    public async Task ExtractMessageAsync_WithNonTextMessage_ReturnsNullAndLogsWarning()
+    public async Task ExtractMessageAsync_WithNonTextMessage_ReturnsNullAndLogsInformation()
     {
         // Arrange
-        // Payload que contiene un mensaje, pero no es de texto (ej. imagen, audio)
         var payload = """
         {
           "object": "whatsapp_business_account",
@@ -201,12 +199,12 @@ public class WhatsAppPayloadProcessorTests
 
         loggerMock.Verify(
             x => x.Log(
-                LogLevel.Warning,
+                LogLevel.Information,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Unsupported message type") || v.ToString().Contains("image")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Received non-text message type")),
                 null,
-                It.Is<Func<It.IsAnyType, Exception, string>>((v, t) => true)!),
-            Times.AtLeastOnce);
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
     }
 
     [Fact]
@@ -228,10 +226,10 @@ public class WhatsAppPayloadProcessorTests
             x => x.Log(
                 LogLevel.Error,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Error") || v.ToString()!.Contains("Deserialization")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to parse incoming WhatsApp webhook payload as valid JSON")),
                 It.IsAny<Exception>(),
-                It.Is<Func<It.IsAnyType, Exception, string>>((v, t) => true)!),
-            Times.AtLeastOnce);
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
     }
 
     [Fact]
