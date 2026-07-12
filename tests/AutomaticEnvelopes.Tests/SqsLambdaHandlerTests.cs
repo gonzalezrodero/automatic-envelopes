@@ -1,7 +1,7 @@
 ﻿using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using AutomaticEnvelopes.Api;
-using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using Moq;
 using Moq.AutoMock;
 using System.Text.Json;

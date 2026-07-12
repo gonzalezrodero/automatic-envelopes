@@ -1,7 +1,7 @@
 ﻿using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using AutomaticEnvelopes.Api.Common.Extensions;
-using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using System.Text.Json;
 using Wolverine;
 using static Amazon.Lambda.SQSEvents.SQSBatchResponse;

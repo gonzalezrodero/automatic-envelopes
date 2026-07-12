@@ -1,4 +1,5 @@
 using AutomaticEnvelopes.Api.Common.Configuration;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Text;

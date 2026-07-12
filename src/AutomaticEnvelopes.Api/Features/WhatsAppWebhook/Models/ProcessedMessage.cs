@@ -1,4 +1,4 @@
-﻿namespace AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
+﻿namespace AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 
 public class ProcessedMessage
 {

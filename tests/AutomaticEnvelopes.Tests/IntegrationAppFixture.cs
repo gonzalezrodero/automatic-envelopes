@@ -5,7 +5,7 @@ using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
-using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using JasperFx;
