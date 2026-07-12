@@ -1,4 +1,5 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
+using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using Marten;
@@ -6,12 +7,12 @@ using Microsoft.Extensions.AI;
 using System.Text;
 using Wolverine;
 
-namespace AutomaticEnvelopes.Api.Features.Chat;
+namespace AutomaticEnvelopes.Api.Features.Chat.Handlers;
 
-public static class MessageReceivedHandler
+public static class ChatSessionHandler 
 {
     public static async Task Handle(
-        MessageReceived @event,
+        AnalyzeChatSession command,
         IDocumentStore store,
         IKnowledgeBaseService knowledgeBase,
         IChatService chatService,
@@ -19,28 +20,28 @@ public static class MessageReceivedHandler
         ILogger logger,
         CancellationToken ct)
     {
-        using var session = store.LightweightSession(@event.TenantId);
+        using var session = store.LightweightSession(command.TenantId);
 
-        var tenant = await session.LoadAsync<TenantProfile>(@event.TenantId, ct);
+        var tenant = await session.LoadAsync<TenantProfile>(command.TenantId, ct);
         if (tenant == null)
         {
-            logger.LogWarning("TenantProfile with Id '{TenantId}' does not exist. Aborting message processing.", @event.TenantId);
+            logger.LogWarning("TenantProfile with Id '{TenantId}' does not exist. Aborting message processing.", command.TenantId);
             return;
         }
 
-        var userText = @event.Text.Trim().ToUpperInvariant();
+        var userText = command.CombinedText.Trim().ToUpperInvariant();
         if (BotPrompts.DeleteCommands.Contains(userText))
         {
-            logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", @event.PhoneNumber);
-            await SendDeleteCommandAsync(@event, bus, ct);
+            logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", command.PhoneNumber);
+            await SendDeleteCommandAsync(command, bus, ct);
             return;
         }
 
-        await ProcessResponseAsync(@event, tenant, session, knowledgeBase, chatService, bus, logger, ct);
+        await ProcessResponseAsync(command, tenant, session, knowledgeBase, chatService, bus, logger, ct);
     }
 
     private static async Task ProcessResponseAsync(
-            MessageReceived @event,
+            AnalyzeChatSession command,
             TenantProfile tenant,
             IDocumentSession session,
             IKnowledgeBaseService knowledgeBase,
@@ -49,53 +50,55 @@ public static class MessageReceivedHandler
             ILogger logger,
             CancellationToken ct)
     {
-        var chatHistory = await ExtractChatHistory(@event.PhoneNumber, session, ct);
+        var chatHistory = await ExtractChatHistory(command.PhoneNumber, session, ct);
 
-        logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", @event.TenantId);
-        var context = await GetRelevantContextAsync(knowledgeBase, @event.TenantId, @event.Text, ct);
+        logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", command.TenantId);
+        var context = await GetRelevantContextAsync(knowledgeBase, command.TenantId, command.CombinedText, ct);
 
         var isFirstMessage = chatHistory.Count <= 1;
         var systemMessage = BuildSystemPrompt(tenant, isFirstMessage, context);
 
-        logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", @event.TenantId);
+        logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
 
         try
         {
-            var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, @event.TenantId, ct);
+            var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, command.TenantId, ct);
 
             if (string.IsNullOrWhiteSpace(replyText))
             {
-                logger.LogWarning("Bedrock returned an empty or null response. Applying fallback message for TenantId: {TenantId}.", @event.TenantId);
+                logger.LogWarning("Bedrock returned an empty or null response. Applying fallback message for TenantId: {TenantId}.", command.TenantId);
                 replyText = "I'm sorry, I couldn't process that request.";
             }
 
-            await SaveAndPublishReplyAsync(@event, replyText, session, bus, logger, ct);
+            await SaveAndPublishReplyAsync(command, replyText, session, bus, logger, ct);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Fatal error invoking AI generation for TenantId: {TenantId}. MessageId: {MessageId}", @event.TenantId, @event.MessageId);
+            logger.LogError(ex, "Fatal error invoking AI generation for TenantId: {TenantId}.", command.TenantId);
             throw;
         }
     }
 
-    private static async Task SendDeleteCommandAsync(MessageReceived @event, IMessageBus bus, CancellationToken ct)
+    private static async Task SendDeleteCommandAsync(AnalyzeChatSession command, IMessageBus bus, CancellationToken ct)
     {
+        var syntheticMessageId = $"wamid.grouped.{Guid.NewGuid():N}";
+
         var ackMessage = new ReplyGenerated(
-            @event.MessageId,
-            @event.BotPhoneNumberId,
-            @event.PhoneNumber,
+            syntheticMessageId,
+            command.BotPhoneNumberId,
+            command.PhoneNumber,
             BotPrompts.DeleteDataAutomaticReply,
-            @event.TenantId);
+            command.TenantId);
 
         await bus.InvokeAsync(ackMessage, ct);
 
-        var command = new DeleteChatHistoryCommand(
-            @event.PhoneNumber,
-            @event.TenantId,
-            @event.MessageId,
-            @event.BotPhoneNumberId);
+        var deleteCommand = new DeleteChatHistoryCommand(
+            command.PhoneNumber,
+            command.TenantId,
+            syntheticMessageId,
+            command.BotPhoneNumberId);
 
-        await bus.InvokeAsync(command, ct);
+        await bus.InvokeAsync(deleteCommand, ct);
     }
 
     private static async Task<List<ChatMessage>> ExtractChatHistory(string phoneNumber, IDocumentSession session, CancellationToken ct)
@@ -140,16 +143,18 @@ public static class MessageReceivedHandler
         return string.Format(BotPrompts.SystemPromptTemplate, personaPrompt, privacyWarningRule, currentDate, context);
     }
 
-    private static async Task SaveAndPublishReplyAsync(MessageReceived @event, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)
+    private static async Task SaveAndPublishReplyAsync(AnalyzeChatSession command, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)
     {
-        var replyEvent = new ReplyGenerated(
-            @event.MessageId,
-            @event.BotPhoneNumberId,
-            @event.PhoneNumber,
-            replyText,
-            @event.TenantId);
+        var syntheticMessageId = $"wamid.grouped.{Guid.NewGuid():N}";
 
-        session.Events.Append(@event.PhoneNumber, replyEvent);
+        var replyEvent = new ReplyGenerated(
+            syntheticMessageId,
+            command.BotPhoneNumberId,
+            command.PhoneNumber,
+            replyText,
+            command.TenantId);
+
+        session.Events.Append(command.PhoneNumber, replyEvent);
         await session.SaveChangesAsync(ct);
 
         logger.LogInformation("Bot reply saved to event stream. Dispatching ReplyGenerated event to Wolverine.");

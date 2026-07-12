@@ -1,4 +1,4 @@
-﻿namespace AutomaticEnvelopes.Api.Features.Chat;
+﻿namespace AutomaticEnvelopes.Api.Features.Chat.Models;
 
 public record DeleteChatHistoryCommand(
     string PhoneNumber,

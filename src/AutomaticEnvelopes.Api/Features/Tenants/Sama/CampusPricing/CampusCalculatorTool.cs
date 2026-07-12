@@ -1,5 +1,5 @@
 ﻿using Amazon.BedrockRuntime.Model;
-using AutomaticEnvelopes.Api.Features.Chat;
+using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using JsonConverter = AutomaticEnvelopes.Api.Features.Tenants.Helpers.JsonConverter;

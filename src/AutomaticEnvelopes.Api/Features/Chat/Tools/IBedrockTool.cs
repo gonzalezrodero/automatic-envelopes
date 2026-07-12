@@ -1,6 +1,6 @@
 ﻿using Amazon.BedrockRuntime.Model;
 
-namespace AutomaticEnvelopes.Api.Features.Chat;
+namespace AutomaticEnvelopes.Api.Features.Chat.Tools;
 
 public interface IBedrockTool
 {

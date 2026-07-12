@@ -4,6 +4,7 @@ using AutomaticEnvelopes.Api;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Features.Chat;
+using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;

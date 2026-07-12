@@ -1,6 +1,5 @@
 ﻿using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
-using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using AutomaticEnvelopes.Api.Features.Tenants.Helpers;
 using AwesomeAssertions;
