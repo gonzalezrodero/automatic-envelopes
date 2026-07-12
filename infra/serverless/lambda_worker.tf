@@ -7,6 +7,10 @@ resource "aws_lambda_function" "worker" {
   timeout     = 30
   memory_size = 512
 
+  # Limits the maximum number of parallel containers
+  # This prevents exhausting the RDS PostgreSQL connection pool (Error 53300)
+  reserved_concurrent_executions = 5
+
   environment {
     variables = {
       ASPNETCORE_ENVIRONMENT   = var.app_environment
@@ -29,4 +33,10 @@ resource "aws_lambda_event_source_mapping" "sqs_trigger" {
   event_source_arn = aws_sqs_queue.bot_queue.arn
   function_name    = aws_lambda_function.worker.arn
   batch_size       = 1
+
+  # This prevents SQS from sending messages to Lambdas that are already busy,
+  # saving you from generating false-positive 429 Throttling errors in CloudWatch.
+  scaling_config {
+    maximum_concurrency = 5
+  }
 }
