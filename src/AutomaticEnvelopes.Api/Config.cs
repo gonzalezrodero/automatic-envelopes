@@ -9,6 +9,7 @@ using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using JasperFx;
 using JasperFx.CodeGeneration;
 using JasperFx.Events;
@@ -57,6 +58,7 @@ public static class Config
             opts.Schema.For<TenantProfile>().SingleTenanted();
             opts.Schema.For<ProcessedMessage>().MultiTenanted();
             opts.Schema.For<DocumentChunk>().MultiTenanted();
+            opts.Schema.For<WhatsAppRateLimitTracker>().MultiTenanted();
         })
         .UseNpgsqlDataSource()
         .UseLightweightSessions()
@@ -98,6 +100,15 @@ public static class Config
             opts.Policies.AutoApplyTransactions();
             opts.Policies.OnException<ThrottlingException>()
                 .RetryWithCooldown(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(30));
+
+            // Optimistic Concurrency policy for the Spam Shield
+            // If Lambdas collide while updating the rate limit tracker, wait a few ms and retry smoothly
+            opts.Policies.OnException<ConcurrencyException>()
+                .RetryWithCooldown(
+                    TimeSpan.FromMilliseconds(50),
+                    TimeSpan.FromMilliseconds(100),
+                    TimeSpan.FromMilliseconds(250)
+                );
 
             opts.Durability.Mode = DurabilityMode.Solo;
 

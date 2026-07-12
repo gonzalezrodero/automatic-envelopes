@@ -1,6 +1,6 @@
 using AutomaticEnvelopes.Api.Core.Events;
-using AutomaticEnvelopes.Api.Features.Tenancy; // Añadido para TenantProfile
-using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
+using AutomaticEnvelopes.Api.Features.Tenancy;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using AutomaticEnvelopes.Tests.Extensions;
 using AwesomeAssertions;
 using Marten;
@@ -22,7 +22,7 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
 
         var command = new ProcessWhatsAppMessage(
             MessageId: "wamid.HANDLER",
-            BotPhoneNumberId: botPhoneId, // El comando viene con el ID de Meta
+            BotPhoneNumberId: botPhoneId, // The command comes with the Meta ID
             PhoneNumber: "34999111222",
             Text: "Pure Handler Text",
             Timestamp: DateTimeOffset.UtcNow
@@ -53,7 +53,7 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
 
         await fixture.SeedTenantAsync(tenantSlug, botPhoneId);
 
-        var command = new ProcessWhatsAppMessage("wamid.DUP", botPhoneId, "34999111222", "Texto", DateTimeOffset.UtcNow);
+        var command = new ProcessWhatsAppMessage("wamid.DUP", botPhoneId, "34999111222", "Text payload", DateTimeOffset.UtcNow);
 
         // Act: Send the same message twice to simulate Meta webhook retries
         await fixture.Host.InvokeMessageAndWaitAsync(command);
@@ -80,27 +80,73 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
 
         session.Store(new TenantProfile { Id = tenantId, BotPhoneNumberId = botPhone });
 
-        // Simulamos que el webhook ya se procesó en el pasado y la proyección lo guardó
+        // Simulate that the webhook was already processed in the past and the projection saved it
         session.Store(new ProcessedMessage { Id = messageId, TenantId = tenantId, BotPhoneNumberId = botPhone, ProcessedAt = DateTimeOffset.UtcNow.AddMinutes(-5) });
         await session.SaveChangesAsync();
 
         var duplicateWebhookCommand = new ProcessWhatsAppMessage(
-                    MessageId: messageId,
-                    PhoneNumber: "34999888777",
-                    Text: "Este mensaje es un reintento del servidor de Meta",
-                    BotPhoneNumberId: botPhone,
-                    Timestamp: DateTimeOffset.UtcNow
-                );
+            MessageId: messageId,
+            PhoneNumber: "34999888777",
+            Text: "This message is a retry from the Meta server",
+            BotPhoneNumberId: botPhone,
+            Timestamp: DateTimeOffset.UtcNow
+        );
 
         // Act
         var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(duplicateWebhookCommand);
 
-        // Assert 1: No se deben haber guardado eventos nuevos en el stream del usuario
+        // Assert 1: No new events should have been saved in the user's stream
         var streamEvents = await session.Events.FetchStreamAsync(duplicateWebhookCommand.PhoneNumber);
         streamEvents.Should().BeEmpty("Because the message ID was duplicated, the handler should have aborted before appending events.");
 
-        // Assert 2: Wolverine no debe haber publicado NADA hacia el bot de IA
+        // Assert 2: Wolverine should NOT have published ANYTHING to the AI bot bus
         var dispatchedEvents = trackedSession.Executed.MessagesOf<MessageReceived>();
         dispatchedEvents.Should().BeEmpty("No events should be published to the bus for duplicate incoming webhooks.");
+    }
+
+    [Fact]
+    public async Task GivenMoreThanMaxMessagesPerMinute_WhenHandlerExecutes_ThenItDropsExcessMessages()
+    {
+        // Arrange
+        var tenantId = "rate-limit-tenant";
+        var botPhone = "34000000000";
+        var spammerPhone = "34666555444";
+
+        using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
+        session.Store(new TenantProfile { Id = tenantId, BotPhoneNumberId = botPhone });
+
+        // We manually seed the rate limit tracker right at the limit (25 messages)
+        // with a reset window 1 minute in the future to simulate an ongoing spam wave.
+        session.Store(new WhatsAppRateLimitTracker
+        {
+            Id = spammerPhone,
+            MessageCount = 25,
+            WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1)
+        });
+        await session.SaveChangesAsync();
+
+        var spamCommand = new ProcessWhatsAppMessage(
+            MessageId: $"wamid.{Guid.NewGuid()}",
+            BotPhoneNumberId: botPhone,
+            PhoneNumber: spammerPhone,
+            Text: "This is the 26th message, it should be dropped!",
+            Timestamp: DateTimeOffset.UtcNow
+        );
+
+        // Act
+        var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(spamCommand);
+
+        // Assert 1: No events should have been appended to the event stream
+        var streamEvents = await session.Events.FetchStreamAsync(spammerPhone);
+        streamEvents.Should().BeEmpty("The rate limit was reached, so the message must be dropped before appending events.");
+
+        // Assert 2: Wolverine should not have dispatched the MessageReceived event downstream
+        var dispatchedEvents = trackedSession.Executed.MessagesOf<MessageReceived>();
+        dispatchedEvents.Should().BeEmpty("No events should be published when the spam shield is triggered.");
+
+        // Assert 3: Ensure the tracker incremented to 26 and was saved (locking the spammer out)
+        var tracker = await session.LoadAsync<WhatsAppRateLimitTracker>(spammerPhone);
+        tracker.Should().NotBeNull();
+        tracker!.MessageCount.Should().Be(26, "The tracker must increment and save the blocked attempt.");
     }
 }

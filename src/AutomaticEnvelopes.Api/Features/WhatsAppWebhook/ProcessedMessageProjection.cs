@@ -1,4 +1,5 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using JasperFx.Events;
 using Marten;
 using Marten.Events.Projections;

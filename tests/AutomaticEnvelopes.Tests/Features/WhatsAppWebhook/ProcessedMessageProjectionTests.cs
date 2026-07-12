@@ -1,5 +1,5 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
-using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
