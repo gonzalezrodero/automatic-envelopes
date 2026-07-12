@@ -25,14 +25,20 @@ public class ChatDebounceSaga : Saga
     {
         logger.LogInformation("Starting 10-second debounce window for {PhoneNumber}", message.PhoneNumber);
 
-        // Populate our own properties
         Id = message.PhoneNumber;
         TenantId = message.TenantId;
         BotPhoneNumberId = message.BotPhoneNumberId;
         CombinedText = message.Text;
 
         var messages = new OutgoingMessages();
-        messages.Schedule(new ChatWindowExpired(message.PhoneNumber), DateTimeOffset.UtcNow.AddSeconds(10));
+
+        var timeoutMessage = new ChatWindowExpired(message.PhoneNumber)
+            .WithDeliveryOptions(new DeliveryOptions
+            {
+                ScheduleDelay = TimeSpan.FromSeconds(10)
+            });
+
+        messages.Add(timeoutMessage);
 
         return messages;
     }
