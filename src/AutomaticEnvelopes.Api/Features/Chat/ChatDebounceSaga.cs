@@ -30,17 +30,7 @@ public class ChatDebounceSaga : Saga
         BotPhoneNumberId = message.BotPhoneNumberId;
         CombinedText = message.Text;
 
-        var messages = new OutgoingMessages();
-
-        var timeoutMessage = new ChatWindowExpired(message.PhoneNumber)
-            .WithDeliveryOptions(new DeliveryOptions
-            {
-                ScheduleDelay = TimeSpan.FromSeconds(10)
-            });
-
-        messages.Add(timeoutMessage);
-
-        return messages;
+        return [new ChatWindowExpired(message.PhoneNumber)];
     }
 
     // --- UPDATE ---
