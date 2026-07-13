@@ -1,10 +1,12 @@
 ﻿using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using AutomaticEnvelopes.Api.Common.Extensions;
+using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using System.Text.Json;
 using Wolverine;
 using static Amazon.Lambda.SQSEvents.SQSBatchResponse;
+using static Amazon.Lambda.SQSEvents.SQSEvent;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -58,7 +60,6 @@ public class SqsLambdaHandler
     public async Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
     {
         var response = new SQSBatchResponse { BatchItemFailures = [] };
-
         logger.LogInformation("SQS Lambda Handler triggered. Processing a batch of {RecordCount} records.", sqsEvent.Records.Count);
 
         using var cts = new CancellationTokenSource();
@@ -71,21 +72,13 @@ public class SqsLambdaHandler
         {
             try
             {
-                logger.LogInformation("Attempting to deserialize SQS record. MessageId: {MessageId}", record.MessageId);
-
-                var message = JsonSerializer.Deserialize<ProcessWhatsAppMessage>(record.Body, jsonOptions);
-
-                if (message != null)
+                if (IsSystemQueue(record))
                 {
-                    logger.LogInformation("Successfully deserialized SQS message. BotPhoneNumberId: {BotPhoneNumberId}. Invoking Wolverine bus.", message.BotPhoneNumberId);
-
-                    await bus.InvokeAsync(message, cts.Token);
-
-                    logger.LogInformation("Successfully processed SQS record. MessageId: {MessageId}", record.MessageId);
+                    await ProcessSystemMessageAsync(record, cts.Token);
                 }
                 else
                 {
-                    logger.LogWarning("Deserialization returned null for SQS record. MessageId: {MessageId}. Body might be invalid JSON.", record.MessageId);
+                    await ProcessWhatsAppMessageAsync(record, cts.Token);
                 }
             }
             catch (Exception ex)
@@ -96,7 +89,45 @@ public class SqsLambdaHandler
         }
 
         logger.LogInformation("Finished processing SQS batch. Failures: {FailureCount} out of {TotalCount}.", response.BatchItemFailures.Count, sqsEvent.Records.Count);
-
         return response;
+    }
+
+    private static bool IsSystemQueue(SQSMessage record)
+    {
+        return record.EventSourceArn?.Contains("system-queue") ?? false;
+    }
+
+    private async Task ProcessSystemMessageAsync(SQSMessage record, CancellationToken ct)
+    {
+        logger.LogInformation("Attempting to deserialize internal SYSTEM SQS record. MessageId: {MessageId}", record.MessageId);
+
+        var expiredMessage = JsonSerializer.Deserialize<ChatWindowExpired>(record.Body, jsonOptions);
+
+        if (expiredMessage != null && !string.IsNullOrEmpty(expiredMessage.PhoneNumber))
+        {
+            logger.LogInformation("Successfully deserialized ChatWindowExpired for {PhoneNumber}. Invoking Wolverine bus.", expiredMessage.PhoneNumber);
+            await bus.InvokeAsync(expiredMessage, ct);
+        }
+        else
+        {
+            logger.LogWarning("Deserialization returned null for System SQS record. MessageId: {MessageId}.", record.MessageId);
+        }
+    }
+
+    private async Task ProcessWhatsAppMessageAsync(SQSMessage record, CancellationToken ct)
+    {
+        logger.LogInformation("Attempting to deserialize WHATSAPP SQS record. MessageId: {MessageId}", record.MessageId);
+
+        var message = JsonSerializer.Deserialize<ProcessWhatsAppMessage>(record.Body, jsonOptions);
+
+        if (message != null && !string.IsNullOrEmpty(message.BotPhoneNumberId))
+        {
+            logger.LogInformation("Successfully deserialized WhatsApp SQS message. BotId: {BotPhoneNumberId}. Invoking Wolverine bus.", message.BotPhoneNumberId);
+            await bus.InvokeAsync(message, ct);
+        }
+        else
+        {
+            logger.LogWarning("Deserialization returned null for WhatsApp SQS record. MessageId: {MessageId}.", record.MessageId);
+        }
     }
 }

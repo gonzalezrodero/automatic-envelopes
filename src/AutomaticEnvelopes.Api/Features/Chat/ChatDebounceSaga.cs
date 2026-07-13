@@ -1,36 +1,40 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
+using JasperFx;
 using Wolverine;
 using Wolverine.Persistence.Sagas;
 
 namespace AutomaticEnvelopes.Api.Features.Chat;
 
-// 1. Internal messages used by the Saga
 public record ChatWindowExpired([property: SagaIdentity] string PhoneNumber);
 public record AnalyzeChatSession(string PhoneNumber, string TenantId, string BotPhoneNumberId, string CombinedText);
 
 public class ChatDebounceSaga : Saga
 {
-    // Marten uses 'Id' by default as the Primary Key
+    [Identity]
     public string Id { get; set; } = string.Empty;
+
     public string TenantId { get; set; } = string.Empty;
     public string BotPhoneNumberId { get; set; } = string.Empty;
     public string CombinedText { get; set; } = string.Empty;
 
-    // --- IDENTIFIER ---
-    // Tells Wolverine how to extract the ID from the incoming message
     public static string Identity(MessageReceived message) => message.PhoneNumber;
 
     // --- CREATION ---
-    public OutgoingMessages Starts(MessageReceived message, ILogger<ChatDebounceSaga> logger)
+    public static async Task<ChatDebounceSaga> StartsAsync(MessageReceived message, IMessageBus bus, ILogger<ChatDebounceSaga> logger)
     {
         logger.LogInformation("Starting 10-second debounce window for {PhoneNumber}", message.PhoneNumber);
 
-        Id = message.PhoneNumber;
-        TenantId = message.TenantId;
-        BotPhoneNumberId = message.BotPhoneNumberId;
-        CombinedText = message.Text;
+        var saga = new ChatDebounceSaga
+        {
+            Id = message.PhoneNumber,
+            TenantId = message.TenantId,
+            BotPhoneNumberId = message.BotPhoneNumberId,
+            CombinedText = message.Text
+        };
 
-        return [new ChatWindowExpired(message.PhoneNumber)];
+        await bus.PublishAsync(new ChatWindowExpired(message.PhoneNumber));
+
+        return saga;
     }
 
     // --- UPDATE ---
@@ -47,17 +51,12 @@ public class ChatDebounceSaga : Saga
     }
 
     // --- RESOLUTION ---
-    public OutgoingMessages Handle(ChatWindowExpired _, ILogger<ChatDebounceSaga> logger)
+    public AnalyzeChatSession Handle(ChatWindowExpired _, ILogger<ChatDebounceSaga> logger)
     {
         logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", Id);
 
-        var messages = new OutgoingMessages
-        {
-            new AnalyzeChatSession(Id, TenantId, BotPhoneNumberId, CombinedText)
-        };
-
         MarkCompleted();
 
-        return messages;
+        return new AnalyzeChatSession(Id, TenantId, BotPhoneNumberId, CombinedText);
     }
 }
