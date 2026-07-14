@@ -19,38 +19,41 @@ public class ChatDebounceSaga : Saga
 
     public static string Identity(MessageReceived message) => message.PhoneNumber;
 
-    // --- CREATION ---
-    public static async Task<ChatDebounceSaga> StartsAsync(MessageReceived message, IMessageBus bus, ILogger<ChatDebounceSaga> logger)
+    public OutgoingMessages StartsOrHandles(MessageReceived message, ILogger<ChatDebounceSaga> logger)
     {
-        logger.LogInformation("Starting 10-second debounce window for {PhoneNumber}", message.PhoneNumber);
+        Id = message.PhoneNumber;
 
-        var saga = new ChatDebounceSaga
+        var messages = new OutgoingMessages();
+
+        if (string.IsNullOrEmpty(CombinedText))
         {
-            Id = message.PhoneNumber,
-            TenantId = message.TenantId,
-            BotPhoneNumberId = message.BotPhoneNumberId,
-            CombinedText = message.Text
-        };
-
-        await bus.PublishAsync(new ChatWindowExpired(message.PhoneNumber));
-
-        return saga;
-    }
-
-    // --- UPDATE ---
-    public void Handle(MessageReceived message, ILogger<ChatDebounceSaga> logger)
-    {
-        if (CombinedText.Length + message.Text.Length > 4000)
+            CombinedText = message.Text;
+        }
+        else if (CombinedText.Length + message.Text.Length > 4000)
         {
             logger.LogWarning("Saga context length exceeded 4000 chars for {PhoneNumber}. Dropping extra text.", message.PhoneNumber);
-            return;
+            return messages;
+        }
+        else
+        {
+            logger.LogInformation("Appending text to existing saga for {PhoneNumber}", message.PhoneNumber);
+            CombinedText += "\n" + message.Text;
         }
 
-        logger.LogInformation("Appending text to existing saga for {PhoneNumber}", message.PhoneNumber);
-        CombinedText += "\n" + message.Text;
+        if (string.IsNullOrEmpty(TenantId))
+        {
+            logger.LogInformation("Starting 10-second debounce window for {PhoneNumber}", message.PhoneNumber);
+
+            TenantId = message.TenantId;
+            BotPhoneNumberId = message.BotPhoneNumberId;
+
+
+            messages.Delay(new ChatWindowExpired(message.PhoneNumber), TimeSpan.FromSeconds(10));
+        }
+
+        return messages;
     }
 
-    // --- RESOLUTION ---
     public AnalyzeChatSession Handle(ChatWindowExpired _, ILogger<ChatDebounceSaga> logger)
     {
         logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", Id);
