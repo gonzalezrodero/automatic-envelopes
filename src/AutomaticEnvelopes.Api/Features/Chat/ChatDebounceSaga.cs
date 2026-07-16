@@ -52,10 +52,10 @@ public class ChatDebounceSaga : Saga
         return messages;
     }
 
-    public AnalyzeChatSession Handle(ChatWindowExpired _, ILogger<ChatDebounceSaga> logger)
+    public async Task Handle(ChatWindowExpired _, IMessageBus bus, ILogger<ChatDebounceSaga> logger)
     {
         logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", Id);
         MarkCompleted();
-        return new AnalyzeChatSession(Id, TenantId, BotPhoneNumberId, CombinedText);
+        await bus.InvokeAsync(new AnalyzeChatSession(Id, TenantId, BotPhoneNumberId, CombinedText));
     }
 }

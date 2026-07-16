@@ -2,6 +2,8 @@
 using AutomaticEnvelopes.Api.Features.Chat;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Wolverine;
 
 namespace AutomaticEnvelopes.Tests.Features.Chat;
 
@@ -53,16 +55,21 @@ public class ChatDebounceSagaTests
     }
 
     [Fact]
-    public void GivenSagaTimeout_WhenHandled_ThenAICommandIsDispatchedAndSagaCompletes()
+    public async Task GivenSagaTimeout_WhenHandled_ThenAICommandIsDispatchedAndSagaCompletes()
     {
         var saga = new ChatDebounceSaga { Id = "34666555444", TenantId = "tenant-1", BotPhoneNumberId = "bot-1", CombinedText = "Hello\nWorld" };
         var timeoutEvent = new ChatWindowExpired("34666555444");
 
-        var analyzeCommand = saga.Handle(timeoutEvent, _logger);
+        var busMock = new Mock<IMessageBus>();
 
-        analyzeCommand.Should().NotBeNull();
-        analyzeCommand.PhoneNumber.Should().Be("34666555444");
-        analyzeCommand.CombinedText.Should().Be("Hello\nWorld");
+        await saga.Handle(timeoutEvent, busMock.Object, _logger);
+
+        busMock.Verify(b => b.InvokeAsync(
+            It.Is<AnalyzeChatSession>(c =>
+                c.PhoneNumber == "34666555444" &&
+                c.CombinedText == "Hello\nWorld"),
+            It.IsAny<CancellationToken>(),
+            null), Times.Once);
 
         saga.IsCompleted().Should().BeTrue();
     }
