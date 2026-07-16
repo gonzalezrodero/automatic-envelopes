@@ -2,6 +2,7 @@
 using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
 using Amazon.SQS;
+using Amazon.SQS.Model;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Features.Tenancy;
@@ -19,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
 using System.Text;
 using Testcontainers.PostgreSql;
+using Message = Amazon.BedrockRuntime.Model.Message;
 
 namespace AutomaticEnvelopes.Tests;
 
@@ -52,7 +54,11 @@ public class IntegrationAppFixture : IAsyncLifetime
         using var sqsClient = new AmazonSQSClient("dummy", "dummy", sqsConfig);
 
         await sqsClient.CreateQueueAsync("automatic-envelopes-messages-queue");
-        await sqsClient.CreateQueueAsync("automatic-envelopes-system-queue");
+        await sqsClient.CreateQueueAsync(new CreateQueueRequest
+        {
+            QueueName = "automatic-envelopes-system-queue",
+            Attributes = new Dictionary<string, string> { { "DelaySeconds", "10" } }
+        });
         await sqsClient.CreateQueueAsync("wolverine-dead-letter-queue");
 
         Environment.SetEnvironmentVariable("ConnectionStrings__Marten", _postgres.GetConnectionString());

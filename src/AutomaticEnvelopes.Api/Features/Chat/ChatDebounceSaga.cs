@@ -22,7 +22,6 @@ public class ChatDebounceSaga : Saga
     public OutgoingMessages StartsOrHandles(MessageReceived message, ILogger<ChatDebounceSaga> logger)
     {
         Id = message.PhoneNumber;
-
         var messages = new OutgoingMessages();
 
         if (string.IsNullOrEmpty(CombinedText))
@@ -42,13 +41,12 @@ public class ChatDebounceSaga : Saga
 
         if (string.IsNullOrEmpty(TenantId))
         {
-            logger.LogInformation("Starting 10-second debounce window for {PhoneNumber}", message.PhoneNumber);
+            logger.LogInformation("Starting debounce window for {PhoneNumber} via SQS native delay", message.PhoneNumber);
 
             TenantId = message.TenantId;
             BotPhoneNumberId = message.BotPhoneNumberId;
 
-
-            messages.Delay(new ChatWindowExpired(message.PhoneNumber), TimeSpan.FromSeconds(10));
+            messages.Add(new ChatWindowExpired(message.PhoneNumber));
         }
 
         return messages;
@@ -57,9 +55,7 @@ public class ChatDebounceSaga : Saga
     public AnalyzeChatSession Handle(ChatWindowExpired _, ILogger<ChatDebounceSaga> logger)
     {
         logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", Id);
-
         MarkCompleted();
-
         return new AnalyzeChatSession(Id, TenantId, BotPhoneNumberId, CombinedText);
     }
 }
