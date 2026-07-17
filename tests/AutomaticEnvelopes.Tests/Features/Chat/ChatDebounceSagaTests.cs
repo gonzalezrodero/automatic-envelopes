@@ -2,6 +2,8 @@
 using AutomaticEnvelopes.Api.Features.Chat;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Wolverine;
 
 namespace AutomaticEnvelopes.Tests.Features.Chat;
 
@@ -10,94 +12,65 @@ public class ChatDebounceSagaTests
     private readonly NullLogger<ChatDebounceSaga> _logger = NullLogger<ChatDebounceSaga>.Instance;
 
     [Fact]
-    public void GivenFirstMessage_WhenStartsIsCalled_ThenSagaIsInitializedAndTimeoutScheduled()
+    public void GivenFirstMessage_WhenStartsOrHandlesIsCalled_ThenSagaIsInitializedAndTimeoutPublished()
     {
-        // Arrange
-        var message = new MessageReceived(
-            MessageId: "msg-1",
-            PhoneNumber: "34666555444",
-            Text: "Hello",
-            TenantId: "tenant-1",
-            BotPhoneNumberId: "bot-1",
-            ReceivedAt: DateTimeOffset.UtcNow
-        );
+        var message = new MessageReceived("msg-1", "34666555444", "Hello", "tenant-1", "bot-1", DateTimeOffset.UtcNow);
+        var saga = new ChatDebounceSaga { Id = "34666555444" };
 
-        var saga = new ChatDebounceSaga();
+        var result = saga.StartsOrHandles(message, _logger);
 
-        // Act - Call the instance method
-        var outgoing = saga.Starts(message, _logger);
-
-        // Assert Saga State
         saga.Id.Should().Be("34666555444");
-        saga.TenantId.Should().Be("tenant-1");
         saga.CombinedText.Should().Be("Hello");
 
-        // Assert Scheduled Timeout
-        var scheduledMessage = outgoing.FirstOrDefault();
-        scheduledMessage.Should().NotBeNull("A timeout message must be scheduled to close the saga.");
+        result.Should().NotBeNull();
+        var expiredEvent = result.OfType<ChatWindowExpired>().FirstOrDefault();
+
+        expiredEvent.Should().NotBeNull("Un evento ChatWindowExpired debe haberse encolado.");
+        expiredEvent!.PhoneNumber.Should().Be("34666555444");
     }
 
     [Fact]
     public void GivenExistingSaga_WhenNewMessageArrives_ThenTextIsAppended()
     {
-        // Arrange
-        var saga = new ChatDebounceSaga
-        {
-            Id = "34666555444",
-            CombinedText = "Hello"
-        };
+        var saga = new ChatDebounceSaga { Id = "34666555444", TenantId = "tenant-1", CombinedText = "Hello" };
         var newMessage = new MessageReceived("msg-2", "34666555444", "World", "tenant-1", "bot-1", DateTimeOffset.UtcNow);
 
-        // Act
-        saga.Handle(newMessage, _logger);
+        var result = saga.StartsOrHandles(newMessage, _logger);
 
-        // Assert
         saga.CombinedText.Should().Be("Hello\nWorld");
+        result.Should().BeEmpty();
     }
 
     [Fact]
-    public void GivenExistingSaga_WhenPayloadExceeds4000Chars_ThenExtraTextIsDroppedToProtectCosts()
+    public void GivenExistingSaga_WhenPayloadExceeds4000Chars_ThenExtraTextIsDropped()
     {
-        // Arrange
         var massiveText = new string('A', 3995);
-        var saga = new ChatDebounceSaga
-        {
-            Id = "34666555444",
-            CombinedText = massiveText
-        };
-        var newMessage = new MessageReceived("msg-2", "34666555444", "This is too much text", "tenant-1", "bot-1", DateTimeOffset.UtcNow);
+        var saga = new ChatDebounceSaga { Id = "34666555444", TenantId = "tenant-1", CombinedText = massiveText };
+        var newMessage = new MessageReceived("msg-2", "34666555444", "Too much text", "tenant-1", "bot-1", DateTimeOffset.UtcNow);
 
-        // Act
-        saga.Handle(newMessage, _logger);
+        var result = saga.StartsOrHandles(newMessage, _logger);
 
-        // Assert
-        saga.CombinedText.Should().Be(massiveText, "The new text should be ignored because appending it crosses the 4000 character threshold.");
+        saga.CombinedText.Should().Be(massiveText);
+        result.Should().BeEmpty();
     }
 
     [Fact]
-    public void GivenSagaTimeout_WhenHandled_ThenAICommandIsDispatchedAndSagaCompletes()
+    public async Task GivenSagaTimeout_WhenHandled_ThenAICommandIsDispatchedAndSagaCompletes()
     {
-        // Arrange
-        var saga = new ChatDebounceSaga
-        {
-            Id = "34666555444",
-            TenantId = "tenant-1",
-            BotPhoneNumberId = "bot-1",
-            CombinedText = "Hello\nWorld"
-        };
+        var saga = new ChatDebounceSaga { Id = "34666555444", TenantId = "tenant-1", BotPhoneNumberId = "bot-1", CombinedText = "Hello\nWorld" };
         var timeoutEvent = new ChatWindowExpired("34666555444");
 
-        // Act
-        var outgoing = saga.Handle(timeoutEvent, _logger);
+        var busMock = new Mock<IMessageBus>();
 
-        // Assert Dispatch
-        var analyzeCommand = outgoing.OfType<AnalyzeChatSession>().SingleOrDefault();
+        await saga.Handle(timeoutEvent, busMock.Object, _logger);
 
-        analyzeCommand.Should().NotBeNull();
-        analyzeCommand!.PhoneNumber.Should().Be("34666555444");
-        analyzeCommand.CombinedText.Should().Be("Hello\nWorld");
+        busMock.Verify(b => b.InvokeAsync(
+            It.Is<AnalyzeChatSession>(c =>
+                c.PhoneNumber == "34666555444" &&
+                c.CombinedText == "Hello\nWorld"),
+            It.IsAny<CancellationToken>(),
+            null), Times.Once);
 
-        // Assert Saga Completion
-        saga.IsCompleted().Should().BeTrue("The saga must mark itself as completed so Marten deletes it from the database.");
+        saga.IsCompleted().Should().BeTrue();
     }
 }

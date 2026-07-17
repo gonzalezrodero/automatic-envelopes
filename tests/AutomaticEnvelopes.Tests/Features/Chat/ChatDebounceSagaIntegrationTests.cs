@@ -43,7 +43,7 @@ public class ChatDebounceSagaIntegrationTests(IntegrationAppFixture fixture)
         var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(userPhone));
 
         // Assert 2: Verify Wolverine published the final consolidated command to the AI Handler
-        var aiCommand = trackedSession.Sent.MessagesOf<AnalyzeChatSession>().SingleOrDefault();
+        var aiCommand = trackedSession.Executed.MessagesOf<AnalyzeChatSession>().SingleOrDefault();
         aiCommand.Should().NotBeNull("The saga should have dispatched the AI command upon expiration.");
         aiCommand!.CombinedText.Should().Be("Hello\nI need help\nwith my account");
 

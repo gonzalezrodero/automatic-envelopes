@@ -132,14 +132,17 @@ public static class Config
                 .UseInterop(queue => new RawJsonSqsMapper());
 
             opts.PublishMessage<ChatWindowExpired>()
-                .ToSqsQueue("automatic-envelopes-system-queue");
+                .ToSqsQueue("automatic-envelopes-system-queue")
+                .SendInline()
+                .UseInterop(queue => new RawJsonSqsMapper());
 
             if (config.GetValue<bool>("EnableSqsListener"))
             {
                 opts.ListenToSqsQueue("automatic-envelopes-messages-queue")
                     .ReceiveRawJsonMessage(typeof(ProcessWhatsAppMessage));
 
-                opts.ListenToSqsQueue("automatic-envelopes-system-queue");
+                opts.ListenToSqsQueue("automatic-envelopes-system-queue")
+                    .ReceiveRawJsonMessage(typeof(ChatWindowExpired));
             }
         });
     }
