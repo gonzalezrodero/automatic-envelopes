@@ -39,7 +39,10 @@ resource "aws_security_group" "db_sg" {
 # ==========================================
 resource "aws_db_subnet_group" "db_subnets" {
   name       = "${var.project_name}-db-subnet-group"
-  subnet_ids = data.terraform_remote_state.network.outputs.private_subnet_ids
+  # Keep the existing public subnets. Replacing them in-place fails:
+  # AWS will not drop subnets that the live RDS instance still uses.
+  # Move to private subnets later via a new subnet group, then attach it.
+  subnet_ids = data.terraform_remote_state.network.outputs.public_subnet_ids
 
   tags = {
     Name = "${var.project_name}-db-subnet-group"
