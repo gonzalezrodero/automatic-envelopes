@@ -77,15 +77,14 @@ resource "aws_db_instance" "postgres" {
 
   manage_master_user_password = true
 
-  # 1. Performance Insights
-  performance_insights_enabled          = false
-  performance_insights_retention_period = 7
-
-  # 2. Enhanced Monitoring
-  monitoring_interval = 0
-  monitoring_role_arn = aws_iam_role.rds_monitoring_role.arn
+  # Cost controls: omit retention/role when PI and Enhanced Monitoring are off.
+  # AWS rejects monitoring_role_arn when monitoring_interval is 0, and rejects
+  # performance_insights_retention_period when performance insights is disabled.
+  performance_insights_enabled = false
+  monitoring_interval          = 0
 }
 
+# Kept for a future re-enable of Enhanced Monitoring (not attached while interval=0).
 resource "aws_iam_role" "rds_monitoring_role" {
   name = "${var.project_name}-rds-monitoring-role"
   assume_role_policy = jsonencode({
