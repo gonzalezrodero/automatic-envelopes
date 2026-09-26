@@ -175,9 +175,12 @@ resource "aws_scheduler_schedule" "start_rds" {
   name       = "${var.project_name}-start-rds"
   group_name = aws_scheduler_schedule_group.rds.name
 
+  # Disabled while unused: avoid paying daytime instance hours. Re-enable via rds_auto_start=true.
+  state = var.rds_auto_start ? "ENABLED" : "DISABLED"
+
   schedule_expression          = "cron(0 8 * * ? *)"
   schedule_expression_timezone = "Europe/Madrid"
-  description                  = "Start RDS at 08:00 Europe/Madrid"
+  description                  = "Start RDS at 08:00 Europe/Madrid (disabled when rds_auto_start=false)"
 
   flexible_time_window {
     mode = "OFF"
