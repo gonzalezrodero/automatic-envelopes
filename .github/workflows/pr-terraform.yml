@@ -31,10 +31,8 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      bootstrap: ${{ steps.filter.outputs.bootstrap }}
-      network: ${{ steps.filter.outputs.network }}
-      db: ${{ steps.filter.outputs.db }}
-      serverless: ${{ steps.filter.outputs.serverless }}
+      any: ${{ steps.matrix.outputs.any }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
@@ -50,17 +48,38 @@ jobs:
             serverless:
               - 'infra/serverless/**'
 
+      # Build matrix in the changes job — job-level `if:` cannot reference matrix.
+      - name: Build plan matrix
+        id: matrix
+        run: |
+          items=()
+          if [ "${{ steps.filter.outputs.bootstrap }}" = "true" ]; then
+            items+=('{"stack":"bootstrap","working_dir":"infra/bootstrap"}')
+          fi
+          if [ "${{ steps.filter.outputs.network }}" = "true" ]; then
+            items+=('{"stack":"network","working_dir":"infra/network"}')
+          fi
+          if [ "${{ steps.filter.outputs.db }}" = "true" ]; then
+            items+=('{"stack":"db","working_dir":"infra/db"}')
+          fi
+          if [ "${{ steps.filter.outputs.serverless }}" = "true" ]; then
+            items+=('{"stack":"serverless","working_dir":"infra/serverless"}')
+          fi
+          if [ ${#items[@]} -eq 0 ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+          else
+            joined=$(IFS=,; echo "${items[*]}")
+            echo "any=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[${joined}]}" >> "$GITHUB_OUTPUT"
+          fi
+
   plan:
     name: "Plan ${{ matrix.stack }}"
     needs: changes
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
-      (
-        (matrix.stack == 'bootstrap' && needs.changes.outputs.bootstrap == 'true') ||
-        (matrix.stack == 'network' && needs.changes.outputs.network == 'true') ||
-        (matrix.stack == 'db' && needs.changes.outputs.db == 'true') ||
-        (matrix.stack == 'serverless' && needs.changes.outputs.serverless == 'true')
-      )
+      needs.changes.outputs.any == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -68,16 +87,7 @@ jobs:
       pull-requests: write
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - stack: bootstrap
-            working_dir: infra/bootstrap
-          - stack: network
-            working_dir: infra/network
-          - stack: db
-            working_dir: infra/db
-          - stack: serverless
-            working_dir: infra/serverless
+      matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
