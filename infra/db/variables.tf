@@ -23,6 +23,12 @@ variable "allocated_storage" {
   type        = number
 }
 
+variable "backup_retention_period" {
+  description = "Days of automated RDS backups to keep (0 disables automated backups)"
+  type        = number
+  default     = 1
+}
+
 variable "aws_account_id" {
   type    = string
   default = "543704476214"
