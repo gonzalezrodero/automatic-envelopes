@@ -16,8 +16,6 @@ on:
 # Same-repo PRs only (OIDC + secrets). Forks are skipped.
 permissions:
   contents: read
-  pull-requests: write
-  id-token: write
 
 env:
   AWS_REGION: eu-west-1
@@ -29,14 +27,17 @@ jobs:
     name: Detect stacks
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       bootstrap: ${{ steps.filter.outputs.bootstrap }}
       network: ${{ steps.filter.outputs.network }}
       db: ${{ steps.filter.outputs.db }}
       serverless: ${{ steps.filter.outputs.serverless }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
         id: filter
         with:
           filters: |
@@ -61,6 +62,10 @@ jobs:
         (matrix.stack == 'serverless' && needs.changes.outputs.serverless == 'true')
       )
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
@@ -74,14 +79,14 @@ jobs:
           - stack: serverless
             working_dir: infra/serverless
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: hashicorp/setup-terraform@v4
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
@@ -106,7 +111,7 @@ jobs:
 
       - name: Upload plan log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-tfplan-${{ matrix.stack }}-${{ github.event.pull_request.number }}
           path: ${{ matrix.working_dir }}/plan-output.txt
@@ -115,7 +120,7 @@ jobs:
 
       - name: Comment plan on PR
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           STACK: ${{ matrix.stack }}
           WORKING_DIR: ${{ matrix.working_dir }}
