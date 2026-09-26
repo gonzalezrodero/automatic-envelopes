@@ -1,0 +1,185 @@
+name: "PR Terraform Plan"
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infra/bootstrap/**"
+      - "infra/network/**"
+      - "infra/db/**"
+      - "infra/serverless/**"
+      - ".github/workflows/pr-terraform.yml"
+      - ".github/workflows/reusable-terraform.yml"
+      - ".github/workflows/reusable-serverless.yml"
+
+# Same-repo PRs only (OIDC + secrets). Forks are skipped.
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+  TF_VERSION: "1.11.4"
+  ECR_REPOSITORY: automatic-envelopes-api
+
+jobs:
+  changes:
+    name: Detect stacks
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      bootstrap: ${{ steps.filter.outputs.bootstrap }}
+      network: ${{ steps.filter.outputs.network }}
+      db: ${{ steps.filter.outputs.db }}
+      serverless: ${{ steps.filter.outputs.serverless }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            bootstrap:
+              - 'infra/bootstrap/**'
+            network:
+              - 'infra/network/**'
+            db:
+              - 'infra/db/**'
+            serverless:
+              - 'infra/serverless/**'
+
+  plan:
+    name: "Plan ${{ matrix.stack }}"
+    needs: changes
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (matrix.stack == 'bootstrap' && needs.changes.outputs.bootstrap == 'true') ||
+        (matrix.stack == 'network' && needs.changes.outputs.network == 'true') ||
+        (matrix.stack == 'db' && needs.changes.outputs.db == 'true') ||
+        (matrix.stack == 'serverless' && needs.changes.outputs.serverless == 'true')
+      )
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stack: bootstrap
+            working_dir: infra/bootstrap
+          - stack: network
+            working_dir: infra/network
+          - stack: db
+            working_dir: infra/db
+          - stack: serverless
+            working_dir: infra/serverless
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -backend-config=config/dev/config.remote
+        working-directory: ${{ matrix.working_dir }}
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ matrix.working_dir }}
+        run: |
+          set +e
+          PLAN_ARGS=(-var-file=config/dev/config.tfvars -no-color -input=false)
+          if [ "${{ matrix.stack }}" = "serverless" ]; then
+            PLAN_ARGS+=(-var=image_tag=pr-${{ github.event.pull_request.number }})
+          fi
+          terraform plan "${PLAN_ARGS[@]}" -detailed-exitcode 2>&1 | tee plan-output.txt
+          EXIT=${PIPESTATUS[0]}
+          echo "exitcode=$EXIT" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload plan log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-tfplan-${{ matrix.stack }}-${{ github.event.pull_request.number }}
+          path: ${{ matrix.working_dir }}/plan-output.txt
+          if-no-files-found: ignore
+          retention-days: 5
+
+      - name: Comment plan on PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          STACK: ${{ matrix.stack }}
+          WORKING_DIR: ${{ matrix.working_dir }}
+          PLAN_EXIT: ${{ steps.plan.outputs.exitcode }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = `${process.env.WORKING_DIR}/plan-output.txt`;
+            let body = `_No plan output produced._`;
+            if (fs.existsSync(path)) {
+              let output = fs.readFileSync(path, 'utf8');
+              if (output.length > 60000) {
+                output = output.slice(0, 60000) + '\n\n… truncated …';
+              }
+              body = output;
+            }
+            const exit = process.env.PLAN_EXIT || '1';
+            const status =
+              exit === '0' ? 'No changes' :
+              exit === '2' ? 'Changes detected' :
+              'Failed';
+            const marker = `<!-- tf-plan:${process.env.STACK} -->`;
+            const comment = [
+              marker,
+              `### Terraform plan (\`dev\` / \`${process.env.STACK}\`)`,
+              '',
+              `**Status:** ${status} (exit ${exit})`,
+              '',
+              '<details><summary>Plan output</summary>',
+              '',
+              '```text',
+              body,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: comment,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment,
+              });
+            }
+
+            if (exit !== '0' && exit !== '2') {
+              core.setFailed(`Terraform plan failed for ${process.env.STACK}`);
+            }
+
+      - name: Fail job on plan error
+        if: steps.plan.outputs.exitcode != '0' && steps.plan.outputs.exitcode != '2'
+        run: exit 1

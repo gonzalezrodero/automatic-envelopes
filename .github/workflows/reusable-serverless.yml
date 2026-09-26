@@ -15,98 +15,142 @@ on:
 
 env:
   AWS_REGION: eu-west-1
-  ECR_REPOSITORY: automatic-envelopes-api 
+  ECR_REPOSITORY: automatic-envelopes-api
   TF_WORKING_DIR: 'infra/serverless'
+  TF_VERSION: "1.11.4"
 
 jobs:
   plan:
-    name: "Build & Terraform Plan"
+    name: "Terraform Plan"
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    concurrency:
+      group: tf-infra/serverless-${{ inputs.env_name }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
     outputs:
       image_tag: ${{ steps.calver.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - id: calver
         run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
-        
-      - uses: aws-actions/configure-aws-credentials@v4
+
+      - uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          
-      - uses: hashicorp/setup-terraform@v3
-      
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
       - name: Terraform Init
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ env.TF_WORKING_DIR }}
-        
-      - name: Pre-create ECR
+
+      # Ensure ECR exists in AWS + state before planning so apply can push the
+      # image then apply the saved plan without a -target apply or stale plan.
+      - name: Ensure ECR repository
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
-        run: |
-          terraform apply \
-            -target=aws_ecr_repository.backend \
-            -var-file=config/$TF_FOLDER/config.tfvars \
-            -var="image_tag=dummy" \
-            -auto-approve -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - uses: aws-actions/amazon-ecr-login@v2
-        id: login-ecr
-        
-      - name: Build and Push Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          
+          set -euo pipefail
+          if ! aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "Creating ECR repository $ECR_REPOSITORY"
+            aws ecr create-repository \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-tag-mutability IMMUTABLE \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=KMS \
+              --region "$AWS_REGION"
+          else
+            echo "ECR repository $ECR_REPOSITORY already exists"
+          fi
+
+          if ! terraform state show aws_ecr_repository.backend >/dev/null 2>&1; then
+            echo "Importing aws_ecr_repository.backend into Terraform state"
+            terraform import \
+              -var-file="config/$TF_FOLDER/config.tfvars" \
+              -var="image_tag=import" \
+              aws_ecr_repository.backend "$ECR_REPOSITORY"
+          else
+            echo "aws_ecr_repository.backend already in state"
+          fi
+
       - name: Terraform Plan
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
           TAG: ${{ steps.calver.outputs.tag }}
-        run: terraform plan -var-file=config/$TF_FOLDER/config.tfvars -var="image_tag=$TAG" -no-color
+        run: |
+          terraform plan \
+            -var-file=config/$TF_FOLDER/config.tfvars \
+            -var="image_tag=$TAG" \
+            -out=tfplan \
+            -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}
 
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-serverless-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+          if-no-files-found: error
+          retention-days: 5
+
   apply:
-    name: "Terraform Apply"
+    name: "Build, Push & Apply"
     needs: plan
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    concurrency:
+      group: tf-infra/serverless-${{ inputs.env_name }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          
-      - uses: hashicorp/setup-terraform@v3
-      
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+
+      - name: Build and Push Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ needs.plan.outputs.image_tag }}
+        run: |
+          docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-serverless-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIR }}
+
       - name: Terraform Init
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ env.TF_WORKING_DIR }}
-        
+
       - name: Terraform Apply
-        env:
-          TF_FOLDER: ${{ inputs.tf_folder }}
-          TAG: ${{ needs.plan.outputs.image_tag }}
-        run: |
-          terraform apply \
-            -var-file=config/$TF_FOLDER/config.tfvars \
-            -var="image_tag=$TAG" \
-            -auto-approve -no-color
+        run: terraform apply -auto-approve -no-color tfplan
         working-directory: ${{ env.TF_WORKING_DIR }}
