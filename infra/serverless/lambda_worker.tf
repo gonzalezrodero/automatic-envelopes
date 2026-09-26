@@ -5,7 +5,7 @@ resource "aws_lambda_function" "worker" {
   image_uri     = "${aws_ecr_repository.backend.repository_url}:${var.image_tag}"
 
   timeout     = 30
-  memory_size = 512
+  memory_size = 256
 
   environment {
     variables = {
