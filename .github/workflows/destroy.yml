@@ -19,38 +19,63 @@ on:
           - infra/serverless
           - infra/db
           - infra/network
+          - infra/bootstrap
       confirmation:
         description: 'Type "yes"'
         required: true
         default: 'no'
 
 permissions:
-  id-token: write
   contents: read
+
+env:
+  AWS_REGION: eu-west-1
+  TF_VERSION: "1.11.4"
 
 jobs:
   destroy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    concurrency:
+      group: tf-${{ inputs.target_folder }}-${{ inputs.env_name }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Verify confirmation
         env:
           CONF: ${{ inputs.confirmation }}
         run: |
-          [ "$CONF" == "yes" ] || exit 1
-      - uses: aws-actions/configure-aws-credentials@v4
+          if [ "$CONF" != "yes" ]; then
+            echo "Confirmation must be exactly: yes"
+            exit 1
+          fi
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: eu-west-1
-      - uses: hashicorp/setup-terraform@v3
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
       - name: Set Folder
         id: env
         run: |
-          echo "folder=$([ "${{ inputs.env_name }}" == "production" ] && echo "prod" || echo "dev")" >> $GITHUB_OUTPUT
+          echo "folder=$([ "${{ inputs.env_name }}" = "production" ] && echo "prod" || echo "dev")" >> "$GITHUB_OUTPUT"
       - name: Terraform Init
         run: terraform init -backend-config="config/${{ steps.env.outputs.folder }}/config.remote"
         working-directory: ${{ inputs.target_folder }}
       - name: Terraform Destroy
-        run: terraform destroy -var-file="config/${{ steps.env.outputs.folder }}/config.tfvars" -var="image_tag=destroy" -auto-approve
+        env:
+          TARGET: ${{ inputs.target_folder }}
+          FOLDER: ${{ steps.env.outputs.folder }}
         working-directory: ${{ inputs.target_folder }}
+        run: |
+          set -euo pipefail
+          ARGS=(-var-file="config/$FOLDER/config.tfvars" -auto-approve -no-color -input=false)
+          if [ "$TARGET" = "infra/serverless" ]; then
+            ARGS+=(-var="image_tag=destroy")
+          fi
+          terraform destroy "${ARGS[@]}"

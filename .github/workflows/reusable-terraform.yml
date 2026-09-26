@@ -18,22 +18,29 @@ on:
 
 env:
   AWS_REGION: eu-west-1
+  TF_VERSION: "1.11.4"
 
 jobs:
   plan:
     name: "Plan"
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    concurrency:
+      group: tf-${{ inputs.working_dir }}-${{ inputs.env_name }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
       - name: Terraform Init
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
@@ -42,31 +49,51 @@ jobs:
       - name: Terraform Plan
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
-        run: terraform plan -var-file=config/$TF_FOLDER/config.tfvars -no-color
+        run: |
+          terraform plan \
+            -var-file=config/$TF_FOLDER/config.tfvars \
+            -out=tfplan \
+            -no-color
         working-directory: ${{ inputs.working_dir }}
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tfplan-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
+          path: ${{ inputs.working_dir }}/tfplan
+          if-no-files-found: error
+          retention-days: 5
 
   apply:
     name: "Apply"
     needs: plan
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    concurrency:
+      group: tf-${{ inputs.working_dir }}-${{ inputs.env_name }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Download Terraform plan
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tfplan-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
+          path: ${{ inputs.working_dir }}
       - name: Terraform Init
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ inputs.working_dir }}
       - name: Terraform Apply
-        env:
-          TF_FOLDER: ${{ inputs.tf_folder }}
-        run: terraform apply -var-file=config/$TF_FOLDER/config.tfvars -auto-approve -no-color
+        run: terraform apply -auto-approve -no-color tfplan
         working-directory: ${{ inputs.working_dir }}

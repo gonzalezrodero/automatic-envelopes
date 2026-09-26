@@ -9,6 +9,10 @@ on:
       - '.github/workflows/reusable-terraform.yml'
   workflow_dispatch:
 
+concurrency:
+  group: deploy-db-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: read
