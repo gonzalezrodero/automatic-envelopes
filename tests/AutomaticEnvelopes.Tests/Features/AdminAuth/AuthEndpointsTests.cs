@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
@@ -19,6 +20,19 @@ public class AuthEndpointsTests
         AdminAuthOptions.FromConfiguration(
             new ConfigurationBuilder().AddJsonFile(AdminAuthAppSettings.Path()).Build()));
     private static readonly string RedirectUri = PortalOptions.Value.AllowedRedirectUris[0];
+
+    [Fact]
+    public void ProtectedConstructor_KeepsTheEndpointTypeInstantiable()
+    {
+        var ctor = typeof(AuthEndpoints).GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            Type.EmptyTypes,
+            null);
+
+        ctor.Should().NotBeNull();
+        ctor!.Invoke(null).Should().BeOfType<AuthEndpoints>();
+    }
 
     [Fact]
     public async Task Exchange_SetsHostOnlyCookies_AndOmitsTokensFromJson()
@@ -93,6 +107,147 @@ public class AuthEndpointsTests
         cognito.Verify(
             client => client.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Theory]
+    [MemberData(nameof(IncompleteBodies))]
+    public async Task Exchange_RejectsIncompleteBody(TokenExchangeRequest? request)
+    {
+        var cognito = new Mock<ICognitoTokenClient>();
+        var context = NewContext();
+
+        var result = await AuthEndpoints.Exchange(
+            request,
+            context,
+            cognito.Object,
+            Mock.Of<ICognitoIdTokenReader>(),
+            PortalOptions,
+            NullLogger<AuthEndpoints>.Instance,
+            CancellationToken.None);
+
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var body = await ReadBody(context);
+        body.Should().Contain("code, codeVerifier, and redirectUri are required.");
+        cognito.Verify(
+            client => client.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    public static IEnumerable<object?[]> IncompleteBodies()
+    {
+        yield return [null];
+        yield return [new TokenExchangeRequest()];
+        yield return [new TokenExchangeRequest { Code = " ", CodeVerifier = Verifier, RedirectUri = "https://portal.example/callback" }];
+        yield return [new TokenExchangeRequest { Code = "auth-code", CodeVerifier = " ", RedirectUri = "https://portal.example/callback" }];
+        yield return [new TokenExchangeRequest { Code = "auth-code", CodeVerifier = Verifier, RedirectUri = " " }];
+    }
+
+    [Fact]
+    public async Task Exchange_RejectsOversizedCode_AndVerifierWithDisallowedCharacters()
+    {
+        var cognito = new Mock<ICognitoTokenClient>();
+
+        foreach (var request in new[]
+        {
+            new TokenExchangeRequest { Code = new string('a', 2049), CodeVerifier = Verifier, RedirectUri = RedirectUri },
+            new TokenExchangeRequest { Code = "auth-code", CodeVerifier = new string('a', 42) + "+", RedirectUri = RedirectUri },
+            new TokenExchangeRequest { Code = "auth-code", CodeVerifier = new string('a', 129), RedirectUri = RedirectUri }
+        })
+        {
+            var context = NewContext();
+            var result = await AuthEndpoints.Exchange(
+                request,
+                context,
+                cognito.Object,
+                Mock.Of<ICognitoIdTokenReader>(),
+                PortalOptions,
+                NullLogger<AuthEndpoints>.Instance,
+                CancellationToken.None);
+            await result.ExecuteAsync(context);
+            context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        }
+
+        cognito.Verify(
+            client => client.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Exchange_AcceptsPkceVerifierWithUnreservedCharacters()
+    {
+        var verifier = "a-._~" + new string('b', 38);
+        var cognito = new Mock<ICognitoTokenClient>();
+        cognito.Setup(client => client.ExchangeAsync("auth-code", verifier, RedirectUri, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CognitoAuthException(StatusCodes.Status401Unauthorized));
+        var context = NewContext();
+
+        var result = await AuthEndpoints.Exchange(
+            new TokenExchangeRequest { Code = "auth-code", CodeVerifier = verifier, RedirectUri = RedirectUri },
+            context,
+            cognito.Object,
+            Mock.Of<ICognitoIdTokenReader>(),
+            PortalOptions,
+            NullLogger<AuthEndpoints>.Instance,
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        cognito.Verify(
+            client => client.ExchangeAsync("auth-code", verifier, RedirectUri, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(StatusCodes.Status400BadRequest, "The authorization code could not be accepted.")]
+    [InlineData(StatusCodes.Status500InternalServerError, "Authentication is not configured.")]
+    public async Task Exchange_MapsCognitoClientErrors(int statusCode, string message)
+    {
+        var cognito = new Mock<ICognitoTokenClient>();
+        cognito.Setup(client => client.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CognitoAuthException(statusCode));
+        var context = NewContext();
+
+        var result = await AuthEndpoints.Exchange(
+            new TokenExchangeRequest { Code = "auth-code", CodeVerifier = Verifier, RedirectUri = RedirectUri },
+            context,
+            cognito.Object,
+            Mock.Of<ICognitoIdTokenReader>(),
+            PortalOptions,
+            NullLogger<AuthEndpoints>.Instance,
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(statusCode);
+        SetCookieHeader(context).Should().BeEmpty();
+        (await ReadBody(context)).Should().Contain(message);
+    }
+
+    [Fact]
+    public async Task Exchange_UsesOneHourCookie_WhenCognitoOmitsExpiry()
+    {
+        var cognito = new Mock<ICognitoTokenClient>();
+        cognito.Setup(client => client.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CognitoTokenSet("access-value", "id-value", 0));
+        var reader = new Mock<ICognitoIdTokenReader>();
+        reader.Setup(tokenReader => tokenReader.EnsureAccessTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        reader.Setup(tokenReader => tokenReader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Ada", ["admin"]));
+        var context = NewContext();
+
+        var result = await AuthEndpoints.Exchange(
+            new TokenExchangeRequest { Code = "auth-code", CodeVerifier = Verifier, RedirectUri = RedirectUri },
+            context,
+            cognito.Object,
+            reader.Object,
+            PortalOptions,
+            NullLogger<AuthEndpoints>.Instance,
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        CookieHeaders(context).Should().Contain(cookie => cookie.Contains("max-age=3600", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -212,6 +367,65 @@ public class AuthEndpointsTests
         json.RootElement.GetProperty("name").GetString().Should().Be("Núria Solé");
         json.RootElement.GetProperty("groups")[0].GetString().Should().Be("club-basquet-sama");
         reader.Verify(tokenReader => tokenReader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Me_WithoutAuthentication_Returns401()
+    {
+        var context = NewContext();
+        var result = await AuthEndpoints.Me(
+            new ClaimsPrincipal(new ClaimsIdentity()),
+            context,
+            Mock.Of<ICognitoIdTokenReader>(),
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Me_WhenIdTokenCannotBeRead_Returns401(bool cognitoFailure)
+    {
+        var reader = new Mock<ICognitoIdTokenReader>();
+        reader.Setup(tokenReader => tokenReader.ReadAsync("expired-id", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(cognitoFailure
+                ? new CognitoAuthException(StatusCodes.Status502BadGateway)
+                : new SecurityTokenException("expired"));
+        var context = NewContext();
+        context.Request.Headers.Cookie = "ae_id=expired-id";
+
+        var result = await AuthEndpoints.Me(
+            Authenticated(new Claim("email", "admin@core-webhook.eu")),
+            context,
+            reader.Object,
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Me_UsesEmailWhenNameIsBlank_AndReadsRoleClaimsAsGroups()
+    {
+        var context = NewContext();
+        var user = Authenticated(
+            new Claim(ClaimTypes.Email, "campus@cbsama.cat"),
+            new Claim("name", " "),
+            new Claim(ClaimTypes.Role, "admin"),
+            new Claim(ClaimTypes.Role, "admin"),
+            new Claim(ClaimTypes.Role, " "));
+
+        var result = await AuthEndpoints.Me(user, context, Mock.Of<ICognitoIdTokenReader>(), CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        using var json = JsonDocument.Parse(await ReadBody(context));
+        json.RootElement.GetProperty("email").GetString().Should().Be("campus@cbsama.cat");
+        json.RootElement.GetProperty("name").GetString().Should().Be("campus@cbsama.cat");
+        json.RootElement.GetProperty("groups").EnumerateArray().Select(group => group.GetString())
+            .Should().Equal("admin");
     }
 
     [Fact]

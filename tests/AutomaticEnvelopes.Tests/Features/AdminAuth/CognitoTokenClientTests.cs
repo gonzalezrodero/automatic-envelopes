@@ -101,6 +101,49 @@ public class CognitoTokenClientTests
     }
 
     [Fact]
+    public async Task ExchangeAsync_WhenBodyIsNotJson_Returns502()
+    {
+        var handler = new StubHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html>nope</html>", Encoding.UTF8, "text/html")
+        }));
+        var sut = CreateClient(handler, Configured);
+
+        var act = () => sut.ExchangeAsync("code", "verifier", "https://admin.core-webhook.eu/auth/callback", CancellationToken.None);
+
+        var error = await act.Should().ThrowAsync<CognitoAuthException>();
+        error.Which.StatusCode.Should().Be(StatusCodes.Status502BadGateway);
+    }
+
+    [Fact]
+    public async Task ExchangeAsync_RethrowsWhenTheCallerCancels()
+    {
+        var cts = new CancellationTokenSource();
+        var handler = new StubHandler((_, _) =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+        var sut = CreateClient(handler, Configured);
+
+        var act = () => sut.ExchangeAsync("code", "verifier", "https://admin.core-webhook.eu/auth/callback", cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task ExchangeAsync_WhenTheHttpCallTimesOut_Returns502()
+    {
+        var handler = new StubHandler((_, _) => throw new TaskCanceledException("timeout"));
+        var sut = CreateClient(handler, Configured);
+
+        var act = () => sut.ExchangeAsync("code", "verifier", "https://admin.core-webhook.eu/auth/callback", CancellationToken.None);
+
+        var error = await act.Should().ThrowAsync<CognitoAuthException>();
+        error.Which.StatusCode.Should().Be(StatusCodes.Status502BadGateway);
+    }
+
+    [Fact]
     public async Task ExchangeAsync_WhenCognitoIsNotConfigured_Returns500()
     {
         var handler = new StubHandler((_, _) => throw new InvalidOperationException("should not be called"));

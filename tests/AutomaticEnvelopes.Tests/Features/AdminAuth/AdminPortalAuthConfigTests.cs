@@ -1,4 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http;
+using System.Reflection;
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AwesomeAssertions;
@@ -78,9 +80,31 @@ public class AdminPortalAuthConfigTests
             })
             .Build());
 
+        options.Host.Should().Be("automatic-envelopes-admin-prod.auth.eu-west-1.amazoncognito.com");
         options.CorsOrigins.Should().Equal("https://admin.core-webhook.eu");
         options.TokenEndpoint.Should().Be("https://automatic-envelopes-admin-prod.auth.eu-west-1.amazoncognito.com/oauth2/token");
         options.Issuer.Should().Be("https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_pool");
+    }
+
+    [Fact]
+    public void Host_StripsHttpSchemeAndPath()
+    {
+        var options = new AdminAuthOptions
+        {
+            Domain = "http://auth.example.com/oauth2/token",
+            Region = " ",
+            UserPoolId = "eu-west-1_pool"
+        };
+
+        var fromBlankRegion = AdminAuthOptions.FromConfiguration(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AWS_REGION"] = " " })
+            .Build());
+
+        options.Host.Should().Be("auth.example.com");
+        options.TokenEndpoint.Should().Be("https://auth.example.com/oauth2/token");
+        fromBlankRegion.Region.Should().Be("eu-west-1");
+        fromBlankRegion.AllowedOrigins.Should().BeEmpty();
+        fromBlankRegion.CorsOrigins.Should().BeEmpty();
     }
 
     [Fact]
@@ -129,6 +153,17 @@ public class AdminPortalAuthConfigTests
         jwt.TokenValidationParameters.AudienceValidator!([], token, jwt.TokenValidationParameters).Should().BeFalse();
     }
 
+    [Fact]
+    public void CognitoHttpClient_DisablesRedirects_AndUsesAFifteenSecondTimeout()
+    {
+        using var provider = BuildProvider([]);
+        var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(CognitoHttpClient.Name);
+        var handler = PrimaryHandler(client);
+
+        client.Timeout.Should().Be(TimeSpan.FromSeconds(15));
+        handler.Should().BeOfType<SocketsHttpHandler>().Which.AllowAutoRedirect.Should().BeFalse();
+    }
+
     private static ServiceProvider BuildProvider(Dictionary<string, string?> values)
     {
         var configuration = new ConfigurationBuilder()
@@ -139,6 +174,20 @@ public class AdminPortalAuthConfigTests
         services.AddLogging();
         services.AddAdminPortalAuth(configuration);
         return services.BuildServiceProvider();
+    }
+
+    private static HttpMessageHandler PrimaryHandler(HttpClient client)
+    {
+        var handler = typeof(HttpMessageInvoker)
+            .GetField("_handler", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(client) as HttpMessageHandler;
+        handler.Should().NotBeNull();
+        while (handler is DelegatingHandler delegating && delegating.InnerHandler != null)
+        {
+            handler = delegating.InnerHandler;
+        }
+
+        return handler;
     }
 
     private static async Task<CorsPolicy> GetPolicy(ServiceProvider provider)
