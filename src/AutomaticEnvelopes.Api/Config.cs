@@ -3,6 +3,7 @@ using Amazon.BedrockRuntime.Model;
 using AutomaticEnvelopes.Api;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
+using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge;
@@ -17,8 +18,6 @@ using JasperFx.Events;
 using JasperFx.Events.Projections;
 using JasperFx.MultiTenancy;
 using Marten;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using System.Threading.RateLimiting;
 using Wolverine;
@@ -54,6 +53,17 @@ public static class Config
                         PermitLimit = 10,
                         Window = TimeSpan.FromMinutes(1)
                     }));
+
+            // Login, logout, and GET /me stay off AdminPolicy so a portal session is not capped at 10/min.
+            options.AddPolicy(AdminAuthPolicies.Auth, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Path}",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = AdminAuthPolicies.PermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    }));
         });
 
         return services;
@@ -61,25 +71,7 @@ public static class Config
 
     public static IServiceCollection AddAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
-            {
-                var region = configuration["AWS_REGION"] ?? "eu-west-1";
-                var userPoolId = configuration["COGNITO_USER_POOL_ID"];
-                var authority = $"https://cognito-idp.{region}.amazonaws.com/{userPoolId}";
-
-                options.Authority = authority;
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidIssuer = authority,
-                    ValidateLifetime = true,
-                    ValidateAudience = false, 
-                    RoleClaimType = "cognito:groups"
-                };
-            });
-
-        return services;
+        return services.AddAdminPortalAuth(configuration);
     }
 
     public static IServiceCollection AddCustomAuthorization(this IServiceCollection services)

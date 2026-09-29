@@ -1,5 +1,6 @@
 ﻿using AutomaticEnvelopes.Api;
 using AutomaticEnvelopes.Api.Common.Extensions;
+using AutomaticEnvelopes.Api.Features.AdminAuth;
 using JasperFx;
 using Marten;
 using Wolverine.Http;
@@ -40,6 +41,7 @@ if (!args.Contains("codegen"))
     app.EnsureVectorExtensionExists(connectionString);
 }
 
+app.UseCors(AdminPortalCors.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();

@@ -19,8 +19,11 @@ resource "aws_lambda_function" "api" {
       DB_HOST           = data.terraform_remote_state.database.outputs.db_endpoint
       SSM_PATH_WHATSAPP = "/automatic-envelopes/whatsapp/"
 
-      COGNITO_USER_POOL_ID = aws_cognito_user_pool.admin_pool.id
-      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.spa_client.id
+      COGNITO_USER_POOL_ID          = aws_cognito_user_pool.admin_pool.id
+      COGNITO_CLIENT_ID             = aws_cognito_user_pool_client.spa_client.id
+      COGNITO_DOMAIN                = "${aws_cognito_user_pool_domain.admin_domain.domain}.auth.${var.aws_region}.amazoncognito.com"
+      COGNITO_ALLOWED_REDIRECT_URIS = join(",", var.admin_ui_callback_urls)
+      ADMIN_PORTAL_ORIGINS          = join(",", var.admin_portal_origins)
     }
   }
 
@@ -29,6 +32,8 @@ resource "aws_lambda_function" "api" {
   }
 }
 
+# Credentialed CORS is applied by the ASP.NET pipeline (exact origins).
+# A function URL cors block would answer preflight itself and cannot send credentials with '*'.
 resource "aws_lambda_function_url" "api_url" {
   function_name      = aws_lambda_function.api.function_name
   authorization_type = "NONE"

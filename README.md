@@ -32,3 +32,37 @@ Automatic Envelopes operates on a reactor-like, tenant-aware event pipeline:
 3. **RAG Retrieval**: Vector searches the isolated knowledge base to find contextually relevant information exclusively for that specific business.
 4. **Persona Generation**: Crafts a customized response using the unique brand persona, tone, and system prompts configured for the client.
 5. **Dispatch**: Safely sends the response back to the user via the Meta Cloud API.
+
+## Admin portal authentication
+
+The admin portal (Cognito Hosted UI + PKCE) exchanges the authorization code on the API. The browser never sees the client secret, and tokens are not returned in JSON.
+
+| Method | Path | Auth | Body / response |
+| --- | --- | --- | --- |
+| `POST` | `/auth/token` | anonymous | `{ code, codeVerifier, redirectUri }` → `{ email, name, groups }` plus session cookies |
+| `GET` | `/me` | cookie or `Authorization: Bearer` | `{ email, name, groups }` |
+| `POST` | `/auth/logout` | anonymous | clears the session cookies |
+
+Cookies (host-only, `Path=/`, `HttpOnly`, `Secure`, `SameSite=Lax`):
+
+`SameSite=Lax` cookies are sent on credentialed fetches when the portal and the API share a site, such as `admin.core-webhook.eu` and `api.core-webhook.eu`. A `*.lambda-url.on.aws` host is a different site, so the browser will not attach these cookies there. Point the portal at a same-site API host for a cookie session.
+
+- `ae_access` (`Path=/`) — Cognito access token. JwtBearer reads it when the `Authorization` header is absent.
+- `ae_id` (`Path=/me`) — Cognito ID token, used only by `GET /me` for email, name, and `cognito:groups`.
+
+Access tokens are checked against `client_id` (they have no `aud` claim). ID tokens are checked against `aud`. `token_use` must match. `AdminPolicy` (10 requests/minute) still applies only to tenant registration and document ingest. `/auth/*` and `/me` use `AuthPolicy` (60 requests/minute per caller and path).
+
+### Environment variables
+
+Set on the API Lambda. Lists are comma-separated exact values. `*` is rejected.
+
+| Variable | Purpose |
+| --- | --- |
+| `COGNITO_USER_POOL_ID` | Issuer for JWT validation (`https://cognito-idp.{AWS_REGION}.amazonaws.com/{poolId}`) |
+| `COGNITO_CLIENT_ID` | Public app client used for the code exchange and access-token `client_id` check |
+| `COGNITO_DOMAIN` | Hosted UI host with no scheme, for `POST /oauth2/token`. Example: `automatic-envelopes-admin-prod.auth.eu-west-1.amazoncognito.com` |
+| `COGNITO_ALLOWED_REDIRECT_URIS` | Exact `redirect_uri` values accepted by `POST /auth/token` |
+| `ADMIN_PORTAL_ORIGINS` | Exact browser origins allowed with credentials |
+| `AWS_REGION` | Region segment of the issuer (already used elsewhere; default `eu-west-1`) |
+
+When the lists are unset, local defaults are `http://localhost:5173` (callback `http://localhost:5173/admin/auth/callback`) and `https://admin.core-webhook.eu` (callback `https://admin.core-webhook.eu/auth/callback`). Deployed dev/prod Lambdas narrow this via Terraform. Cognito logout URLs are the portal login pages (`/admin/login` locally, `/login` in production), which is where Hosted UI returns after logout. `POST /auth/logout` only clears the API cookies.

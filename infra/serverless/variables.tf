@@ -37,3 +37,8 @@ variable "cognito_auth_domain" {
   type        = string
   description = "The globally unique domain prefix for the Cognito Hosted UI URL"
 }
+
+variable "admin_portal_origins" {
+  type        = list(string)
+  description = "Exact browser origins allowed to call the API with credentials. Never use '*'."
+}
