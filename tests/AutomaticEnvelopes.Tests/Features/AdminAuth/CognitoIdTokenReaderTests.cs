@@ -40,6 +40,7 @@ public class CognitoIdTokenReaderTests : IDisposable
 
         profile.Email.Should().Be("admin@core-webhook.eu");
         profile.Name.Should().Be("Daniel González");
+        profile.Subject.Should().Be("subject-1");
         profile.Groups.Should().Equal("admin", "club-basquet-sama");
     }
 
@@ -53,12 +54,19 @@ public class CognitoIdTokenReaderTests : IDisposable
             new Claim("name", "  Núria Solé  ")
         ]);
         var nameless = WriteToken("id", "client-123", [new Claim("name", "No Email")]);
+        var noSubject = WriteToken("id", "client-123",
+        [
+            new Claim("email", "campus@cbsama.cat"),
+            new Claim("sub", " ")
+        ]);
 
         var profile = await reader.ReadAsync(named, CancellationToken.None);
         var missingEmail = () => reader.ReadAsync(nameless, CancellationToken.None);
+        var missingSubject = () => reader.ReadAsync(noSubject, CancellationToken.None);
 
         profile.Name.Should().Be("Núria Solé");
         await missingEmail.Should().ThrowAsync<SecurityTokenException>();
+        await missingSubject.Should().ThrowAsync<SecurityTokenException>();
     }
 
     [Fact]
@@ -284,10 +292,13 @@ public class CognitoIdTokenReaderTests : IDisposable
         var signingCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256);
         var validTo = expires ?? DateTime.UtcNow.AddMinutes(10);
         var notBefore = expires is null ? DateTime.UtcNow.AddMinutes(-5) : validTo.AddMinutes(-5);
+        var withSubject = claims.Any(claim => claim.Type == "sub")
+            ? claims
+            : claims.Append(new Claim("sub", "subject-1"));
         var jwt = new JwtSecurityToken(
             issuer: Issuer,
             audience: audience,
-            claims: claims.Append(new Claim("token_use", tokenUse)),
+            claims: withSubject.Append(new Claim("token_use", tokenUse)),
             notBefore: notBefore,
             expires: validTo,
             signingCredentials: signingCredentials);
@@ -300,7 +311,7 @@ public class CognitoIdTokenReaderTests : IDisposable
             Task.FromResult(keys);
     }
 
-    private CognitoJwksProvider CreateProvider(HttpMessageHandler handler) =>
+    private static CognitoJwksProvider CreateProvider(HttpMessageHandler handler) =>
         new(new StubFactory(handler), Options.Create(AuthOptions), NullLogger<CognitoJwksProvider>.Instance);
 
     private string RsaJwks()

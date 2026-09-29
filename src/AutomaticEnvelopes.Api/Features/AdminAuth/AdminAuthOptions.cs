@@ -4,6 +4,7 @@ public sealed class AdminAuthOptions
 {
     public const string OriginsEnv = "ADMIN_PORTAL_ORIGINS";
     public const string RedirectUrisEnv = "COGNITO_ALLOWED_REDIRECT_URIS";
+    public const string LogoutUrisEnv = "COGNITO_LOGOUT_URIS";
 
     public string Region { get; init; } = "eu-west-1";
     public string UserPoolId { get; init; } = string.Empty;
@@ -11,6 +12,7 @@ public sealed class AdminAuthOptions
     public string Domain { get; init; } = string.Empty;
     public string[] AllowedOrigins { get; init; } = [];
     public string[] AllowedRedirectUris { get; init; } = [];
+    public string[] AllowedLogoutUris { get; init; } = [];
 
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(UserPoolId) &&
@@ -47,6 +49,53 @@ public sealed class AdminAuthOptions
     public bool IsAllowedRedirect(string redirectUri) =>
         AllowedRedirectUris.Contains(redirectUri, StringComparer.Ordinal);
 
+    public bool IsAllowedOrigin(string? origin) =>
+        !string.IsNullOrWhiteSpace(origin) && CorsOrigins.Contains(origin, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Cognito Hosted UI logout for the portal origin. Null when this origin has no configured sign-out URL.
+    /// Clearing the API cookies does not end the Cognito session; the browser must navigate here.
+    /// </summary>
+    public string? HostedLogoutUrl(string? requestOrigin)
+    {
+        var logoutUri = LogoutUriFor(requestOrigin);
+        if (logoutUri is null || string.IsNullOrWhiteSpace(Host) || string.IsNullOrWhiteSpace(ClientId))
+        {
+            return null;
+        }
+
+        var query = $"?client_id={Uri.EscapeDataString(ClientId)}&logout_uri={Uri.EscapeDataString(logoutUri)}";
+        return new UriBuilder(Uri.UriSchemeHttps, Host, -1, "/logout", query).Uri.AbsoluteUri;
+    }
+
+    private string? LogoutUriFor(string? requestOrigin)
+    {
+        if (string.IsNullOrWhiteSpace(requestOrigin))
+        {
+            return null;
+        }
+
+        foreach (var logoutUri in AllowedLogoutUris)
+        {
+            if (OriginOf(logoutUri) == requestOrigin)
+            {
+                return logoutUri;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? OriginOf(string uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || string.IsNullOrEmpty(parsed.Host))
+        {
+            return null;
+        }
+
+        return parsed.GetLeftPart(UriPartial.Authority);
+    }
+
     public static AdminAuthOptions FromConfiguration(IConfiguration configuration)
     {
         var region = configuration["AWS_REGION"];
@@ -57,7 +106,8 @@ public sealed class AdminAuthOptions
             ClientId = configuration["COGNITO_CLIENT_ID"]?.Trim() ?? string.Empty,
             Domain = configuration["COGNITO_DOMAIN"]?.Trim() ?? string.Empty,
             AllowedOrigins = ReadList(configuration, OriginsEnv, "AdminAuth:AllowedOrigins"),
-            AllowedRedirectUris = ReadList(configuration, RedirectUrisEnv, "AdminAuth:AllowedRedirectUris")
+            AllowedRedirectUris = ReadList(configuration, RedirectUrisEnv, "AdminAuth:AllowedRedirectUris"),
+            AllowedLogoutUris = ReadList(configuration, LogoutUrisEnv, "AdminAuth:AllowedLogoutUris")
         };
     }
 

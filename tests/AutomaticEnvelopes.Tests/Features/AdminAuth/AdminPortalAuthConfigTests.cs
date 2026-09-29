@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -11,6 +12,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace AutomaticEnvelopes.Tests.Features.AdminAuth;
 
@@ -67,6 +72,10 @@ public class AdminPortalAuthConfigTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["ADMIN_PORTAL_ORIGINS"] = "*" })
             .Build());
         wildcard.Should().Throw<InvalidOperationException>();
+        var wildcardLogout = () => AdminAuthOptions.FromConfiguration(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["COGNITO_LOGOUT_URIS"] = "*" })
+            .Build());
+        wildcardLogout.Should().Throw<InvalidOperationException>();
 
         var options = AdminAuthOptions.FromConfiguration(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -154,6 +163,90 @@ public class AdminPortalAuthConfigTests
     }
 
     [Fact]
+    public async Task JwtBearer_AcceptsAccessTokensFromJsonWebTokenHandler()
+    {
+        using var rsa = RSA.Create(2048);
+        var key = new RsaSecurityKey(rsa) { KeyId = "k1" };
+        const string issuer = "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_pool";
+        const string clientId = "client-123";
+        var accessToken = WriteSignedToken(key, issuer, audience: null,
+        [
+            new Claim("token_use", "access"),
+            new Claim("client_id", clientId),
+            new Claim("sub", "user-1")
+        ]);
+        var idToken = WriteSignedToken(key, issuer, clientId,
+        [
+            new Claim("token_use", "id"),
+            new Claim("email", "admin@core-webhook.eu"),
+            new Claim("sub", "user-1")
+        ]);
+
+        await using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["AWS_REGION"] = "eu-west-1",
+            ["COGNITO_USER_POOL_ID"] = "eu-west-1_pool",
+            ["COGNITO_CLIENT_ID"] = clientId,
+            ["COGNITO_DOMAIN"] = "auth.example.com"
+        });
+        var jwt = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+        jwt.UseSecurityTokenValidators.Should().BeFalse();
+        jwt.TokenHandlers.Should().ContainSingle().Which.Should().BeOfType<JsonWebTokenHandler>();
+
+        var parsed = new JsonWebToken(accessToken);
+        parsed.Should().BeOfType<JsonWebToken>();
+        jwt.TokenValidationParameters.AudienceValidator!([], parsed, jwt.TokenValidationParameters).Should().BeTrue();
+        jwt.TokenValidationParameters.AudienceValidator!([], new JsonWebToken(idToken), jwt.TokenValidationParameters).Should().BeFalse();
+
+        var direct = jwt.TokenValidationParameters.Clone();
+        direct.IssuerSigningKeys = [key];
+        var jsonHandler = (JsonWebTokenHandler)jwt.TokenHandlers.Single();
+        var accessValidation = await jsonHandler.ValidateTokenAsync(accessToken, direct);
+        var idValidation = await jsonHandler.ValidateTokenAsync(idToken, direct.Clone());
+        accessValidation.IsValid.Should().BeTrue(accessValidation.Exception?.Message);
+        accessValidation.SecurityToken.Should().BeOfType<JsonWebToken>();
+        idValidation.IsValid.Should().BeFalse(idValidation.Exception?.Message);
+
+        var configuration = new OpenIdConnectConfiguration { Issuer = issuer };
+        configuration.SigningKeys.Add(key);
+
+        var access = await Authenticate(accessToken, cookie: null, key, issuer);
+        access.Succeeded.Should().BeTrue(access.Failure?.Message);
+        var subject = access.Principal!.FindFirst("sub")?.Value
+            ?? access.Principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        subject.Should().Be("user-1");
+
+        var fromCookie = await Authenticate(authorization: null, cookie: $"ae_access={accessToken}", key, issuer);
+        fromCookie.Succeeded.Should().BeTrue(fromCookie.Failure?.Message);
+
+        var rejected = await Authenticate(idToken, cookie: null, key, issuer);
+        rejected.Succeeded.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HostedLogoutUrl_UsesTheLogoutUriForTheRequestOrigin()
+    {
+        var options = new AdminAuthOptions
+        {
+            ClientId = "client-123",
+            Domain = "http://auth.example.com/oauth2/token",
+            AllowedLogoutUris =
+            [
+                "http://localhost:5173/admin/login",
+                "https://admin.core-webhook.eu/login"
+            ]
+        };
+
+        options.HostedLogoutUrl("https://admin.core-webhook.eu").Should().Be(
+            "https://auth.example.com/logout?client_id=client-123&logout_uri=https%3A%2F%2Fadmin.core-webhook.eu%2Flogin");
+        options.HostedLogoutUrl("http://localhost:5173").Should().Be(
+            "https://auth.example.com/logout?client_id=client-123&logout_uri=http%3A%2F%2Flocalhost%3A5173%2Fadmin%2Flogin");
+        options.HostedLogoutUrl("https://evil.example").Should().BeNull();
+        options.HostedLogoutUrl(null).Should().BeNull();
+    }
+
+    [Fact]
     public void CognitoHttpClient_DisablesRedirects_AndUsesAFifteenSecondTimeout()
     {
         using var provider = BuildProvider([]);
@@ -174,6 +267,50 @@ public class AdminPortalAuthConfigTests
         services.AddLogging();
         services.AddAdminPortalAuth(configuration);
         return services.BuildServiceProvider();
+    }
+
+    private static async Task<AuthenticateResult> Authenticate(string? authorization, string? cookie, RsaSecurityKey key, string issuer)
+    {
+        await using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["AWS_REGION"] = "eu-west-1",
+            ["COGNITO_USER_POOL_ID"] = "eu-west-1_pool",
+            ["COGNITO_CLIENT_ID"] = "client-123",
+            ["COGNITO_DOMAIN"] = "auth.example.com"
+        });
+        var jwt = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+        var configuration = new OpenIdConnectConfiguration { Issuer = issuer };
+        configuration.SigningKeys.Add(new RsaSecurityKey(key.Rsa.ExportParameters(false)) { KeyId = key.KeyId });
+        jwt.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration);
+
+        var http = new DefaultHttpContext { RequestServices = provider };
+        if (authorization != null)
+        {
+            http.Request.Headers.Authorization = "Bearer " + authorization;
+        }
+
+        if (cookie != null)
+        {
+            http.Request.Headers.Cookie = cookie;
+        }
+
+        var handler = await provider.GetRequiredService<IAuthenticationHandlerProvider>()
+            .GetHandlerAsync(http, JwtBearerDefaults.AuthenticationScheme);
+        handler.Should().NotBeNull();
+        return await handler!.AuthenticateAsync();
+    }
+
+    private static string WriteSignedToken(RsaSecurityKey key, string issuer, string? audience, IEnumerable<Claim> claims)
+    {
+        var jwt = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: claims,
+            notBefore: DateTime.UtcNow.AddMinutes(-5),
+            expires: DateTime.UtcNow.AddMinutes(10),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
+        return new JwtSecurityTokenHandler().WriteToken(jwt);
     }
 
     private static HttpMessageHandler PrimaryHandler(HttpClient client)

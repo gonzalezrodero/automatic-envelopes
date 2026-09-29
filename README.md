@@ -40,8 +40,8 @@ The admin portal (Cognito Hosted UI + PKCE) exchanges the authorization code on 
 | Method | Path | Auth | Body / response |
 | --- | --- | --- | --- |
 | `POST` | `/auth/token` | anonymous | `{ code, codeVerifier, redirectUri }` → `{ email, name, groups }` plus session cookies |
-| `GET` | `/me` | cookie or `Authorization: Bearer` | `{ email, name, groups }` |
-| `POST` | `/auth/logout` | anonymous | clears the session cookies |
+| `GET` | `/me` | access cookie or Bearer, plus the `ae_id` cookie | `{ email, name, groups }` |
+| `POST` | `/auth/logout` | anonymous, `Origin` must be an allowed portal origin | clears the session cookies and returns `{ cognitoLogoutUrl }` |
 
 Cookies (host-only, `Path=/`, `HttpOnly`, `Secure`, `SameSite=Lax`):
 
@@ -50,7 +50,13 @@ Cookies (host-only, `Path=/`, `HttpOnly`, `Secure`, `SameSite=Lax`):
 - `ae_access` (`Path=/`) — Cognito access token. JwtBearer reads it when the `Authorization` header is absent.
 - `ae_id` (`Path=/me`) — Cognito ID token, used only by `GET /me` for email, name, and `cognito:groups`.
 
-Access tokens are checked against `client_id` (they have no `aud` claim). ID tokens are checked against `aud`. `token_use` must match. `AdminPolicy` (10 requests/minute) still applies only to tenant registration and document ingest. `/auth/*` and `/me` use `AuthPolicy` (60 requests/minute per caller and path).
+Access tokens are checked against `client_id` (they have no `aud` claim). ID tokens are checked against `aud`. `token_use` must match. JwtBearer validates access tokens with `JsonWebTokenHandler`, so `client_id` and `token_use` are read from either a `JsonWebToken` or a `JwtSecurityToken`.
+
+`GET /me` returns email, name, and groups from the `ae_id` cookie. That ID token's `sub` must match the access token `sub` (or the inbound nameidentifier claim). A Bearer access token alone does not carry email, so `/me` stays 401 until the ID cookie is present.
+
+`POST /auth/logout` only clears the API cookies. It does not call Cognito `/oauth2/revoke`, and the refresh token is not stored. The Cognito Hosted UI session stays alive until the browser navigates to `cognitoLogoutUrl`. That URL is `https://{COGNITO_DOMAIN}/logout?client_id={COGNITO_CLIENT_ID}&logout_uri={sign-out url}` for the logout URL whose origin matches the request `Origin`. The portal must redirect there after logout. A cross-site form post is rejected (403, cookies kept) unless `Origin` is an exact portal origin.
+
+`AdminPolicy` (10 requests/minute) still applies only to tenant registration and document ingest. `/auth/*` and `/me` use `AuthPolicy` (60 requests/minute per caller and path). That limit is not a substitute for Cognito's own throttling. The Cognito app client does not reject `/oauth2/authorize` requests that omit PKCE. The portal must send `code_challenge_method=S256` on authorize. `POST /auth/token` always requires `codeVerifier`. This slice does not change the user pool client.
 
 ### Environment variables
 
@@ -62,7 +68,8 @@ Set on the API Lambda. Lists are comma-separated exact values. `*` is rejected.
 | `COGNITO_CLIENT_ID` | Public app client used for the code exchange and access-token `client_id` check |
 | `COGNITO_DOMAIN` | Hosted UI host with no scheme, for `POST /oauth2/token`. Example: `automatic-envelopes-admin-prod.auth.eu-west-1.amazoncognito.com` |
 | `COGNITO_ALLOWED_REDIRECT_URIS` | Exact `redirect_uri` values accepted by `POST /auth/token` |
-| `ADMIN_PORTAL_ORIGINS` | Exact browser origins allowed with credentials |
+| `COGNITO_LOGOUT_URIS` | Exact Cognito sign-out URLs. `POST /auth/logout` returns the one whose origin matches the request `Origin` |
+| `ADMIN_PORTAL_ORIGINS` | Exact browser origins allowed with credentials, and the only `Origin` values that may call `POST /auth/logout` |
 | `AWS_REGION` | Region segment of the issuer (already used elsewhere; default `eu-west-1`) |
 
-Allowlists are not compiled into the API. Local `appsettings.json` supplies `AdminAuth:AllowedOrigins` and `AdminAuth:AllowedRedirectUris`. Deployed Lambdas replace those with `ADMIN_PORTAL_ORIGINS` and `COGNITO_ALLOWED_REDIRECT_URIS`. If no exact origin is configured, the API does not start. Cognito logout URLs are the portal login pages (`/admin/login` locally, `/login` in production), which is where Hosted UI returns after logout. `POST /auth/logout` only clears the API cookies.
+Allowlists are not compiled into the API. Local `appsettings.json` supplies `AdminAuth:AllowedOrigins`, `AdminAuth:AllowedRedirectUris`, and `AdminAuth:AllowedLogoutUris`. Deployed Lambdas replace those with `ADMIN_PORTAL_ORIGINS`, `COGNITO_ALLOWED_REDIRECT_URIS`, and `COGNITO_LOGOUT_URIS`. If no exact origin is configured, the API does not start. Cognito logout URLs are the portal login pages (`/admin/login` locally, `/login` in production), which is where Hosted UI returns after logout.

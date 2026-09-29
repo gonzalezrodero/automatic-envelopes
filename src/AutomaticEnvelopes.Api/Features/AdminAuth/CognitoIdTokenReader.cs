@@ -17,7 +17,7 @@ public interface ICognitoIdTokenReader
     Task EnsureAccessTokenAsync(string accessToken, CancellationToken ct);
 }
 
-public sealed record AdminUserProfile(string Email, string Name, IReadOnlyList<string> Groups);
+public sealed record AdminUserProfile(string Email, string Name, IReadOnlyList<string> Groups, string Subject);
 
 public sealed class CognitoJwksProvider(
     IHttpClientFactory httpClientFactory,
@@ -98,13 +98,19 @@ public sealed class CognitoIdTokenReader(
             throw new SecurityTokenException("ID token is missing email.");
         }
 
+        var subject = principal.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(subject))
+        {
+            throw new SecurityTokenException("ID token is missing sub.");
+        }
+
         var name = principal.FindFirst("name")?.Value;
         if (string.IsNullOrWhiteSpace(name))
         {
             name = email;
         }
 
-        return new AdminUserProfile(email, name.Trim(), CognitoGroupClaims.Read(principal.Claims));
+        return new AdminUserProfile(email, name.Trim(), CognitoGroupClaims.Read(principal.Claims), subject);
     }
 
     public async Task EnsureAccessTokenAsync(string accessToken, CancellationToken ct)

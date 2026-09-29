@@ -27,6 +27,12 @@ public sealed class AdminSessionResponse
     };
 }
 
+public sealed class LogoutResponse
+{
+    [JsonPropertyName("cognitoLogoutUrl")]
+    public string? CognitoLogoutUrl { get; init; }
+}
+
 public sealed class TokenExchangeRequest
 {
     [JsonPropertyName("code")]
@@ -127,6 +133,11 @@ public class AuthEndpoints
             try
             {
                 var profile = await idTokens.ReadAsync(idToken, ct);
+                if (!SubjectsMatch(user, profile.Subject))
+                {
+                    return Results.Unauthorized();
+                }
+
                 return Results.Ok(AdminSessionResponse.From(profile));
             }
             catch (Exception ex) when (ex is SecurityTokenException or CognitoAuthException)
@@ -168,11 +179,32 @@ public class AuthEndpoints
     [AllowAnonymous]
     [WolverinePost("/auth/logout")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
-    public static IResult Logout(HttpContext httpContext)
+    public static IResult Logout(HttpContext httpContext, IOptions<AdminAuthOptions> options)
     {
         NoStore(httpContext);
+        var origin = httpContext.Request.Headers.Origin.ToString();
+        if (!options.Value.IsAllowedOrigin(origin))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         AdminAuthCookies.Clear(httpContext.Response);
-        return Results.NoContent();
+        return Results.Ok(new LogoutResponse
+        {
+            CognitoLogoutUrl = options.Value.HostedLogoutUrl(origin)
+        });
+    }
+
+    private static bool SubjectsMatch(ClaimsPrincipal user, string idSubject)
+    {
+        if (string.IsNullOrWhiteSpace(idSubject))
+        {
+            return false;
+        }
+
+        var accessSubject = user.FindFirst("sub")?.Value
+            ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return string.Equals(accessSubject, idSubject, StringComparison.Ordinal);
     }
 
     private static void NoStore(HttpContext httpContext)

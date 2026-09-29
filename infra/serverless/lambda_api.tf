@@ -23,6 +23,7 @@ resource "aws_lambda_function" "api" {
       COGNITO_CLIENT_ID             = aws_cognito_user_pool_client.spa_client.id
       COGNITO_DOMAIN                = "${aws_cognito_user_pool_domain.admin_domain.domain}.auth.${var.aws_region}.amazoncognito.com"
       COGNITO_ALLOWED_REDIRECT_URIS = join(",", var.admin_ui_callback_urls)
+      COGNITO_LOGOUT_URIS           = join(",", var.admin_ui_logout_urls)
       ADMIN_PORTAL_ORIGINS          = join(",", var.admin_portal_origins)
     }
   }

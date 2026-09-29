@@ -20,6 +20,15 @@ public class AuthEndpointsTests
         AdminAuthOptions.FromConfiguration(
             new ConfigurationBuilder().AddJsonFile(AdminAuthAppSettings.Path()).Build()));
     private static readonly string RedirectUri = PortalOptions.Value.AllowedRedirectUris[0];
+    private static readonly IOptions<AdminAuthOptions> LogoutOptions = Options.Create(new AdminAuthOptions
+    {
+        Region = "eu-west-1",
+        UserPoolId = "eu-west-1_pool",
+        ClientId = "client-123",
+        Domain = "auth.example.com",
+        AllowedOrigins = ["http://localhost:5173", "https://admin.core-webhook.eu"],
+        AllowedLogoutUris = ["http://localhost:5173/admin/login", "https://admin.core-webhook.eu/login"]
+    });
 
     [Fact]
     public void ProtectedConstructor_KeepsTheEndpointTypeInstantiable()
@@ -44,7 +53,7 @@ public class AuthEndpointsTests
         reader.Setup(tokenReader => tokenReader.EnsureAccessTokenAsync("access-value", It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         reader.Setup(tokenReader => tokenReader.ReadAsync("id-value", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Daniel González", ["admin", "club-basquet-sama"]));
+            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Daniel González", ["admin", "club-basquet-sama"], "user-1"));
 
         var context = NewContext();
         var result = await AuthEndpoints.Exchange(
@@ -135,13 +144,15 @@ public class AuthEndpointsTests
             Times.Never);
     }
 
-    public static IEnumerable<object?[]> IncompleteBodies()
+    public static TheoryData<TokenExchangeRequest?> IncompleteBodies()
     {
-        yield return [null];
-        yield return [new TokenExchangeRequest()];
-        yield return [new TokenExchangeRequest { Code = " ", CodeVerifier = Verifier, RedirectUri = "https://portal.example/callback" }];
-        yield return [new TokenExchangeRequest { Code = "auth-code", CodeVerifier = " ", RedirectUri = "https://portal.example/callback" }];
-        yield return [new TokenExchangeRequest { Code = "auth-code", CodeVerifier = Verifier, RedirectUri = " " }];
+        var data = new TheoryData<TokenExchangeRequest?>();
+        data.Add((TokenExchangeRequest?)null);
+        data.Add(new TokenExchangeRequest());
+        data.Add(new TokenExchangeRequest { Code = " ", CodeVerifier = Verifier, RedirectUri = "https://portal.example/callback" });
+        data.Add(new TokenExchangeRequest { Code = "auth-code", CodeVerifier = " ", RedirectUri = "https://portal.example/callback" });
+        data.Add(new TokenExchangeRequest { Code = "auth-code", CodeVerifier = Verifier, RedirectUri = " " });
+        return data;
     }
 
     [Fact]
@@ -234,7 +245,7 @@ public class AuthEndpointsTests
         reader.Setup(tokenReader => tokenReader.EnsureAccessTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         reader.Setup(tokenReader => tokenReader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Ada", ["admin"]));
+            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Ada", ["admin"], "user-1"));
         var context = NewContext();
 
         var result = await AuthEndpoints.Exchange(
@@ -329,12 +340,12 @@ public class AuthEndpointsTests
     {
         var reader = new Mock<ICognitoIdTokenReader>();
         reader.Setup(tokenReader => tokenReader.ReadAsync("id-value", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Daniel González", ["admin"]));
+            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Daniel González", ["admin"], "user-1"));
         var context = NewContext();
         context.Request.Headers.Cookie = "ae_id=id-value";
 
         var result = await AuthEndpoints.Me(
-            Authenticated(new Claim("email", "other@example.com")),
+            Authenticated(new Claim("email", "other@example.com"), new Claim("sub", "user-1")),
             context,
             reader.Object,
             CancellationToken.None);
@@ -367,6 +378,46 @@ public class AuthEndpointsTests
         json.RootElement.GetProperty("name").GetString().Should().Be("Núria Solé");
         json.RootElement.GetProperty("groups")[0].GetString().Should().Be("club-basquet-sama");
         reader.Verify(tokenReader => tokenReader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Me_AcceptsIdTokenWhenAccessSubjectIsTheInboundNameIdentifier()
+    {
+        var reader = new Mock<ICognitoIdTokenReader>();
+        reader.Setup(tokenReader => tokenReader.ReadAsync("id-value", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Ada", ["admin"], "user-1"));
+        var context = NewContext();
+        context.Request.Headers.Cookie = "ae_id=id-value";
+
+        var result = await AuthEndpoints.Me(
+            Authenticated(new Claim(ClaimTypes.NameIdentifier, "user-1")),
+            context,
+            reader.Object,
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Theory]
+    [InlineData("user-2")]
+    [InlineData("")]
+    public async Task Me_RejectsIdTokenWhenSubjectDoesNotMatchAccessToken(string idSubject)
+    {
+        var reader = new Mock<ICognitoIdTokenReader>();
+        reader.Setup(tokenReader => tokenReader.ReadAsync("id-value", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AdminUserProfile("admin@core-webhook.eu", "Ada", ["admin"], idSubject));
+        var context = NewContext();
+        context.Request.Headers.Cookie = "ae_id=id-value";
+
+        var result = await AuthEndpoints.Me(
+            Authenticated(new Claim("sub", "user-1"), new Claim("email", "admin@core-webhook.eu")),
+            context,
+            reader.Object,
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
     [Fact]
@@ -443,13 +494,17 @@ public class AuthEndpointsTests
     }
 
     [Fact]
-    public async Task Logout_ClearsBothCookies()
+    public async Task Logout_ClearsBothCookies_AndReturnsTheCognitoLogoutUrl()
     {
         var context = NewContext();
-        var result = AuthEndpoints.Logout(context);
+        context.Request.Headers.Origin = "http://localhost:5173";
+        var result = AuthEndpoints.Logout(context, LogoutOptions);
         await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status204NoContent);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        using var json = JsonDocument.Parse(await ReadBody(context));
+        json.RootElement.GetProperty("cognitoLogoutUrl").GetString().Should().Be(
+            "https://auth.example.com/logout?client_id=client-123&logout_uri=http%3A%2F%2Flocalhost%3A5173%2Fadmin%2Flogin");
         var cookies = CookieHeaders(context);
         var accessCookie = cookies.Single(cookie => cookie.StartsWith("ae_access=", StringComparison.Ordinal)).ToLowerInvariant();
         var idCookie = cookies.Single(cookie => cookie.StartsWith("ae_id=", StringComparison.Ordinal)).ToLowerInvariant();
@@ -457,6 +512,24 @@ public class AuthEndpointsTests
         idCookie.Should().Contain("expires=").And.Contain("path=/me").And.NotContain("domain=");
         accessCookie.Should().Contain("httponly").And.Contain("secure").And.Contain("samesite=lax");
         idCookie.Should().Contain("httponly").And.Contain("secure").And.Contain("samesite=lax");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("https://evil.example")]
+    public async Task Logout_RejectsAnOriginThatIsNotAllowListed(string? origin)
+    {
+        var context = NewContext();
+        if (origin != null)
+        {
+            context.Request.Headers.Origin = origin;
+        }
+
+        var result = AuthEndpoints.Logout(context, LogoutOptions);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        SetCookieHeader(context).Should().BeEmpty();
     }
 
     private static ClaimsPrincipal Authenticated(params Claim[] claims) =>
