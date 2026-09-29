@@ -124,7 +124,11 @@ public class CognitoIdTokenReaderTests : IDisposable
         second.Should().BeSameAs(first);
     }
 
-    public void Dispose() => rsa.Dispose();
+    public void Dispose()
+    {
+        rsa.Dispose();
+        GC.SuppressFinalize(this);
+    }
 
     private CognitoIdTokenReader CreateReader()
     {

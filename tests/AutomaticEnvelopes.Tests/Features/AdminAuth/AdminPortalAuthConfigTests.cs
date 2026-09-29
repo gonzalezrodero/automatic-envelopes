@@ -34,15 +34,28 @@ public class AdminPortalAuthConfigTests
     }
 
     [Fact]
-    public async Task CorsPolicy_UsesDefaultsWhenUnset()
+    public async Task CorsPolicy_UsesAppSettingsWhenEnvironmentIsUnset()
     {
+        var configured = AdminAuthOptions.FromConfiguration(
+            new ConfigurationBuilder().AddJsonFile(AdminAuthAppSettings.Path()).Build());
         await using var provider = BuildProvider([]);
         var policy = await GetPolicy(provider);
 
+        configured.CorsOrigins.Should().NotBeEmpty();
+        configured.AllowedRedirectUris.Should().NotBeEmpty();
         policy.AllowAnyOrigin.Should().BeFalse();
         policy.SupportsCredentials.Should().BeTrue();
-        policy.IsOriginAllowed("http://localhost:5173").Should().BeTrue();
-        policy.IsOriginAllowed("https://admin.core-webhook.eu").Should().BeTrue();
+        policy.Origins.Should().BeEquivalentTo(configured.CorsOrigins);
+        policy.Origins.Should().NotContain("*");
+    }
+
+    [Fact]
+    public void AddAdminPortalAuth_WithoutOrigins_Throws()
+    {
+        var services = new ServiceCollection();
+        var act = () => services.AddAdminPortalAuth(new ConfigurationBuilder().Build());
+
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
@@ -118,7 +131,10 @@ public class AdminPortalAuthConfigTests
 
     private static ServiceProvider BuildProvider(Dictionary<string, string?> values)
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(AdminAuthAppSettings.Path())
+            .AddInMemoryCollection(values)
+            .Build();
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAdminPortalAuth(configuration);

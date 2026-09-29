@@ -41,6 +41,10 @@ public sealed class TokenExchangeRequest
 
 public class AuthEndpoints
 {
+    protected AuthEndpoints()
+    {
+    }
+
     [AllowAnonymous]
     [WolverinePost("/auth/token")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
@@ -88,12 +92,12 @@ public class AuthEndpoints
         }
         catch (CognitoAuthException ex)
         {
-            logger.LogWarning("Cognito token exchange failed with status {StatusCode}.", ex.StatusCode);
+            logger.LogWarning(ex, "Cognito token exchange failed with status {StatusCode}.", ex.StatusCode);
             return Failure(ex.StatusCode);
         }
-        catch (SecurityTokenException)
+        catch (SecurityTokenException ex)
         {
-            logger.LogWarning("Cognito token validation failed during code exchange.");
+            logger.LogWarning(ex, "Cognito token validation failed during code exchange.");
             return Results.Unauthorized();
         }
 

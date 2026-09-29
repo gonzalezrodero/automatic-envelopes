@@ -9,6 +9,12 @@ public static class Config
     public static IServiceCollection AddAdminPortalAuth(this IServiceCollection services, IConfiguration configuration)
     {
         var authOptions = AdminAuthOptions.FromConfiguration(configuration);
+        if (authOptions.CorsOrigins.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "ADMIN_PORTAL_ORIGINS or AdminAuth:AllowedOrigins must list at least one exact origin. '*' is not allowed.");
+        }
+
         services.AddSingleton<IOptions<AdminAuthOptions>>(Options.Create(authOptions));
 
         services.AddCors(cors =>

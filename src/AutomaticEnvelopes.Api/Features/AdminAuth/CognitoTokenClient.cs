@@ -83,9 +83,9 @@ public sealed class CognitoTokenClient(
             {
                 payload = await response.Content.ReadFromJsonAsync<CognitoTokenPayload>(cancellationToken: ct);
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                logger.LogWarning("Cognito token endpoint returned a body that was not a token response.");
+                logger.LogWarning(ex, "Cognito token endpoint returned a body that was not a token response.");
                 throw new CognitoAuthException(StatusCodes.Status502BadGateway);
             }
 

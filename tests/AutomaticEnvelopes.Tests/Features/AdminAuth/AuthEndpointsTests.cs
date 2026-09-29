@@ -15,7 +15,10 @@ namespace AutomaticEnvelopes.Tests.Features.AdminAuth;
 public class AuthEndpointsTests
 {
     private const string Verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
-    private static readonly string RedirectUri = AdminAuthDefaults.RedirectUris[0];
+    private static readonly IOptions<AdminAuthOptions> PortalOptions = Options.Create(
+        AdminAuthOptions.FromConfiguration(
+            new ConfigurationBuilder().AddJsonFile(AdminAuthAppSettings.Path()).Build()));
+    private static readonly string RedirectUri = PortalOptions.Value.AllowedRedirectUris[0];
 
     [Fact]
     public async Task Exchange_SetsHostOnlyCookies_AndOmitsTokensFromJson()
@@ -35,7 +38,7 @@ public class AuthEndpointsTests
             context,
             cognito.Object,
             reader.Object,
-            Options.Create(AdminAuthOptions.FromConfiguration(new ConfigurationBuilder().Build())),
+            PortalOptions,
             NullLogger<AuthEndpoints>.Instance,
             CancellationToken.None);
 
@@ -79,7 +82,7 @@ public class AuthEndpointsTests
             context,
             cognito.Object,
             Mock.Of<ICognitoIdTokenReader>(),
-            Options.Create(AdminAuthOptions.FromConfiguration(new ConfigurationBuilder().Build())),
+            PortalOptions,
             NullLogger<AuthEndpoints>.Instance,
             CancellationToken.None);
 
@@ -103,7 +106,7 @@ public class AuthEndpointsTests
             context,
             cognito.Object,
             Mock.Of<ICognitoIdTokenReader>(),
-            Options.Create(AdminAuthOptions.FromConfiguration(new ConfigurationBuilder().Build())),
+            PortalOptions,
             NullLogger<AuthEndpoints>.Instance,
             CancellationToken.None);
 
@@ -130,7 +133,7 @@ public class AuthEndpointsTests
             context,
             cognito.Object,
             Mock.Of<ICognitoIdTokenReader>(),
-            Options.Create(AdminAuthOptions.FromConfiguration(new ConfigurationBuilder().Build())),
+            PortalOptions,
             NullLogger<AuthEndpoints>.Instance,
             CancellationToken.None);
 
@@ -156,7 +159,7 @@ public class AuthEndpointsTests
             context,
             cognito.Object,
             reader.Object,
-            Options.Create(AdminAuthOptions.FromConfiguration(new ConfigurationBuilder().Build())),
+            PortalOptions,
             NullLogger<AuthEndpoints>.Instance,
             CancellationToken.None);
 

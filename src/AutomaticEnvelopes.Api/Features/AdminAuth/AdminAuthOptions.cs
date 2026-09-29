@@ -9,8 +9,8 @@ public sealed class AdminAuthOptions
     public string UserPoolId { get; init; } = string.Empty;
     public string ClientId { get; init; } = string.Empty;
     public string Domain { get; init; } = string.Empty;
-    public string[] AllowedOrigins { get; init; } = AdminAuthDefaults.Origins;
-    public string[] AllowedRedirectUris { get; init; } = AdminAuthDefaults.RedirectUris;
+    public string[] AllowedOrigins { get; init; } = [];
+    public string[] AllowedRedirectUris { get; init; } = [];
 
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(UserPoolId) &&
@@ -56,17 +56,17 @@ public sealed class AdminAuthOptions
             UserPoolId = configuration["COGNITO_USER_POOL_ID"]?.Trim() ?? string.Empty,
             ClientId = configuration["COGNITO_CLIENT_ID"]?.Trim() ?? string.Empty,
             Domain = configuration["COGNITO_DOMAIN"]?.Trim() ?? string.Empty,
-            AllowedOrigins = ReadList(configuration, OriginsEnv, "AdminAuth:AllowedOrigins", AdminAuthDefaults.Origins),
-            AllowedRedirectUris = ReadList(configuration, RedirectUrisEnv, "AdminAuth:AllowedRedirectUris", AdminAuthDefaults.RedirectUris)
+            AllowedOrigins = ReadList(configuration, OriginsEnv, "AdminAuth:AllowedOrigins"),
+            AllowedRedirectUris = ReadList(configuration, RedirectUrisEnv, "AdminAuth:AllowedRedirectUris")
         };
     }
 
-    private static string[] ReadList(IConfiguration configuration, string envKey, string sectionKey, string[] fallback)
+    private static string[] ReadList(IConfiguration configuration, string envKey, string sectionKey)
     {
         var raw = configuration[envKey];
         if (!string.IsNullOrWhiteSpace(raw))
         {
-            return RejectWildcard(Split(raw), envKey, fallback);
+            return RejectWildcard(Split(raw), envKey);
         }
 
         var configured = configuration.GetSection(sectionKey).Get<string[]>();
@@ -74,51 +74,31 @@ public sealed class AdminAuthOptions
         {
             return RejectWildcard(
                 configured.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()).ToArray(),
-                sectionKey,
-                fallback);
+                sectionKey);
         }
 
-        return fallback;
+        return [];
     }
 
     private static string[] Split(string raw) =>
         raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string[] RejectWildcard(string[] values, string source, string[] fallback)
+    private static string[] RejectWildcard(string[] values, string source)
     {
         if (values.Any(value => value == "*"))
         {
             throw new InvalidOperationException($"{source} must list exact values and cannot contain '*'.");
         }
 
-        return values.Length == 0 ? fallback : values;
+        return values;
     }
 
-    private static string[] SanitizeOrigins(IEnumerable<string> origins)
-    {
-        var sanitized = origins
+    private static string[] SanitizeOrigins(IEnumerable<string> origins) =>
+        origins
             .Where(origin => !string.IsNullOrWhiteSpace(origin) && origin != "*")
             .Select(origin => origin.Trim().TrimEnd('/'))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-
-        return sanitized.Length == 0 ? AdminAuthDefaults.Origins : sanitized;
-    }
-}
-
-public static class AdminAuthDefaults
-{
-    public static readonly string[] Origins =
-    [
-        "http://localhost:5173",
-        "https://admin.core-webhook.eu"
-    ];
-
-    public static readonly string[] RedirectUris =
-    [
-        "http://localhost:5173/admin/auth/callback",
-        "https://admin.core-webhook.eu/auth/callback"
-    ];
 }
 
 public static class AdminPortalCors
