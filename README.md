@@ -40,7 +40,7 @@ The admin portal (Cognito Hosted UI + PKCE) exchanges the authorization code on 
 | Method | Path | Auth | Body / response |
 | --- | --- | --- | --- |
 | `POST` | `/auth/token` | anonymous | `{ code, codeVerifier, redirectUri }` → `{ email, name, groups }` plus session cookies |
-| `GET` | `/me` | access cookie or Bearer, plus the `ae_id` cookie | `{ email, name, groups }` |
+| `GET` | `/me` | access cookie or Bearer, and the `ae_id` cookie | `{ email, name, groups }` from the ID token only |
 | `POST` | `/auth/logout` | anonymous, `Origin` must be an allowed portal origin | clears the session cookies and returns `{ cognitoLogoutUrl }` |
 
 Cookies (host-only, `Path=/`, `HttpOnly`, `Secure`, `SameSite=Lax`):
@@ -52,7 +52,7 @@ Cookies (host-only, `Path=/`, `HttpOnly`, `Secure`, `SameSite=Lax`):
 
 Access tokens are checked against `client_id` (they have no `aud` claim). ID tokens are checked against `aud`. `token_use` must match. JwtBearer validates access tokens with `JsonWebTokenHandler`, so `client_id` and `token_use` are read from either a `JsonWebToken` or a `JwtSecurityToken`.
 
-`GET /me` returns email, name, and groups from the `ae_id` cookie. That ID token's `sub` must match the access token `sub` (or the inbound nameidentifier claim). A Bearer access token alone does not carry email, so `/me` stays 401 until the ID cookie is present.
+`GET /me` returns email, name, and groups only from the `ae_id` cookie. That ID token's `sub` must match the access token `sub` (or the inbound nameidentifier claim). Access tokens do not carry email or name, and claims on the access token are not used as a profile. A Bearer-only or `ae_access`-only call returns 401. The portal must send both cookies with `credentials: include`.
 
 `POST /auth/logout` only clears the API cookies. It does not call Cognito `/oauth2/revoke`, and the refresh token is not stored. The Cognito Hosted UI session stays alive until the browser navigates to `cognitoLogoutUrl`. That URL is `https://{COGNITO_DOMAIN}/logout?client_id={COGNITO_CLIENT_ID}&logout_uri={sign-out url}` for the logout URL whose origin matches the request `Origin`. The portal must redirect there after logout. A cross-site form post is rejected (403, cookies kept) unless `Origin` is an exact portal origin.
 

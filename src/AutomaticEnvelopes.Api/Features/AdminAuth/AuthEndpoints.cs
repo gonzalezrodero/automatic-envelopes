@@ -127,53 +127,27 @@ public class AuthEndpoints
             return Results.Unauthorized();
         }
 
-        if (httpContext.Request.Cookies.TryGetValue(AdminAuthCookies.IdToken, out var idToken) &&
-            !string.IsNullOrWhiteSpace(idToken))
-        {
-            try
-            {
-                var profile = await idTokens.ReadAsync(idToken, ct);
-                if (!SubjectsMatch(user, profile.Subject))
-                {
-                    return Results.Unauthorized();
-                }
-
-                return Results.Ok(AdminSessionResponse.From(profile));
-            }
-            catch (Exception ex) when (ex is SecurityTokenException or CognitoAuthException)
-            {
-                return Results.Unauthorized();
-            }
-        }
-
-        var email = user.FindFirst("email")?.Value ?? user.FindFirst(ClaimTypes.Email)?.Value;
-        if (string.IsNullOrWhiteSpace(email))
+        // Cognito access tokens have no email or name. The portal session sends ae_id with credentials.
+        if (!httpContext.Request.Cookies.TryGetValue(AdminAuthCookies.IdToken, out var idToken) ||
+            string.IsNullOrWhiteSpace(idToken))
         {
             return Results.Unauthorized();
         }
 
-        var name = user.FindFirst("name")?.Value ?? user.FindFirst(ClaimTypes.Name)?.Value;
-        if (string.IsNullOrWhiteSpace(name))
+        try
         {
-            name = email;
-        }
+            var profile = await idTokens.ReadAsync(idToken, ct);
+            if (!SubjectsMatch(user, profile.Subject))
+            {
+                return Results.Unauthorized();
+            }
 
-        var groups = CognitoGroupClaims.Read(user.Claims);
-        if (groups.Count == 0)
-        {
-            groups = user.FindAll(ClaimTypes.Role)
-                .Select(claim => claim.Value)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
+            return Results.Ok(AdminSessionResponse.From(profile));
         }
-
-        return Results.Ok(new AdminSessionResponse
+        catch (Exception ex) when (ex is SecurityTokenException or CognitoAuthException)
         {
-            Email = email,
-            Name = name,
-            Groups = groups
-        });
+            return Results.Unauthorized();
+        }
     }
 
     [AllowAnonymous]

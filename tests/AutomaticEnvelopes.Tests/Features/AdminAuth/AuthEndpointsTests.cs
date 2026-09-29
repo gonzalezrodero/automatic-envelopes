@@ -354,25 +354,30 @@ public class AuthEndpointsTests
         json.RootElement.GetProperty("groups")[0].GetString().Should().Be("admin");
     }
 
-    [Fact]
-    public async Task Me_FallsBackToAccessTokenClaims_WhenIdCookieIsAbsent()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task Me_WithoutIdTokenCookie_Returns401_EvenWhenAccessTokenHasProfileClaims(string? idCookie)
     {
         var reader = new Mock<ICognitoIdTokenReader>();
         var context = NewContext();
+        if (idCookie != null)
+        {
+            context.Request.Headers.Cookie = $"ae_id={idCookie}";
+        }
+
         var user = Authenticated(
             new Claim("email", "campus@cbsama.cat"),
+            new Claim(ClaimTypes.Email, "campus@cbsama.cat"),
             new Claim("name", "Núria Solé"),
-            new Claim("cognito:groups", "club-basquet-sama"));
+            new Claim("cognito:groups", "club-basquet-sama"),
+            new Claim(ClaimTypes.Role, "admin"));
 
         var result = await AuthEndpoints.Me(user, context, reader.Object, CancellationToken.None);
         await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-        var body = await ReadBody(context);
-        using var json = JsonDocument.Parse(body);
-        json.RootElement.GetProperty("email").GetString().Should().Be("campus@cbsama.cat");
-        json.RootElement.GetProperty("name").GetString().Should().Be("Núria Solé");
-        json.RootElement.GetProperty("groups")[0].GetString().Should().Be("club-basquet-sama");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
         reader.Verify(tokenReader => tokenReader.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -447,42 +452,6 @@ public class AuthEndpointsTests
             Authenticated(new Claim("email", "admin@core-webhook.eu")),
             context,
             reader.Object,
-            CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
-    }
-
-    [Fact]
-    public async Task Me_UsesEmailWhenNameIsBlank_AndReadsRoleClaimsAsGroups()
-    {
-        var context = NewContext();
-        var user = Authenticated(
-            new Claim(ClaimTypes.Email, "campus@cbsama.cat"),
-            new Claim("name", " "),
-            new Claim(ClaimTypes.Role, "admin"),
-            new Claim(ClaimTypes.Role, "admin"),
-            new Claim(ClaimTypes.Role, " "));
-
-        var result = await AuthEndpoints.Me(user, context, Mock.Of<ICognitoIdTokenReader>(), CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-        using var json = JsonDocument.Parse(await ReadBody(context));
-        json.RootElement.GetProperty("email").GetString().Should().Be("campus@cbsama.cat");
-        json.RootElement.GetProperty("name").GetString().Should().Be("campus@cbsama.cat");
-        json.RootElement.GetProperty("groups").EnumerateArray().Select(group => group.GetString())
-            .Should().Equal("admin");
-    }
-
-    [Fact]
-    public async Task Me_WithoutProfile_Returns401()
-    {
-        var context = NewContext();
-        var result = await AuthEndpoints.Me(
-            Authenticated(),
-            context,
-            Mock.Of<ICognitoIdTokenReader>(),
             CancellationToken.None);
         await result.ExecuteAsync(context);
 
