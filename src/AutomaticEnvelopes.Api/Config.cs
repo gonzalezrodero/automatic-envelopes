@@ -54,7 +54,7 @@ public static class Config
                         Window = TimeSpan.FromMinutes(1)
                     }));
 
-            // Login, logout, and GET /me stay off AdminPolicy so a portal session is not capped at 10/min.
+            // Login, logout, GET /me, and /tenants stay off AdminPolicy so a portal session is not capped at 10/min.
             options.AddPolicy(AdminAuthPolicies.Auth, httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Path}",
