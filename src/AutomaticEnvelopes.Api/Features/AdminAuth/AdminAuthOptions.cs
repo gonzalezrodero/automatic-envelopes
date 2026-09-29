@@ -75,15 +75,7 @@ public sealed class AdminAuthOptions
             return null;
         }
 
-        foreach (var logoutUri in AllowedLogoutUris)
-        {
-            if (OriginOf(logoutUri) == requestOrigin)
-            {
-                return logoutUri;
-            }
-        }
-
-        return null;
+        return AllowedLogoutUris.Where(logoutUri => OriginOf(logoutUri) == requestOrigin).FirstOrDefault();
     }
 
     private static string? OriginOf(string uri)

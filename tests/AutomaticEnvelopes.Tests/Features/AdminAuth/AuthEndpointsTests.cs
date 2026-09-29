@@ -119,9 +119,16 @@ public class AuthEndpointsTests
     }
 
     [Theory]
-    [MemberData(nameof(IncompleteBodies))]
-    public async Task Exchange_RejectsIncompleteBody(TokenExchangeRequest? request)
+    [InlineData(true, null, null, null)]
+    [InlineData(false, null, null, null)]
+    [InlineData(false, " ", Verifier, "https://portal.example/callback")]
+    [InlineData(false, "auth-code", " ", "https://portal.example/callback")]
+    [InlineData(false, "auth-code", Verifier, " ")]
+    public async Task Exchange_RejectsIncompleteBody(bool missingRequest, string? code, string? codeVerifier, string? redirectUri)
     {
+        TokenExchangeRequest? request = missingRequest
+            ? null
+            : new TokenExchangeRequest { Code = code, CodeVerifier = codeVerifier, RedirectUri = redirectUri };
         var cognito = new Mock<ICognitoTokenClient>();
         var context = NewContext();
 
@@ -142,17 +149,6 @@ public class AuthEndpointsTests
         cognito.Verify(
             client => client.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
-    }
-
-    public static TheoryData<TokenExchangeRequest?> IncompleteBodies()
-    {
-        var data = new TheoryData<TokenExchangeRequest?>();
-        data.Add((TokenExchangeRequest?)null);
-        data.Add(new TokenExchangeRequest());
-        data.Add(new TokenExchangeRequest { Code = " ", CodeVerifier = Verifier, RedirectUri = "https://portal.example/callback" });
-        data.Add(new TokenExchangeRequest { Code = "auth-code", CodeVerifier = " ", RedirectUri = "https://portal.example/callback" });
-        data.Add(new TokenExchangeRequest { Code = "auth-code", CodeVerifier = Verifier, RedirectUri = " " });
-        return data;
     }
 
     [Fact]
