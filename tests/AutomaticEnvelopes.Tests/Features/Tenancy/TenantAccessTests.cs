@@ -74,6 +74,18 @@ public class TenantAccessTests
     }
 
     [Fact]
+    public void Groups_TrimsRoleClaims_SkipsBlanks_AndDeduplicatesInOrder()
+    {
+        var user = Principal(
+            new Claim("cognito:groups", " club-basquet-sama "),
+            new Claim(ClaimTypes.Role, "  "),
+            new Claim(ClaimTypes.Role, " club-basquet-sama "),
+            new Claim(ClaimTypes.Role, "escola-harmonia"));
+
+        TenantAccess.Groups(user).Should().Equal("club-basquet-sama", "escola-harmonia");
+    }
+
+    [Fact]
     public void UnauthenticatedPrincipal_IsNotAnAdmin()
     {
         var user = new ClaimsPrincipal(new ClaimsIdentity());

@@ -37,13 +37,9 @@ public static class TenantAccess
     {
         var groups = new List<string>();
         groups.AddRange(CognitoGroupClaims.Read(user.Claims));
-        foreach (var role in user.FindAll(ClaimTypes.Role))
-        {
-            if (!string.IsNullOrWhiteSpace(role.Value))
-            {
-                groups.Add(role.Value.Trim());
-            }
-        }
+        groups.AddRange(user.FindAll(ClaimTypes.Role)
+            .Where(role => !string.IsNullOrWhiteSpace(role.Value))
+            .Select(role => role.Value.Trim()));
 
         return groups.Distinct(StringComparer.Ordinal).ToArray();
     }
