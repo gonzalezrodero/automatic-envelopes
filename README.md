@@ -56,7 +56,7 @@ Access tokens are checked against `client_id` (they have no `aud` claim). ID tok
 
 `POST /auth/logout` only clears the API cookies. It does not call Cognito `/oauth2/revoke`, and the refresh token is not stored. The Cognito Hosted UI session stays alive until the browser navigates to `cognitoLogoutUrl`. That URL is `https://{COGNITO_DOMAIN}/logout?client_id={COGNITO_CLIENT_ID}&logout_uri={sign-out url}` for the logout URL whose origin matches the request `Origin`. The portal must redirect there after logout. A cross-site form post is rejected (403, cookies kept) unless `Origin` is an exact portal origin.
 
-`AdminPolicy` (10 requests/minute) still applies only to tenant registration and document ingest. `/auth/*` and `/me` use `AuthPolicy` (60 requests/minute per caller and path). That limit is not a substitute for Cognito's own throttling. The Cognito app client does not reject `/oauth2/authorize` requests that omit PKCE. The portal must send `code_challenge_method=S256` on authorize. `POST /auth/token` always requires `codeVerifier`. This slice does not change the user pool client.
+`AdminPolicy` (10 requests/minute) still applies only to tenant registration and document ingest. `/auth/*`, `/me`, and `/tenants` use `AuthPolicy` (60 requests/minute per caller and path). That limit is not a substitute for Cognito's own throttling. The Cognito app client does not reject `/oauth2/authorize` requests that omit PKCE. The portal must send `code_challenge_method=S256` on authorize. `POST /auth/token` always requires `codeVerifier`. This slice does not change the user pool client.
 
 ### Environment variables
 
@@ -73,3 +73,50 @@ Set on the API Lambda. Lists are comma-separated exact values. `*` is rejected.
 | `AWS_REGION` | Region segment of the issuer (already used elsewhere; default `eu-west-1`) |
 
 Allowlists are not compiled into the API. Local `appsettings.json` supplies `AdminAuth:AllowedOrigins`, `AdminAuth:AllowedRedirectUris`, and `AdminAuth:AllowedLogoutUris`. Deployed Lambdas replace those with `ADMIN_PORTAL_ORIGINS`, `COGNITO_ALLOWED_REDIRECT_URIS`, and `COGNITO_LOGOUT_URIS`. If no exact origin is configured, the API does not start. Cognito logout URLs are the portal login pages (`/admin/login` locally, `/login` in production), which is where Hosted UI returns after logout.
+
+## Admin portal tenants
+
+Same access token as the rest of the API: the `ae_access` cookie, or `Authorization: Bearer` when the header is present. These routes do not read `ae_id`. That cookie is `Path=/me`, and `cognito:groups` is already on the access token. CORS is the admin-portal policy (`credentials` allowed for the configured origins, including `http://localhost:5173`).
+
+Group `admin` may read and update every tenant. Any other group is a tenant id. A caller whose only group is that id receives only that tenant. `admin` wins when both are present. The same rule is `TenantAccess.CanAccess`, which `TenantAdmin` uses for `POST /api/admin/tenants/{tenantId}` and `POST /api/admin/ingest/{tenantId}`. Path ids must match `^[a-z0-9-]+$` and be at most 64 characters.
+
+| Method | Path | Auth | Body / response |
+| --- | --- | --- | --- |
+| `GET` | `/tenants` | access cookie or Bearer | `TenantProfile[]` for the caller's groups. An allowed caller with no matching documents gets `[]`. |
+| `GET` | `/tenants/{tenantId}` | same | one `TenantProfile`. `403` when the group does not allow it (whether or not the document exists). `404` when it is allowed and missing. `400` when the id is not a valid path id. |
+| `PATCH` | `/tenants/{tenantId}` | same | `{ systemPrompt, privacyPolicyUrl }` → updated `TenantProfile`. Same authz. `privacyPolicyUrl` must be `https`, or `http` on `localhost`, `127.0.0.1`, or `::1`, with no user info. `systemPrompt` is required. |
+
+`POST /api/admin/tenants/{tenantId}` and `POST /api/admin/ingest/{tenantId}` are unchanged.
+
+Portal JSON (camelCase). `createdAt` stays on the Marten document and is not returned.
+
+```json
+{
+  "id": "example-tenant",
+  "name": "Example",
+  "shortName": "Example",
+  "city": "",
+  "kind": "",
+  "botPhoneNumberId": "109283746510293",
+  "displayPhone": "",
+  "systemPrompt": "...",
+  "privacyPolicyUrl": "https://example.com/privacy"
+}
+```
+
+`Name`, `ShortName`, `City`, `Kind`, and `DisplayPhone` are portal labels stored on the Marten document. The bot never reads them. There is no catalog and no slug humanizing: a blank stored value is returned as `""`. The portal shows the id when `name` or `shortName` is blank.
+
+| Stored field | JSON field | When the stored value is blank |
+| --- | --- | --- |
+| `Id` | `id` | required; used as stored |
+| `Name` | `name` | `""` |
+| `ShortName` | `shortName` | `""` |
+| `City` | `city` | `""` |
+| `Kind` | `kind` | `""` |
+| `BotPhoneNumberId` | `botPhoneNumberId` | used as stored. This is still the Meta phone-number id the webhook routes on |
+| `DisplayPhone` | `displayPhone` | `""`. Portal label, not a WhatsApp route |
+| `SystemPrompt` | `systemPrompt` | used as stored, including empty. The bot keeps its own fallback |
+| `PrivacyPolicyUrl` | `privacyPolicyUrl` | used as stored. A legacy `http` URL is returned as text; only a new `PATCH` must pass the https / localhost check |
+| `CreatedAt` | omitted | unchanged on `PATCH` |
+
+A stored display value is trimmed and returned as stored. `PATCH` writes `SystemPrompt` and `PrivacyPolicyUrl` only, so display fields already on the document stay as they are and the bot document keeps the same phone id and prompt behavior.

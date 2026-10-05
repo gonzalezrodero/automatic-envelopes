@@ -54,7 +54,7 @@ public static class Config
                         Window = TimeSpan.FromMinutes(1)
                     }));
 
-            // Login, logout, and GET /me stay off AdminPolicy so a portal session is not capped at 10/min.
+            // Login, logout, GET /me, and /tenants stay off AdminPolicy so a portal session is not capped at 10/min.
             options.AddPolicy(AdminAuthPolicies.Auth, httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Path}",
@@ -82,26 +82,13 @@ public static class Config
                 policy.RequireAuthenticatedUser();
                 policy.RequireAssertion(context =>
                 {
-                    // 1. Global admins always have access
-                    if (context.User.IsInRole("admin"))
+                    if (context.Resource is not HttpContext httpContext)
                     {
-                        return true;
+                        return false;
                     }
 
-                    // 2. Extract tenantId directly from the route URL
-                    if (context.Resource is HttpContext httpContext)
-                    {
-                        var tenantId = httpContext.Request.RouteValues["tenantId"]?.ToString();
-
-                        // 3. Check if the user belongs to the group for this specific tenant
-                        if (!string.IsNullOrEmpty(tenantId) && context.User.IsInRole(tenantId))
-                        {
-                            return true;
-                        }
-                    }
-
-                    // If neither matches, automatically return 403 Forbidden
-                    return false;
+                    var tenantId = httpContext.Request.RouteValues["tenantId"]?.ToString();
+                    return !string.IsNullOrEmpty(tenantId) && TenantAccess.CanAccess(context.User, tenantId);
                 });
             });
 

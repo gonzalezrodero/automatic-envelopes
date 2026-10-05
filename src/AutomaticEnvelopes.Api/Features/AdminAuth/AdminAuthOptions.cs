@@ -153,7 +153,8 @@ public static class AdminAuthPolicies
     public const string Auth = "AuthPolicy";
 
     /// <summary>
-    /// Per caller and path. Kept above AdminPolicy (10/min) so login and GET /me are not throttled with ingest.
+    /// Per caller and path. Kept above AdminPolicy (10/min) so login, GET /me, and the portal
+    /// tenant routes are not throttled with registration and ingest.
     /// </summary>
     public const int PermitLimit = 60;
 }
