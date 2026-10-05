@@ -4,6 +4,7 @@ namespace AutomaticEnvelopes.Api.Features.Tenancy;
 
 /// <summary>
 /// JSON shape the admin portal already deserializes. Field names match automatic-letters-web.
+/// Blank display fields stay blank. The portal shows the id when a label was not stored.
 /// </summary>
 public sealed class TenantPortalProfile
 {
@@ -37,71 +38,20 @@ public sealed class TenantPortalProfile
     public static TenantPortalProfile From(TenantProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
-        var display = TenantDisplayDefaults.For(profile.Id);
         return new TenantPortalProfile
         {
             Id = profile.Id,
-            Name = First(profile.Name, display.Name),
-            ShortName = First(profile.ShortName, display.ShortName),
-            City = First(profile.City, display.City),
-            Kind = First(profile.Kind, display.Kind),
+            Name = Stored(profile.Name),
+            ShortName = Stored(profile.ShortName),
+            City = Stored(profile.City),
+            Kind = Stored(profile.Kind),
             BotPhoneNumberId = profile.BotPhoneNumberId ?? string.Empty,
-            DisplayPhone = First(profile.DisplayPhone, display.DisplayPhone),
+            DisplayPhone = Stored(profile.DisplayPhone),
             SystemPrompt = profile.SystemPrompt ?? string.Empty,
             PrivacyPolicyUrl = profile.PrivacyPolicyUrl ?? string.Empty
         };
     }
 
-    private static string First(string? stored, string fallback) =>
-        string.IsNullOrWhiteSpace(stored) ? fallback : stored.Trim();
+    private static string Stored(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 }
-
-public static class TenantDisplayDefaults
-{
-    public const string ClubBasquetSamaId = "club-basquet-sama";
-
-    public static TenantDisplay For(string? tenantId)
-    {
-        if (string.Equals(tenantId, ClubBasquetSamaId, StringComparison.Ordinal))
-        {
-            return ClubBasquetSama;
-        }
-
-        var name = Humanize(tenantId);
-        return new TenantDisplay(name, name, string.Empty, string.Empty, string.Empty);
-    }
-
-    /// <summary>
-    /// Labels the portal already shows for the live Samà tenant. Applied only when the stored
-    /// document has no display value. The bot keeps using BotPhoneNumberId.
-    /// </summary>
-    public static TenantDisplay ClubBasquetSama { get; } = new(
-        "Club Bàsquet Samà",
-        "CB Samà",
-        "Cambrils",
-        "Campus d\u2019estiu de bàsquet",
-        "+34 977 000 214");
-
-    private static string Humanize(string? tenantId)
-    {
-        if (string.IsNullOrWhiteSpace(tenantId))
-        {
-            return string.Empty;
-        }
-
-        var words = tenantId.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return words.Length == 0
-            ? tenantId
-            : string.Join(' ', words.Select(Capitalize));
-    }
-
-    private static string Capitalize(string word) =>
-        char.ToUpperInvariant(word[0]) + word[1..];
-}
-
-public readonly record struct TenantDisplay(
-    string Name,
-    string ShortName,
-    string City,
-    string Kind,
-    string DisplayPhone);

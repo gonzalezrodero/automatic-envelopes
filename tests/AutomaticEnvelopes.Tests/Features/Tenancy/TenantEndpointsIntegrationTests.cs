@@ -146,36 +146,36 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
     [Fact]
     public async Task Patch_UpdatesPromptAndUrl_AndDoesNotRewriteDisplayOrBotFields()
     {
-        var tenantId = "club-basquet-sama";
+        var tenantId = "example-tenant";
         var botPhone = $"phone-{Guid.NewGuid():N}";
         var created = new DateTime(2024, 5, 1, 10, 0, 0, DateTimeKind.Utc);
-        await StoreLegacySamaAsync(botPhone, created);
+        await StoreLegacyDocumentAsync(botPhone, created);
 
         var result = await fixture.Host.Scenario(s =>
         {
             AsTenant(s, tenantId);
             s.Patch.Json(new UpdateTenantSettingsRequest
             {
-                SystemPrompt = "  Nova persona del campus.  ",
-                PrivacyPolicyUrl = " HTTPS://WWW.CBSAMA.CAT/privacitat "
+                SystemPrompt = "  Updated persona.  ",
+                PrivacyPolicyUrl = " HTTPS://EXAMPLE.COM/privacy "
             }).ToUrl($"/tenants/{tenantId}");
             s.StatusCodeShouldBe(200);
         });
 
         using var json = JsonDocument.Parse(result.ReadAsText());
-        json.RootElement.GetProperty("systemPrompt").GetString().Should().Be("Nova persona del campus.");
-        json.RootElement.GetProperty("privacyPolicyUrl").GetString().Should().Be("https://www.cbsama.cat/privacitat");
-        json.RootElement.GetProperty("name").GetString().Should().Be("Club Bàsquet Samà");
-        json.RootElement.GetProperty("shortName").GetString().Should().Be("CB Samà");
-        json.RootElement.GetProperty("city").GetString().Should().Be("Cambrils");
-        json.RootElement.GetProperty("kind").GetString().Should().Be("Campus d\u2019estiu de bàsquet");
-        json.RootElement.GetProperty("displayPhone").GetString().Should().Be("+34 977 000 214");
+        json.RootElement.GetProperty("systemPrompt").GetString().Should().Be("Updated persona.");
+        json.RootElement.GetProperty("privacyPolicyUrl").GetString().Should().Be("https://example.com/privacy");
+        json.RootElement.GetProperty("name").GetString().Should().BeEmpty();
+        json.RootElement.GetProperty("shortName").GetString().Should().BeEmpty();
+        json.RootElement.GetProperty("city").GetString().Should().BeEmpty();
+        json.RootElement.GetProperty("kind").GetString().Should().BeEmpty();
+        json.RootElement.GetProperty("displayPhone").GetString().Should().BeEmpty();
         json.RootElement.GetProperty("botPhoneNumberId").GetString().Should().Be(botPhone);
         json.RootElement.TryGetProperty("createdAt", out _).Should().BeFalse();
 
         var stored = await LoadAsync(tenantId);
-        stored.SystemPrompt.Should().Be("Nova persona del campus.");
-        stored.PrivacyPolicyUrl.Should().Be("https://www.cbsama.cat/privacitat");
+        stored.SystemPrompt.Should().Be("Updated persona.");
+        stored.PrivacyPolicyUrl.Should().Be("https://example.com/privacy");
         stored.BotPhoneNumberId.Should().Be(botPhone);
         stored.CreatedAt.Should().Be(created);
         stored.Name.Should().BeEmpty();
@@ -239,15 +239,15 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
     }
 
     [Fact]
-    public async Task LegacyMartenJson_WithoutDisplayFields_DeserializesAndMapsToSamaLabels()
+    public async Task LegacyMartenJson_WithoutDisplayFields_DeserializesAndLeavesLabelsBlank()
     {
         var store = fixture.Host.Services.GetRequiredService<IDocumentStore>();
         var current = new TenantProfile
         {
-            Id = "club-basquet-sama",
+            Id = "example-tenant",
             BotPhoneNumberId = "109283746510293",
-            SystemPrompt = "Ets l'assistent.",
-            PrivacyPolicyUrl = "https://www.cbsama.cat/privacitat",
+            SystemPrompt = "Assistant prompt.",
+            PrivacyPolicyUrl = "https://example.com/privacy",
             CreatedAt = new DateTime(2024, 5, 1, 10, 0, 0, DateTimeKind.Utc),
             Name = "will be removed"
         };
@@ -263,10 +263,10 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
         legacy.Name.Should().BeEmpty();
         legacy.DisplayPhone.Should().BeEmpty();
         legacy.BotPhoneNumberId.Should().Be("109283746510293");
-        legacy.SystemPrompt.Should().Be("Ets l'assistent.");
+        legacy.SystemPrompt.Should().Be("Assistant prompt.");
         var portal = TenantPortalProfile.From(legacy);
-        portal.Name.Should().Be("Club Bàsquet Samà");
-        portal.DisplayPhone.Should().Be("+34 977 000 214");
+        portal.Name.Should().BeEmpty();
+        portal.DisplayPhone.Should().BeEmpty();
         portal.BotPhoneNumberId.Should().Be("109283746510293");
     }
 
@@ -281,18 +281,18 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
             PrivacyPolicyUrl = privacyPolicyUrl,
             Name = name,
             ShortName = name,
-            City = "Cambrils",
-            Kind = "Club"
+            City = "Town",
+            Kind = "Org"
         });
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
-    private async Task StoreLegacySamaAsync(string botPhone, DateTime created)
+    private async Task StoreLegacyDocumentAsync(string botPhone, DateTime created)
     {
         var store = fixture.Host.Services.GetRequiredService<IDocumentStore>();
         var document = new TenantProfile
         {
-            Id = "club-basquet-sama",
+            Id = "example-tenant",
             BotPhoneNumberId = botPhone,
             SystemPrompt = "old",
             PrivacyPolicyUrl = "https://old.example/p",

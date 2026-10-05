@@ -6,7 +6,7 @@ namespace AutomaticEnvelopes.Tests.Features.Tenancy;
 public class PrivacyPolicyUrlTests
 {
     [Theory]
-    [InlineData("https://www.cbsama.cat/privacitat", "https://www.cbsama.cat/privacitat")]
+    [InlineData("https://example.com/privacy", "https://example.com/privacy")]
     [InlineData("  https://example.com/p  ", "https://example.com/p")]
     [InlineData("HTTPS://Example.COM/Privacy", "https://example.com/Privacy")]
     [InlineData("http://localhost/privacy", "http://localhost/privacy")]

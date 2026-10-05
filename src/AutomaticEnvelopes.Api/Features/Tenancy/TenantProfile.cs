@@ -4,7 +4,7 @@
 /// Marten document for one WhatsApp tenant. The bot reads <see cref="Id"/>,
 /// <see cref="BotPhoneNumberId"/>, <see cref="SystemPrompt"/>, and <see cref="PrivacyPolicyUrl"/> only.
 /// Name, short name, city, kind, and display phone are portal labels. Empty values stay empty in the
-/// document; the portal DTO fills them when a response is built.
+/// document and in the portal response. There is no per-tenant default in code.
 /// </summary>
 public class TenantProfile
 {

@@ -51,7 +51,7 @@ public class TenantEndpointsTests
     public async Task Get_WithoutAuthentication_Returns401()
     {
         var result = await TenantEndpoints.Get(
-            "club-basquet-sama",
+            "example-tenant",
             Anonymous(),
             new DefaultHttpContext(),
             new Mock<IDocumentSession>(MockBehavior.Strict).Object,
@@ -81,8 +81,8 @@ public class TenantEndpointsTests
     {
         var session = new Mock<IDocumentSession>(MockBehavior.Strict);
         var result = await TenantEndpoints.Get(
-            "escola-harmonia",
-            TenantUser("club-basquet-sama"),
+            "other-tenant",
+            TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
             CancellationToken.None);
@@ -94,12 +94,12 @@ public class TenantEndpointsTests
     public async Task Get_AllowedMissingTenant_Returns404()
     {
         var session = new Mock<IDocumentSession>();
-        session.Setup(store => store.LoadAsync<TenantProfile>("club-basquet-sama", It.IsAny<CancellationToken>()))
+        session.Setup(store => store.LoadAsync<TenantProfile>("example-tenant", It.IsAny<CancellationToken>()))
             .ReturnsAsync((TenantProfile?)null);
 
         var result = await TenantEndpoints.Get(
-            "club-basquet-sama",
-            TenantUser("club-basquet-sama"),
+            "example-tenant",
+            TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
             CancellationToken.None);
@@ -111,24 +111,24 @@ public class TenantEndpointsTests
     public async Task Update_RejectsAnEmptyPrompt_AndAPublicHttpUrl_WithoutWriting()
     {
         var session = new Mock<IDocumentSession>(MockBehavior.Strict);
-        var user = TenantUser("club-basquet-sama");
+        var user = TenantUser("example-tenant");
 
         var emptyPrompt = await TenantEndpoints.Update(
-            "club-basquet-sama",
+            "example-tenant",
             new UpdateTenantSettingsRequest { SystemPrompt = "  ", PrivacyPolicyUrl = "https://example.com/p" },
             user,
             new DefaultHttpContext(),
             session.Object,
             CancellationToken.None);
         var publicHttp = await TenantEndpoints.Update(
-            "club-basquet-sama",
+            "example-tenant",
             new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "http://example.com/p" },
             user,
             new DefaultHttpContext(),
             session.Object,
             CancellationToken.None);
         var missingBody = await TenantEndpoints.Update(
-            "club-basquet-sama",
+            "example-tenant",
             null,
             user,
             new DefaultHttpContext(),
@@ -144,7 +144,7 @@ public class TenantEndpointsTests
     public async Task Update_RejectsAPromptPastTheLimit()
     {
         var result = await TenantEndpoints.Update(
-            "club-basquet-sama",
+            "example-tenant",
             new UpdateTenantSettingsRequest
             {
                 SystemPrompt = new string('a', TenantSettingsValidation.MaxSystemPromptLength + 1),
@@ -162,9 +162,9 @@ public class TenantEndpointsTests
     public async Task Update_OtherTenant_Returns403_WithoutLoading()
     {
         var result = await TenantEndpoints.Update(
-            "escola-harmonia",
+            "other-tenant",
             new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p" },
-            TenantUser("club-basquet-sama"),
+            TenantUser("example-tenant"),
             new DefaultHttpContext(),
             new Mock<IDocumentSession>(MockBehavior.Strict).Object,
             CancellationToken.None);
@@ -176,13 +176,13 @@ public class TenantEndpointsTests
     public async Task Update_AllowedMissingTenant_Returns404_WithoutStoring()
     {
         var session = new Mock<IDocumentSession>(MockBehavior.Strict);
-        session.Setup(store => store.LoadAsync<TenantProfile>("club-basquet-sama", It.IsAny<CancellationToken>()))
+        session.Setup(store => store.LoadAsync<TenantProfile>("example-tenant", It.IsAny<CancellationToken>()))
             .ReturnsAsync((TenantProfile?)null);
 
         var result = await TenantEndpoints.Update(
-            "club-basquet-sama",
+            "example-tenant",
             new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p" },
-            TenantUser("club-basquet-sama"),
+            TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
             CancellationToken.None);

@@ -78,7 +78,7 @@ Allowlists are not compiled into the API. Local `appsettings.json` supplies `Adm
 
 Same access token as the rest of the API: the `ae_access` cookie, or `Authorization: Bearer` when the header is present. These routes do not read `ae_id`. That cookie is `Path=/me`, and `cognito:groups` is already on the access token. CORS is the admin-portal policy (`credentials` allowed for the configured origins, including `http://localhost:5173`).
 
-Group `admin` may read and update every tenant. Any other group is a tenant id. A caller in `club-basquet-sama` only receives that tenant. `admin` wins when both are present. Path ids must match `^[a-z0-9-]+$` and be at most 64 characters.
+Group `admin` may read and update every tenant. Any other group is a tenant id. A caller whose only group is that id receives only that tenant. `admin` wins when both are present. The same rule is `TenantAccess.CanAccess`, which `TenantAdmin` uses for `POST /api/admin/tenants/{tenantId}` and `POST /api/admin/ingest/{tenantId}`. Path ids must match `^[a-z0-9-]+$` and be at most 64 characters.
 
 | Method | Path | Auth | Body / response |
 | --- | --- | --- | --- |
@@ -92,31 +92,31 @@ Portal JSON (camelCase). `createdAt` stays on the Marten document and is not ret
 
 ```json
 {
-  "id": "club-basquet-sama",
-  "name": "Club Bàsquet Samà",
-  "shortName": "CB Samà",
-  "city": "Cambrils",
-  "kind": "Campus d’estiu de bàsquet",
+  "id": "example-tenant",
+  "name": "Example",
+  "shortName": "Example",
+  "city": "",
+  "kind": "",
   "botPhoneNumberId": "109283746510293",
-  "displayPhone": "+34 977 000 214",
+  "displayPhone": "",
   "systemPrompt": "...",
-  "privacyPolicyUrl": "https://www.cbsama.cat/privacitat"
+  "privacyPolicyUrl": "https://example.com/privacy"
 }
 ```
 
-Documents written before these fields existed have no `Name`, `ShortName`, `City`, `Kind`, or `DisplayPhone`. The bot never reads those properties. On read, a blank value is filled only in the response:
+`Name`, `ShortName`, `City`, `Kind`, and `DisplayPhone` are portal labels stored on the Marten document. The bot never reads them. There is no catalog and no slug humanizing: a blank stored value is returned as `""`. The portal shows the id when `name` or `shortName` is blank.
 
 | Stored field | JSON field | When the stored value is blank |
 | --- | --- | --- |
 | `Id` | `id` | required; used as stored |
-| `Name` | `name` | `club-basquet-sama` → `Club Bàsquet Samà`. Any other id is the slug with hyphens turned into words (`escola-harmonia` → `Escola Harmonia`) |
-| `ShortName` | `shortName` | `club-basquet-sama` → `CB Samà`. Otherwise the same label as `name` |
-| `City` | `city` | `club-basquet-sama` → `Cambrils`. Otherwise `""` |
-| `Kind` | `kind` | `club-basquet-sama` → `Campus d’estiu de bàsquet`. Otherwise `""` |
+| `Name` | `name` | `""` |
+| `ShortName` | `shortName` | `""` |
+| `City` | `city` | `""` |
+| `Kind` | `kind` | `""` |
 | `BotPhoneNumberId` | `botPhoneNumberId` | used as stored. This is still the Meta phone-number id the webhook routes on |
-| `DisplayPhone` | `displayPhone` | `club-basquet-sama` → `+34 977 000 214` (portal label, not a WhatsApp route). Otherwise `""` |
+| `DisplayPhone` | `displayPhone` | `""`. Portal label, not a WhatsApp route |
 | `SystemPrompt` | `systemPrompt` | used as stored, including empty. The bot keeps its own fallback |
 | `PrivacyPolicyUrl` | `privacyPolicyUrl` | used as stored. A legacy `http` URL is returned as text; only a new `PATCH` must pass the https / localhost check |
 | `CreatedAt` | omitted | unchanged on `PATCH` |
 
-A stored display value always wins over the fallback. `PATCH` writes `SystemPrompt` and `PrivacyPolicyUrl` only, so the fallback is not copied into PostgreSQL and the bot document keeps the same phone id and prompt behavior.
+A stored display value is trimmed and returned as stored. `PATCH` writes `SystemPrompt` and `PrivacyPolicyUrl` only, so display fields already on the document stay as they are and the bot document keeps the same phone id and prompt behavior.

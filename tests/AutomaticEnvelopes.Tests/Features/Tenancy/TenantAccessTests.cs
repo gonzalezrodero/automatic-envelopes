@@ -7,15 +7,15 @@ namespace AutomaticEnvelopes.Tests.Features.Tenancy;
 public class TenantAccessTests
 {
     [Theory]
-    [InlineData("club-basquet-sama", true)]
+    [InlineData("example-tenant", true)]
     [InlineData("a", true)]
-    [InlineData("escola-harmonia", true)]
+    [InlineData("other-tenant", true)]
     [InlineData("", false)]
     [InlineData(" ", false)]
-    [InlineData("Club-Basquet", false)]
-    [InlineData("club_basquet", false)]
+    [InlineData("Example-Tenant", false)]
+    [InlineData("example_tenant", false)]
     [InlineData("../etc", false)]
-    [InlineData("club.basquet", false)]
+    [InlineData("example.tenant", false)]
     public void IsValid_MatchesThePortalPathPattern(string tenantId, bool expected)
     {
         TenantIds.IsValid(tenantId).Should().Be(expected);
@@ -33,33 +33,33 @@ public class TenantAccessTests
     {
         var user = Principal(
             new Claim("cognito:groups", "admin"),
-            new Claim("cognito:groups", "club-basquet-sama"));
+            new Claim("cognito:groups", "example-tenant"));
 
         TenantAccess.IsAdmin(user).Should().BeTrue();
-        TenantAccess.CanAccess(user, "escola-harmonia").Should().BeTrue();
-        TenantAccess.CanAccess(user, "club-basquet-sama").Should().BeTrue();
+        TenantAccess.CanAccess(user, "other-tenant").Should().BeTrue();
+        TenantAccess.CanAccess(user, "example-tenant").Should().BeTrue();
     }
 
     [Fact]
     public void TenantGroup_CanAccessOnlyTheMatchingId()
     {
-        var user = Principal(new Claim(ClaimTypes.Role, "club-basquet-sama"));
+        var user = Principal(new Claim(ClaimTypes.Role, "example-tenant"));
 
         TenantAccess.IsAdmin(user).Should().BeFalse();
-        TenantAccess.CanAccess(user, "club-basquet-sama").Should().BeTrue();
-        TenantAccess.CanAccess(user, "escola-harmonia").Should().BeFalse();
-        TenantAccess.CanAccess(user, "Club-Basquet-Sama").Should().BeFalse();
-        TenantAccess.VisibleTenantIds(user).Should().Equal("club-basquet-sama");
+        TenantAccess.CanAccess(user, "example-tenant").Should().BeTrue();
+        TenantAccess.CanAccess(user, "other-tenant").Should().BeFalse();
+        TenantAccess.CanAccess(user, "Example-Tenant").Should().BeFalse();
+        TenantAccess.VisibleTenantIds(user).Should().Equal("example-tenant");
     }
 
     [Fact]
     public void JsonArrayGroupClaim_IsReadAsTenantIds()
     {
-        var user = Principal(new Claim("cognito:groups", """["club-basquet-sama","escola-harmonia"]"""));
+        var user = Principal(new Claim("cognito:groups", """["example-tenant","other-tenant"]"""));
 
-        TenantAccess.Groups(user).Should().Equal("club-basquet-sama", "escola-harmonia");
-        TenantAccess.VisibleTenantIds(user).Should().Equal("club-basquet-sama", "escola-harmonia");
-        TenantAccess.CanAccess(user, "escola-harmonia").Should().BeTrue();
+        TenantAccess.Groups(user).Should().Equal("example-tenant", "other-tenant");
+        TenantAccess.VisibleTenantIds(user).Should().Equal("example-tenant", "other-tenant");
+        TenantAccess.CanAccess(user, "other-tenant").Should().BeTrue();
     }
 
     [Fact]
@@ -68,21 +68,21 @@ public class TenantAccessTests
         var user = Principal(
             new Claim("cognito:groups", "admin"),
             new Claim("cognito:groups", "not_a_slug"),
-            new Claim(ClaimTypes.Role, "club-basquet-sama"));
+            new Claim(ClaimTypes.Role, "example-tenant"));
 
-        TenantAccess.VisibleTenantIds(user).Should().Equal("club-basquet-sama");
+        TenantAccess.VisibleTenantIds(user).Should().Equal("example-tenant");
     }
 
     [Fact]
     public void Groups_TrimsRoleClaims_SkipsBlanks_AndDeduplicatesInOrder()
     {
         var user = Principal(
-            new Claim("cognito:groups", " club-basquet-sama "),
+            new Claim("cognito:groups", " example-tenant "),
             new Claim(ClaimTypes.Role, "  "),
-            new Claim(ClaimTypes.Role, " club-basquet-sama "),
-            new Claim(ClaimTypes.Role, "escola-harmonia"));
+            new Claim(ClaimTypes.Role, " example-tenant "),
+            new Claim(ClaimTypes.Role, "other-tenant"));
 
-        TenantAccess.Groups(user).Should().Equal("club-basquet-sama", "escola-harmonia");
+        TenantAccess.Groups(user).Should().Equal("example-tenant", "other-tenant");
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public class TenantAccessTests
 
         TenantAccess.IsAuthenticated(user).Should().BeFalse();
         TenantAccess.IsAdmin(user).Should().BeFalse();
-        TenantAccess.CanAccess(user, "club-basquet-sama").Should().BeFalse();
+        TenantAccess.CanAccess(user, "example-tenant").Should().BeFalse();
     }
 
     private static ClaimsPrincipal Principal(params Claim[] claims) =>

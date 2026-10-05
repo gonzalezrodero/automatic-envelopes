@@ -6,27 +6,27 @@ namespace AutomaticEnvelopes.Tests.Features.Tenancy;
 public class TenantPortalProfileTests
 {
     [Fact]
-    public void From_BlankSamaDocument_UsesPortalDisplayLabels_AndKeepsBotFields()
+    public void From_BlankDisplayFields_StayBlank_AndKeepsBotFields()
     {
-        var profile = LegacySama();
+        var profile = LegacyDocument();
 
         var portal = TenantPortalProfile.From(profile);
 
-        portal.Id.Should().Be("club-basquet-sama");
-        portal.Name.Should().Be("Club Bàsquet Samà");
-        portal.ShortName.Should().Be("CB Samà");
-        portal.City.Should().Be("Cambrils");
-        portal.Kind.Should().Be("Campus d\u2019estiu de bàsquet");
+        portal.Id.Should().Be("example-tenant");
+        portal.Name.Should().BeEmpty();
+        portal.ShortName.Should().BeEmpty();
+        portal.City.Should().BeEmpty();
+        portal.Kind.Should().BeEmpty();
         portal.BotPhoneNumberId.Should().Be("109283746510293");
-        portal.DisplayPhone.Should().Be("+34 977 000 214");
-        portal.SystemPrompt.Should().Be("Ets l'assistent.");
-        portal.PrivacyPolicyUrl.Should().Be("https://www.cbsama.cat/privacitat");
+        portal.DisplayPhone.Should().BeEmpty();
+        portal.SystemPrompt.Should().Be("Assistant prompt.");
+        portal.PrivacyPolicyUrl.Should().Be("https://example.com/privacy");
     }
 
     [Fact]
-    public void From_StoredDisplayFields_WinOverTheSamaCatalog()
+    public void From_StoredDisplayFields_AreTrimmedAndReturned()
     {
-        var profile = LegacySama();
+        var profile = LegacyDocument();
         profile = new TenantProfile
         {
             Id = profile.Id,
@@ -51,16 +51,16 @@ public class TenantPortalProfileTests
     }
 
     [Fact]
-    public void From_UnknownSlug_HumanizesTheId_AndLeavesUnknownLabelsBlank()
+    public void From_MissingDisplayFields_DoesNotInventLabelsFromTheId()
     {
         var portal = TenantPortalProfile.From(new TenantProfile
         {
-            Id = "escola-harmonia",
+            Id = "other-tenant",
             BotPhoneNumberId = "phone-1"
         });
 
-        portal.Name.Should().Be("Escola Harmonia");
-        portal.ShortName.Should().Be("Escola Harmonia");
+        portal.Name.Should().BeEmpty();
+        portal.ShortName.Should().BeEmpty();
         portal.City.Should().BeEmpty();
         portal.Kind.Should().BeEmpty();
         portal.DisplayPhone.Should().BeEmpty();
@@ -69,25 +69,18 @@ public class TenantPortalProfileTests
     }
 
     [Fact]
-    public void From_WhitespaceDisplayFields_FallBackToTheCatalog()
+    public void From_WhitespaceDisplayFields_StayBlank()
     {
         var portal = TenantPortalProfile.From(new TenantProfile
         {
-            Id = "club-basquet-sama",
+            Id = "example-tenant",
             BotPhoneNumberId = "phone-1",
             Name = " ",
             City = "\t"
         });
 
-        portal.Name.Should().Be("Club Bàsquet Samà");
-        portal.City.Should().Be("Cambrils");
-    }
-
-    [Fact]
-    public void For_NullOrHyphenOnlyId_DoesNotInventAName()
-    {
-        TenantDisplayDefaults.For(null).Name.Should().BeEmpty();
-        TenantDisplayDefaults.For("---").Name.Should().Be("---");
+        portal.Name.Should().BeEmpty();
+        portal.City.Should().BeEmpty();
     }
 
     [Fact]
@@ -104,7 +97,7 @@ public class TenantPortalProfileTests
         var created = new DateTime(2024, 5, 1, 10, 0, 0, DateTimeKind.Utc);
         var original = new TenantProfile
         {
-            Id = "club-basquet-sama",
+            Id = "example-tenant",
             BotPhoneNumberId = "109283746510293",
             SystemPrompt = "old",
             PrivacyPolicyUrl = "https://old.example/p",
@@ -112,7 +105,7 @@ public class TenantPortalProfileTests
             Name = "Kept"
         };
 
-        var updated = original.WithSettings("  new persona  ", "https://www.cbsama.cat/privacitat");
+        var updated = original.WithSettings("  new persona  ", "https://example.com/privacy");
 
         updated.Should().NotBeSameAs(original);
         updated.Id.Should().Be(original.Id);
@@ -120,16 +113,16 @@ public class TenantPortalProfileTests
         updated.CreatedAt.Should().Be(created);
         updated.Name.Should().Be("Kept");
         updated.SystemPrompt.Should().Be("  new persona  ");
-        updated.PrivacyPolicyUrl.Should().Be("https://www.cbsama.cat/privacitat");
+        updated.PrivacyPolicyUrl.Should().Be("https://example.com/privacy");
         original.SystemPrompt.Should().Be("old");
     }
 
-    private static TenantProfile LegacySama() => new()
+    private static TenantProfile LegacyDocument() => new()
     {
-        Id = "club-basquet-sama",
+        Id = "example-tenant",
         BotPhoneNumberId = "109283746510293",
-        SystemPrompt = "Ets l'assistent.",
-        PrivacyPolicyUrl = "https://www.cbsama.cat/privacitat",
+        SystemPrompt = "Assistant prompt.",
+        PrivacyPolicyUrl = "https://example.com/privacy",
         CreatedAt = new DateTime(2024, 5, 1, 10, 0, 0, DateTimeKind.Utc)
     };
 }
