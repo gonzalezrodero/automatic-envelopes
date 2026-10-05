@@ -37,7 +37,7 @@ public class TenantEndpoints
         return Results.Ok(response);
     }
 
-    [Authorize]
+    [Authorize(Policy = "TenantAdmin")]
     [WolverineGet("/tenants/{tenantId}")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
     public static async Task<IResult> Get(
@@ -59,7 +59,7 @@ public class TenantEndpoints
             : Results.Ok(TenantPortalProfile.From(profile));
     }
 
-    [Authorize]
+    [Authorize(Policy = "TenantAdmin")]
     [WolverinePatch("/tenants/{tenantId}")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
     public static async Task<IResult> Update(

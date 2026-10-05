@@ -16,6 +16,11 @@ public static class RegisterTenantEndpoint
         IDocumentSession session,
         CancellationToken ct)
     {
+        if (!TenantIds.IsValid(tenantId))
+        {
+            return Results.BadRequest(new { Error = "tenantId is not valid." });
+        }
+
         var existing = await session.Query<TenantProfile>()
             .AnyAsync(x => x.Id == tenantId || x.BotPhoneNumberId == profile.BotPhoneNumberId, ct);
 

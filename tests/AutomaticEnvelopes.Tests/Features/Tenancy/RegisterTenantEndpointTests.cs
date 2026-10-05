@@ -134,4 +134,15 @@ public class RegisterTenantEndpointTests(IntegrationAppFixture fixture)
             s.StatusCodeShouldBe(403);
         });
     }
+
+    [Fact]
+    public async Task Post_RegisterTenant_InvalidId_Returns400()
+    {
+        await fixture.Host.Scenario(s =>
+        {
+            s.Post.Json(new TenantProfile { Id = "Club_Alpha", BotPhoneNumberId = "phone" })
+                .ToUrl("/api/admin/tenants/Club_Alpha");
+            s.StatusCodeShouldBe(400);
+        });
+    }
 }
