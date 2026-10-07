@@ -1,9 +1,9 @@
-name: "CI/CD: Infrastructure Destruction"
+name: "CI/CD: Destroy"
 on:
   workflow_dispatch:
     inputs:
       env_name:
-        description: 'Env'
+        description: Environment
         required: true
         default: 'development'
         type: choice
@@ -11,7 +11,7 @@ on:
           - development
           - production
       target_folder:
-        description: 'Folder'
+        description: Stack
         required: true
         default: 'infra/serverless'
         type: choice
@@ -22,7 +22,7 @@ on:
           - infra/bootstrap
           - infra/portal
       confirmation:
-        description: 'Type "yes"'
+        description: Type yes to destroy
         required: true
         default: 'no'
 
@@ -35,6 +35,7 @@ env:
 
 jobs:
   confirm:
+    name: Confirm
     runs-on: ubuntu-latest
     steps:
       - name: Verify confirmation
@@ -47,6 +48,7 @@ jobs:
           fi
 
   approve:
+    name: Approve
     needs: confirm
     uses: ./.github/workflows/reusable-approve.yml
     with:
@@ -56,6 +58,7 @@ jobs:
       cancel-in-progress: false
 
   destroy:
+    name: Destroy
     needs: approve
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}

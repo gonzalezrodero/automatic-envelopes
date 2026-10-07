@@ -1,4 +1,4 @@
-﻿name: "CI/CD: Bootstrap Infrastructure"
+﻿name: "CI/CD: Bootstrap"
 on:
   push:
     branches:
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   deploy-dev:
-    name: "Development"
+    name: development
     uses: ./.github/workflows/reusable-terraform.yml
     with:
       env_name: development
@@ -30,7 +30,7 @@ jobs:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
   deploy-prod:
-    name: "Production"
+    name: production
     needs: deploy-dev
     uses: ./.github/workflows/reusable-terraform.yml
     with:

@@ -1,4 +1,4 @@
-name: PR Build Check
+name: "CI/CD: Pull request build"
 
 on:
   pull_request:
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   build-test:
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

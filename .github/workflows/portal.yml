@@ -1,4 +1,4 @@
-name: "CI/CD: Admin Portal"
+name: "CI/CD: Portal"
 
 on:
   push:
