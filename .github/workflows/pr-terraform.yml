@@ -34,7 +34,7 @@ jobs:
       pull-requests: read
     outputs:
       any: ${{ steps.matrix.outputs.any }}
-      matrix: ${{ steps.matrix.outputs.matrix }}
+      stacks: ${{ steps.matrix.outputs.stacks }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
@@ -56,33 +56,33 @@ jobs:
       - name: Build plan matrix
         id: matrix
         run: |
-          items=()
+          stacks=()
           if [ "${{ steps.filter.outputs.bootstrap }}" = "true" ]; then
-            items+=('{"stack":"bootstrap","working_dir":"infra/bootstrap"}')
+            stacks+=("bootstrap")
           fi
           if [ "${{ steps.filter.outputs.network }}" = "true" ]; then
-            items+=('{"stack":"network","working_dir":"infra/network"}')
+            stacks+=("network")
           fi
           if [ "${{ steps.filter.outputs.db }}" = "true" ]; then
-            items+=('{"stack":"db","working_dir":"infra/db"}')
+            stacks+=("db")
           fi
           if [ "${{ steps.filter.outputs.serverless }}" = "true" ]; then
-            items+=('{"stack":"serverless","working_dir":"infra/serverless"}')
+            stacks+=("serverless")
           fi
           if [ "${{ steps.filter.outputs.portal }}" = "true" ]; then
-            items+=('{"stack":"portal","working_dir":"infra/portal"}')
+            stacks+=("portal")
           fi
-          if [ ${#items[@]} -eq 0 ]; then
+          if [ ${#stacks[@]} -eq 0 ]; then
             echo "any=false" >> "$GITHUB_OUTPUT"
-            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            echo "stacks=[]" >> "$GITHUB_OUTPUT"
           else
-            joined=$(IFS=,; echo "${items[*]}")
+            quoted=$(printf '"%s",' "${stacks[@]}")
             echo "any=true" >> "$GITHUB_OUTPUT"
-            echo "matrix={\"include\":[${joined}]}" >> "$GITHUB_OUTPUT"
+            echo "stacks=[${quoted%,}]" >> "$GITHUB_OUTPUT"
           fi
 
   plan:
-    name: "Plan ${{ matrix.stack }}"
+    name: Plan
     needs: changes
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -94,7 +94,8 @@ jobs:
       pull-requests: write
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
+      matrix:
+        stack: ${{ fromJson(needs.changes.outputs.stacks) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -110,11 +111,11 @@ jobs:
 
       - name: Terraform Init
         run: terraform init -backend-config=config/dev/config.remote
-        working-directory: ${{ matrix.working_dir }}
+        working-directory: infra/${{ matrix.stack }}
 
       - name: Terraform Plan
         id: plan
-        working-directory: ${{ matrix.working_dir }}
+        working-directory: infra/${{ matrix.stack }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -138,7 +139,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-tfplan-${{ matrix.stack }}-${{ github.event.pull_request.number }}
-          path: ${{ matrix.working_dir }}/plan-output.txt
+          path: infra/${{ matrix.stack }}/plan-output.txt
           if-no-files-found: ignore
           retention-days: 5
 
@@ -147,7 +148,7 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           STACK: ${{ matrix.stack }}
-          WORKING_DIR: ${{ matrix.working_dir }}
+          WORKING_DIR: infra/${{ matrix.stack }}
           PLAN_EXIT: ${{ steps.plan.outputs.exitcode }}
         with:
           script: |
