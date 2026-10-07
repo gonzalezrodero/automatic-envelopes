@@ -38,6 +38,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: write
     with:
       env_name: development
       tf_folder: dev
@@ -50,6 +51,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: write
     with:
       env_name: production
       tf_folder: prod
