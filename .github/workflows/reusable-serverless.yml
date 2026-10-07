@@ -21,7 +21,7 @@ env:
 
 jobs:
   deploy:
-    name: "Plan, build and apply"
+    name: "Plan and apply"
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
     timeout-minutes: 70

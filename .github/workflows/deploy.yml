@@ -1,4 +1,4 @@
-name: "CI/CD: API & Serverless"
+name: "CI/CD: API"
 on:
   push:
     branches:
@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   build-and-test:
-    name: "Build & Run Tests"
+    name: "Build and test"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -33,6 +33,7 @@ jobs:
       - run: dotnet test tests/AutomaticEnvelopes.Tests/AutomaticEnvelopes.Tests.csproj --no-build --configuration Release
 
   deploy-dev:
+    name: development
     needs: build-and-test
     uses: ./.github/workflows/reusable-serverless.yml
     permissions:
@@ -46,6 +47,7 @@ jobs:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
   deploy-prod:
+    name: production
     needs: deploy-dev
     uses: ./.github/workflows/reusable-serverless.yml
     permissions:

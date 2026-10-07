@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   approve:
-    name: "Manual approval"
+    name: Approve
     runs-on: ubuntu-latest
     environment: ${{ format('{0}-apply', inputs.env_name) }}
     steps:

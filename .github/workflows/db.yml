@@ -1,4 +1,4 @@
-name: "CI/CD: Database Infrastructure"
+name: "CI/CD: Database"
 on:
   push:
     branches:
@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   deploy-dev:
+    name: development
     uses: ./.github/workflows/reusable-terraform.yml
     with:
       env_name: development
@@ -29,6 +30,7 @@ jobs:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
   deploy-prod:
+    name: production
     needs: deploy-dev
     uses: ./.github/workflows/reusable-terraform.yml
     with:

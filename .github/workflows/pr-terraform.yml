@@ -1,4 +1,4 @@
-name: "PR Terraform Plan"
+name: "CI/CD: Pull request plan"
 
 on:
   pull_request:
