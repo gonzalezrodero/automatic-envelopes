@@ -20,28 +20,31 @@ env:
   TF_VERSION: "1.11.4"
 
 jobs:
-  plan:
-    name: "Terraform Plan"
+  deploy:
+    name: "Plan, build and apply"
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    timeout-minutes: 70
     concurrency:
       group: tf-infra/serverless-${{ inputs.env_name }}
       cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
-    outputs:
-      image_tag: ${{ steps.calver.outputs.tag }}
+      actions: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - id: calver
-        run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
+        run: echo "tag=$(date +'%Y.%m.%d').${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - id: session
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
@@ -96,32 +99,12 @@ jobs:
             -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}
 
-      - name: Upload Terraform plan
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Wait for approval
+        uses: ./.github/actions/wait-for-approval
         with:
-          name: tfplan-serverless-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
-          path: ${{ env.TF_WORKING_DIR }}/tfplan
-          if-no-files-found: error
-          retention-days: 5
-
-  apply:
-    name: "Build, Push & Apply"
-    needs: plan
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.env_name }}
-    concurrency:
-      group: tf-infra/serverless-${{ inputs.env_name }}
-      cancel-in-progress: false
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-
-      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          env_name: ${{ inputs.env_name }}
+          github_token: ${{ github.token }}
+          session_started: ${{ steps.session.outputs.started }}
 
       - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
         id: login-ecr
@@ -129,27 +112,10 @@ jobs:
       - name: Build and Push Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ needs.plan.outputs.image_tag }}
+          IMAGE_TAG: ${{ steps.calver.outputs.tag }}
         run: |
           docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
-      - name: Download Terraform plan
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: tfplan-serverless-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
-          path: ${{ env.TF_WORKING_DIR }}
-
-      - name: Terraform Init
-        env:
-          TF_FOLDER: ${{ inputs.tf_folder }}
-        run: terraform init -backend-config=config/$TF_FOLDER/config.remote
-        working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -no-color tfplan

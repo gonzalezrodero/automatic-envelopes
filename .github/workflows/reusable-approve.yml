@@ -1,0 +1,20 @@
+name: "Template: Manual approval"
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    name: "Manual approval"
+    runs-on: ubuntu-latest
+    environment: ${{ format('{0}-apply', inputs.env_name) }}
+    steps:
+      - name: Approved
+        run: echo "Approved ${{ inputs.env_name }}"

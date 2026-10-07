@@ -9,7 +9,9 @@ on:
       - "infra/network/**"
       - "infra/db/**"
       - "infra/serverless/**"
+      - "infra/portal/**"
       - ".github/workflows/pr-terraform.yml"
+      - ".github/workflows/reusable-portal.yml"
       - ".github/workflows/reusable-terraform.yml"
       - ".github/workflows/reusable-serverless.yml"
 
@@ -47,6 +49,8 @@ jobs:
               - 'infra/db/**'
             serverless:
               - 'infra/serverless/**'
+            portal:
+              - 'infra/portal/**'
 
       # Build matrix in the changes job — job-level `if:` cannot reference matrix.
       - name: Build plan matrix
@@ -64,6 +68,9 @@ jobs:
           fi
           if [ "${{ steps.filter.outputs.serverless }}" = "true" ]; then
             items+=('{"stack":"serverless","working_dir":"infra/serverless"}')
+          fi
+          if [ "${{ steps.filter.outputs.portal }}" = "true" ]; then
+            items+=('{"stack":"portal","working_dir":"infra/portal"}')
           fi
           if [ ${#items[@]} -eq 0 ]; then
             echo "any=false" >> "$GITHUB_OUTPUT"
@@ -108,11 +115,18 @@ jobs:
       - name: Terraform Plan
         id: plan
         working-directory: ${{ matrix.working_dir }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set +e
           PLAN_ARGS=(-var-file=config/dev/config.tfvars -no-color -input=false)
           if [ "${{ matrix.stack }}" = "serverless" ]; then
             PLAN_ARGS+=(-var=image_tag=pr-${{ github.event.pull_request.number }})
+          fi
+          if [ "${{ matrix.stack }}" = "portal" ]; then
+            export TF_VAR_cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
+            export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
           fi
           terraform plan "${PLAN_ARGS[@]}" -detailed-exitcode 2>&1 | tee plan-output.txt
           EXIT=${PIPESTATUS[0]}

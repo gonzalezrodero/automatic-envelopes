@@ -20,6 +20,7 @@ on:
           - infra/db
           - infra/network
           - infra/bootstrap
+          - infra/portal
       confirmation:
         description: 'Type "yes"'
         required: true
@@ -33,7 +34,29 @@ env:
   TF_VERSION: "1.11.4"
 
 jobs:
+  confirm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation
+        env:
+          CONF: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONF" != "yes" ]; then
+            echo "Confirmation must be exactly: yes"
+            exit 1
+          fi
+
+  approve:
+    needs: confirm
+    uses: ./.github/workflows/reusable-approve.yml
+    with:
+      env_name: ${{ inputs.env_name }}
+    concurrency:
+      group: tf-${{ inputs.target_folder }}-${{ inputs.env_name }}
+      cancel-in-progress: false
+
   destroy:
+    needs: approve
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
     concurrency:
@@ -44,14 +67,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Verify confirmation
-        env:
-          CONF: ${{ inputs.confirmation }}
-        run: |
-          if [ "$CONF" != "yes" ]; then
-            echo "Confirmation must be exactly: yes"
-            exit 1
-          fi
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -71,9 +86,15 @@ jobs:
         env:
           TARGET: ${{ inputs.target_folder }}
           FOLDER: ${{ steps.env.outputs.folder }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         working-directory: ${{ inputs.target_folder }}
         run: |
           set -euo pipefail
+          if [ "$TARGET" = "infra/portal" ]; then
+            export TF_VAR_cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
+            export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
+          fi
           ARGS=(-var-file="config/$FOLDER/config.tfvars" -auto-approve -no-color -input=false)
           if [ "$TARGET" = "infra/serverless" ]; then
             ARGS+=(-var="image_tag=destroy")
