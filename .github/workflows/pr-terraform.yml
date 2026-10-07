@@ -115,6 +115,9 @@ jobs:
       - name: Terraform Plan
         id: plan
         working-directory: ${{ matrix.working_dir }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set +e
           PLAN_ARGS=(-var-file=config/dev/config.tfvars -no-color -input=false)
@@ -122,8 +125,8 @@ jobs:
             PLAN_ARGS+=(-var=image_tag=pr-${{ github.event.pull_request.number }})
           fi
           if [ "${{ matrix.stack }}" = "portal" ]; then
-            export TF_VAR_cloudflare_api_token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
-            export TF_VAR_cloudflare_account_id="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
+            export TF_VAR_cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
+            export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
           fi
           terraform plan "${PLAN_ARGS[@]}" -detailed-exitcode 2>&1 | tee plan-output.txt
           EXIT=${PIPESTATUS[0]}
