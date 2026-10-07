@@ -16,7 +16,6 @@ concurrency:
 permissions:
   id-token: write
   contents: read
-  actions: write
 
 env:
   AWS_REGION: eu-west-1
