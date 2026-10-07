@@ -1,4 +1,4 @@
-name: "Template: Terraform Plan & Apply"
+name: "Template: Terraform Plan & Apply Portal"
 
 on:
   workflow_call:
@@ -9,16 +9,18 @@ on:
       tf_folder:
         required: true
         type: string
-      working_dir:
-        required: true
-        type: string
     secrets:
       AWS_ROLE_ARN:
+        required: true
+      CLOUDFLARE_API_TOKEN:
+        required: true
+      CLOUDFLARE_ACCOUNT_ID:
         required: true
 
 env:
   AWS_REGION: eu-west-1
   TF_VERSION: "1.11.4"
+  TF_WORKING_DIR: infra/portal
 
 jobs:
   deploy:
@@ -27,7 +29,7 @@ jobs:
     environment: ${{ inputs.env_name }}
     timeout-minutes: 70
     concurrency:
-      group: tf-${{ inputs.working_dir }}-${{ inputs.env_name }}
+      group: tf-infra/portal-${{ inputs.env_name }}
       cancel-in-progress: false
     permissions:
       id-token: write
@@ -49,16 +51,18 @@ jobs:
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
-        working-directory: ${{ inputs.working_dir }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
       - name: Terraform Plan
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           terraform plan \
             -var-file=config/$TF_FOLDER/config.tfvars \
             -out=tfplan \
             -no-color
-        working-directory: ${{ inputs.working_dir }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
       - name: Wait for approval
         uses: ./.github/actions/wait-for-approval
         with:
@@ -66,5 +70,8 @@ jobs:
           github_token: ${{ github.token }}
           session_started: ${{ steps.session.outputs.started }}
       - name: Terraform Apply
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: terraform apply -auto-approve -no-color tfplan
-        working-directory: ${{ inputs.working_dir }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
