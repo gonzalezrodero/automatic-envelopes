@@ -118,7 +118,8 @@ jobs:
 
   apply:
     name: Apply
-    needs: approve
+    # plan must stay in needs: its image_tag output is not visible through approve.
+    needs: [plan, approve]
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
     concurrency:
