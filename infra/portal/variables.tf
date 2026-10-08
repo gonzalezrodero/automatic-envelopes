@@ -25,9 +25,21 @@ variable "pages_project_name" {
 }
 
 variable "portal_hostname" {
-  description = "Custom hostname for the admin portal. Empty skips the DNS attachment."
+  description = "Custom hostname for the admin portal. Empty skips the Pages domain."
   type        = string
   default     = ""
+}
+
+variable "dns_zone_name" {
+  description = "Route 53 zone that owns the portal hostnames. Empty skips DNS. The zone lives in the development account."
+  type        = string
+  default     = ""
+}
+
+variable "dns_cname_records" {
+  description = "Hostname to Pages target. Only the account that owns dns_zone_name sets this."
+  type        = map(string)
+  default     = {}
 }
 
 variable "vite_api_base" {
