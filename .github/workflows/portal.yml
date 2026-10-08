@@ -7,6 +7,7 @@ on:
     paths:
       - "infra/portal/**"
       - ".github/workflows/portal.yml"
+      - ".github/workflows/reusable-portal.yml"
   workflow_dispatch:
 
 concurrency:
