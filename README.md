@@ -45,7 +45,7 @@ The admin portal (Cognito Hosted UI + PKCE) exchanges the authorization code on 
 
 Cookies (host-only, `Path=/`, `HttpOnly`, `Secure`, `SameSite=Lax`):
 
-`SameSite=Lax` cookies are sent on credentialed fetches when the portal and the API share a site, such as `admin.core-webhook.eu` and `api.core-webhook.eu`. A `*.lambda-url.on.aws` host is a different site, so the browser will not attach these cookies there. Point the portal at a same-site API host for a cookie session.
+`SameSite=Lax` cookies are sent on credentialed fetches when the portal and the API share a site. The portal is built with `https://api.core-webhook.eu` in production and `https://api.dev.core-webhook.eu` in development. Production serves that name from its own Route 53 zone. Development publishes the delegation and its own API name in `core-webhook.eu`. A `*.lambda-url.on.aws` host is a different site, so the browser will not attach these cookies there. The WhatsApp webhook stays on the function URL.
 
 - `ae_access` (`Path=/`) — Cognito access token. JwtBearer reads it when the `Authorization` header is absent.
 - `ae_id` (`Path=/me`) — Cognito ID token, used only by `GET /me` for email, name, and `cognito:groups`.

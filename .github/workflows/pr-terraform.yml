@@ -9,6 +9,7 @@ on:
       - "infra/network/**"
       - "infra/db/**"
       - "infra/serverless/**"
+      - "infra/modules/**"
       - "infra/portal/**"
       - ".github/workflows/pr-terraform.yml"
       - ".github/workflows/reusable-portal.yml"
@@ -49,6 +50,7 @@ jobs:
               - 'infra/db/**'
             serverless:
               - 'infra/serverless/**'
+              - 'infra/modules/**'
             portal:
               - 'infra/portal/**'
 
