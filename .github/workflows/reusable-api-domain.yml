@@ -127,16 +127,29 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -y -qq dnsutils
           fi
-          parent="$(dig +short NS core-webhook.eu | head -n 1)"
-          for _ in $(seq 1 30); do
-            answer="$(dig +short NS api.core-webhook.eu "@${parent}")"
-            if [ -n "$answer" ]; then
-              echo "$answer"
-              exit 0
-            fi
+          # Ask the parent zone itself. A recursive lookup can keep a negative
+          # answer, and +short hides the delegation when it is not in the answer.
+          parents="$(dig @8.8.8.8 +short NS core-webhook.eu | sed 's/\.$//' | tr '\n' ' ')"
+          echo "Parent nameservers: ${parents}"
+          if [ -z "${parents// }" ]; then
+            echo "Could not resolve name servers for core-webhook.eu" >&2
+            exit 1
+          fi
+          for _ in $(seq 1 18); do
+            for parent in $parents; do
+              answer="$(dig "@${parent}" +norecurse +time=2 +tries=1 +noall +answer api.core-webhook.eu NS || true)"
+              if printf '%s' "$answer" | grep -q "api.core-webhook.eu"; then
+                echo "$answer"
+                exit 0
+              fi
+            done
             sleep 10
           done
           echo "Parent zone did not return name servers for api.core-webhook.eu" >&2
+          for parent in $parents; do
+            echo "---- ${parent}" >&2
+            dig "@${parent}" +norecurse +time=2 +tries=1 api.core-webhook.eu NS || true
+          done
           exit 1
 
   apply:
