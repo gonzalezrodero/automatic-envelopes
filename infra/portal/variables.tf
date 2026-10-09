@@ -43,7 +43,7 @@ variable "dns_cname_records" {
 }
 
 variable "vite_api_base" {
-  description = "API origin baked into the portal. Empty uses the Lambda function URL from the serverless stack."
+  description = "API origin baked into the portal. Use the same-site host (api.core-webhook.eu). Empty falls back to the Lambda function URL, which the browser treats as another site."
   type        = string
   default     = ""
 }

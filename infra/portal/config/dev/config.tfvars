@@ -9,5 +9,6 @@ dns_cname_records  = {
   "admin.core-webhook.eu"     = "automatic-letters-admin.pages.dev"
 }
 cognito_domain     = "automatic-envelopes-admin-dev.auth.eu-west-1.amazoncognito.com"
+vite_api_base      = "https://api.dev.core-webhook.eu"
 github_owner       = "gonzalezrodero"
 github_repo        = "automatic-letters-web"

@@ -8,8 +8,12 @@ on:
       - 'tests/**'
       - 'Dockerfile'
       - 'infra/serverless/**'
+      - 'infra/modules/**'
+      - 'infra/api-dns/**'
+      - 'infra/api-delegation/**'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/reusable-serverless.yml'
+      - '.github/workflows/reusable-api-domain.yml'
   workflow_dispatch:
 
 concurrency:
@@ -57,3 +61,12 @@ jobs:
       tf_folder: prod
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
+  deploy-api-domain:
+    name: production API domain
+    needs: deploy-prod
+    uses: ./.github/workflows/reusable-api-domain.yml
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit

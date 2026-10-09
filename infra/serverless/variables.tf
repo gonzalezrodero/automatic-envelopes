@@ -42,3 +42,20 @@ variable "admin_portal_origins" {
   type        = list(string)
   description = "Exact browser origins allowed to call the API with credentials. Never use '*'."
 }
+
+variable "api_hostname" {
+  type        = string
+  description = "Public API host on the same site as the portal. Empty skips the custom domain. Production is published by infra/api-dns."
+  default     = ""
+
+  validation {
+    condition     = var.api_hostname == "" || var.dns_zone_name != ""
+    error_message = "dns_zone_name is required when api_hostname is set."
+  }
+}
+
+variable "dns_zone_name" {
+  type        = string
+  description = "Route 53 zone in this account that will hold the development API hostname."
+  default     = ""
+}
