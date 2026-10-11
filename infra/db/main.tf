@@ -72,8 +72,10 @@ resource "aws_db_instance" "postgres" {
 
   db_subnet_group_name   = aws_db_subnet_group.db_subnets.name
   vpc_security_group_ids = [aws_security_group.db_sg.id]
-  publicly_accessible    = false
-  skip_final_snapshot    = true
+  # The API Lambda is outside the VPC and there is no NAT, so it reaches
+  # Postgres on the public address. Leave this true until a NAT exists.
+  publicly_accessible = true
+  skip_final_snapshot = true
 
   manage_master_user_password = true
 

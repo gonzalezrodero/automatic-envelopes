@@ -26,7 +26,7 @@ variable "allocated_storage" {
 variable "backup_retention_period" {
   description = "Days of automated RDS backups to keep (0 disables automated backups)"
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "rds_auto_start" {
