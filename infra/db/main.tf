@@ -72,10 +72,7 @@ resource "aws_db_instance" "postgres" {
 
   db_subnet_group_name   = aws_db_subnet_group.db_subnets.name
   vpc_security_group_ids = [aws_security_group.db_sg.id]
-  # The API Lambda is outside the VPC and there is no NAT, so it reaches
-  # Postgres on the public address. Leave this true until a NAT exists.
-  publicly_accessible = true
-  skip_final_snapshot = true
+  skip_final_snapshot    = true
 
   manage_master_user_password = true
 
@@ -84,6 +81,12 @@ resource "aws_db_instance" "postgres" {
   # performance_insights_retention_period when performance insights is disabled.
   performance_insights_enabled = false
   monitoring_interval          = 0
+
+  # The instance is already public. Lambda is outside the VPC and there is
+  # no NAT, so leave that flag alone until a NAT exists.
+  lifecycle {
+    ignore_changes = [publicly_accessible]
+  }
 }
 
 # Kept for a future re-enable of Enhanced Monitoring (not attached while interval=0).
