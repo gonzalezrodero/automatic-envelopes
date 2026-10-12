@@ -9,6 +9,7 @@ public interface IKnowledgeBaseService
     Task<IReadOnlyList<DocumentChunk>> SearchAsync(string tenantId, string query, int limit = 3, CancellationToken ct = default);
     Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, CancellationToken ct = default, Guid documentId = default);
     Task DeleteChunksForDocumentAsync(string tenantId, Guid documentId, CancellationToken ct = default);
+    Task DeleteLegacyChunksAsync(string tenantId, string source, CancellationToken ct = default);
     Task ClearTenantChunksAsync(string tenantId, CancellationToken ct = default);
 }
 
@@ -68,6 +69,13 @@ public class KnowledgeBaseService(
     {
         using var session = store.LightweightSession(tenantId);
         session.DeleteWhere<DocumentChunk>(chunk => chunk.DocumentId == documentId);
+        await session.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteLegacyChunksAsync(string tenantId, string source, CancellationToken ct = default)
+    {
+        using var session = store.LightweightSession(tenantId);
+        session.DeleteWhere<DocumentChunk>(chunk => chunk.DocumentId == Guid.Empty && chunk.SourceDocument == source);
         await session.SaveChangesAsync(ct);
     }
 

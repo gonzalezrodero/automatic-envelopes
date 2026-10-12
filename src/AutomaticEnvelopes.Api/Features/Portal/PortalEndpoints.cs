@@ -238,6 +238,7 @@ public static class PortalEndpoints
         }
 
         await knowledge.DeleteChunksForDocumentAsync(tenantId, id, ct);
+        await knowledge.DeleteLegacyChunksAsync(tenantId, file.Filename, ct);
         await catalog.DeleteAsync(tenantId, id, ct);
         return Results.NoContent();
     }

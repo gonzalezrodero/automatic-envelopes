@@ -18,7 +18,7 @@ public class PortalEndpointsIntegrationTests(IntegrationAppFixture fixture)
     {
         var tenantId = $"club-{Guid.NewGuid():N}";
         var other = $"club-{Guid.NewGuid():N}";
-        var phone = $"+34600{Random.Shared.Next(100000, 999999)}";
+        var phone = $"34600{Random.Shared.Next(100000, 999999)}";
         await fixture.SeedTenantAsync(tenantId, $"phone-{Guid.NewGuid():N}");
         await fixture.SeedTenantAsync(other, $"phone-{Guid.NewGuid():N}");
         await AppendChatAsync(tenantId, phone, "¿A qué hora abre el club?");
@@ -34,7 +34,8 @@ public class PortalEndpointsIntegrationTests(IntegrationAppFixture fixture)
         listed.RootElement.GetArrayLength().Should().Be(1);
         var row = listed.RootElement[0];
         var id = row.GetProperty("id").GetString();
-        id.Should().MatchRegex("^[a-z0-9-]+$");
+        id.Should().MatchRegex("^[a-f0-9]{32}$");
+        id.Should().NotBe(phone);
         id.Should().Be(PortalIds.ForStream(phone));
         row.GetProperty("userPhone").GetString().Should().Be(phone);
         row.GetProperty("topic").GetString().Should().Be("¿A qué hora abre el club?");

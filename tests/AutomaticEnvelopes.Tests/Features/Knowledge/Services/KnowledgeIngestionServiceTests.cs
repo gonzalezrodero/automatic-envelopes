@@ -30,6 +30,7 @@ public class KnowledgeIngestionServiceTests
         var dbMock = mocker.GetMock<IKnowledgeBaseService>();
 
         dbMock.Verify(x => x.ClearTenantChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        dbMock.Verify(x => x.DeleteLegacyChunksAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         dbMock.Verify(x => x.IngestChunksAsync(It.IsAny<string>(), It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>()), Times.Never);
         mocker.GetMock<IKnowledgeCatalog>().Verify(x => x.UpsertAsync(It.IsAny<string>(), It.IsAny<KnowledgeFile>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -54,6 +55,7 @@ public class KnowledgeIngestionServiceTests
 
         dbMock.Verify(x => x.ClearTenantChunksAsync(tenantId, It.IsAny<CancellationToken>()), Times.Never);
         dbMock.Verify(x => x.DeleteChunksForDocumentAsync(tenantId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        dbMock.Verify(x => x.DeleteLegacyChunksAsync(tenantId, fileName, It.IsAny<CancellationToken>()), Times.Once);
 
         dbMock.Verify(x => x.IngestChunksAsync(
             tenantId,
@@ -65,6 +67,30 @@ public class KnowledgeIngestionServiceTests
         mocker.GetMock<IKnowledgeCatalog>().Verify(
             x => x.UpsertAsync(tenantId, It.Is<KnowledgeFile>(file => file.Filename == fileName && file.Bytes == 28), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task IngestDocumentAsync_SameFilename_ReplacesCataloguedAndLegacyChunks()
+    {
+        var tenantId = "ClubSama-123";
+        var fileName = "document.md";
+        var existing = new KnowledgeFile { Id = Guid.NewGuid(), Filename = fileName };
+        mocker.GetMock<IKnowledgeCatalog>()
+            .Setup(x => x.FindByFilenameAsync(tenantId, fileName, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+
+        await sut.IngestDocumentAsync(tenantId, "replacement text", fileName, 16, "text/markdown", TestContext.Current.CancellationToken);
+
+        var dbMock = mocker.GetMock<IKnowledgeBaseService>();
+        dbMock.Verify(x => x.DeleteChunksForDocumentAsync(tenantId, existing.Id, It.IsAny<CancellationToken>()), Times.Once);
+        dbMock.Verify(x => x.DeleteLegacyChunksAsync(tenantId, fileName, It.IsAny<CancellationToken>()), Times.Once);
+        dbMock.Verify(x => x.IngestChunksAsync(
+            tenantId,
+            It.IsAny<List<string>>(),
+            fileName,
+            It.IsAny<CancellationToken>(),
+            existing.Id),
+        Times.Once);
     }
 
     [Fact]

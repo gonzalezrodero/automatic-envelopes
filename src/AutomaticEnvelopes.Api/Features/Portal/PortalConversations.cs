@@ -1,7 +1,6 @@
 using AutomaticEnvelopes.Api.Core.Events;
 using JasperFx.Events;
 using Marten;
-using Marten.Events;
 
 namespace AutomaticEnvelopes.Api.Features.Portal;
 
@@ -13,17 +12,19 @@ public static class PortalConversations
         CancellationToken ct)
     {
         using var session = store.LightweightSession(tenantId);
-        var states = await session.Query<StreamState>().ToListAsync(ct);
+        var raw = await session.Events.QueryAllRawEvents()
+            .Where(evt => evt.TenantId == tenantId)
+            .ToListAsync(ct);
         var list = new List<PortalConversation>();
-        foreach (var state in states)
+        foreach (var group in raw.GroupBy(evt => evt.StreamKey))
         {
-            if (string.IsNullOrEmpty(state.Key))
+            if (string.IsNullOrEmpty(group.Key))
             {
                 continue;
             }
 
-            var events = await session.Events.FetchStreamAsync(state.Key, token: ct);
-            var mapped = MapStream(tenantId, state.Key, events);
+            var ordered = group.OrderBy(evt => evt.Version).ToArray();
+            var mapped = MapStream(tenantId, group.Key, ordered);
             if (mapped is not null)
             {
                 list.Add(mapped);

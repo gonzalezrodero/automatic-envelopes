@@ -38,6 +38,7 @@ public class KnowledgeIngestionService(
             await knowledgeBaseService.DeleteChunksForDocumentAsync(tenantId, documentId, ct);
         }
 
+        await knowledgeBaseService.DeleteLegacyChunksAsync(tenantId, fileName, ct);
         await knowledgeBaseService.IngestChunksAsync(tenantId, chunks, fileName, ct, documentId);
 
         var file = new KnowledgeFile
