@@ -129,7 +129,7 @@ public class IngestEndpointTests
         var serviceMock = mocker.GetMock<IKnowledgeIngestionService>();
 
         serviceMock
-            .Setup(x => x.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Random failure in DB"));
 
         // Act
@@ -171,6 +171,8 @@ public class IngestEndpointTests
             tenantId,
             extractedText,
             fileName,
+            100,
+            "text/markdown",
             It.IsAny<CancellationToken>()),
         Times.Once);
     }

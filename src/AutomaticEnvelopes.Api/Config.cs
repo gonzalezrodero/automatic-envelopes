@@ -3,6 +3,7 @@ using Amazon.BedrockRuntime.Model;
 using AutomaticEnvelopes.Api;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
+using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
@@ -118,6 +119,8 @@ public static class Config
             opts.Schema.For<ProcessedMessage>().MultiTenanted();
             opts.Schema.For<DocumentChunk>().MultiTenanted();
             opts.Schema.For<WhatsAppRateLimitTracker>().MultiTenanted();
+            opts.Schema.For<KnowledgeFile>().MultiTenanted();
+            opts.Schema.For<AnonymizedChat>().MultiTenanted();
         })
         .UseNpgsqlDataSource()
         .UseLightweightSessions()
