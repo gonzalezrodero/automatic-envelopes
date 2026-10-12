@@ -18,6 +18,17 @@ public class KnowledgeIngestionServiceTests
     }
 
     [Theory]
+    [InlineData("notes.pdf", "application/pdf")]
+    [InlineData("notes.md", "text/markdown")]
+    [InlineData("notes.markdown", "text/markdown")]
+    [InlineData("notes.txt", "text/plain")]
+    [InlineData("notes.csv", null)]
+    public void MimeFor_MapsThePortalFileTypes(string fileName, string? mime)
+    {
+        KnowledgeIngestionService.MimeFor(fileName).Should().Be(mime);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
