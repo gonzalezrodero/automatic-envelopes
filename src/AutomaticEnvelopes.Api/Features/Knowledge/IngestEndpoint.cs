@@ -50,7 +50,14 @@ public class IngestEndpoint
                 return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
             }
 
-            await ingestionService.IngestDocumentAsync(tenantId, extractedText, file.FileName, ct);
+            var fileName = Path.GetFileName(file.FileName);
+            var mime = KnowledgeIngestionService.MimeFor(fileName);
+            if (mime is null)
+            {
+                return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
+            }
+
+            await ingestionService.IngestDocumentAsync(tenantId, extractedText, fileName, file.Length, mime, ct);
 
             return Results.Ok(new { Message = $"Successfully ingested {file.FileName} into the vector database." });
         }

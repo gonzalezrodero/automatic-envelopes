@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Core.Entities;
+﻿using System.Text.Json;
+using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AwesomeAssertions;
 using Marten;
@@ -95,6 +96,25 @@ public class KnowledgeBaseServiceTests
 
         mockSession
             .Verify(s => s.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void MissingDocumentId_DeserializesAsEmpty()
+    {
+        const string json = """
+            {
+              "Id": "11111111-1111-1111-1111-111111111111",
+              "Content": "viejo",
+              "SourceDocument": "horario.txt",
+              "Embedding": [0.1],
+              "CreatedAt": "2026-01-01T00:00:00+00:00"
+            }
+            """;
+
+        var chunk = JsonSerializer.Deserialize<DocumentChunk>(json);
+
+        chunk.Should().NotBeNull();
+        chunk!.DocumentId.Should().Be(Guid.Empty);
     }
 
     [Fact]

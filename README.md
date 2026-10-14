@@ -85,8 +85,14 @@ Group `admin` may read and update every tenant. Any other group is a tenant id. 
 | `GET` | `/tenants` | access cookie or Bearer | `TenantProfile[]` for the caller's groups. An allowed caller with no matching documents gets `[]`. |
 | `GET` | `/tenants/{tenantId}` | same | one `TenantProfile`. `403` when the group does not allow it (whether or not the document exists). `404` when it is allowed and missing. `400` when the id is not a valid path id. |
 | `PATCH` | `/tenants/{tenantId}` | same | `{ systemPrompt, privacyPolicyUrl }` → updated `TenantProfile`. Same authz. `privacyPolicyUrl` must be `https`, or `http` on `localhost`, `127.0.0.1`, or `::1`, with no user info. `systemPrompt` is required. |
+| `GET` | `/tenants/{tenantId}/dashboard` | same | Summary for the portal panel: counts, 14-day activity, recent threads. `404` when the tenant document is missing. |
+| `GET` | `/tenants/{tenantId}/conversations` | same | Threads for that tenant. Query: `q`, `language`, `from`, `to` (`yyyy-MM-dd`), `includeAnonymized` (`true` when omitted). |
+| `GET` | `/tenants/{tenantId}/conversations/{conversationId}` | same | One thread. Phone numbers are not used as the path id; the id is `[a-z0-9-]`. `language` is `null` because the bot does not classify it. `topic` is the opening user message. |
+| `GET` | `/tenants/{tenantId}/documents` | same | Files indexed for that tenant. |
+| `POST` | `/tenants/{tenantId}/documents` | same, `AdminPolicy` | Multipart field `file` (`.pdf`, `.md`, `.txt`). Indexes that file and returns the document. A second upload of the same filename replaces its chunks. |
+| `DELETE` | `/tenants/{tenantId}/documents/{documentId}` | same | Removes the file and its chunks. `204`. |
 
-`POST /api/admin/tenants/{tenantId}` and `POST /api/admin/ingest/{tenantId}` are unchanged.
+`POST /api/admin/tenants/{tenantId}` is unchanged. `POST /api/admin/ingest/{tenantId}` still ingests a file and now keeps other files for that tenant instead of clearing the whole knowledge base. The portal uses `/tenants/{tenantId}/documents`.
 
 Portal JSON (camelCase). `createdAt` stays on the Marten document and is not returned.
 

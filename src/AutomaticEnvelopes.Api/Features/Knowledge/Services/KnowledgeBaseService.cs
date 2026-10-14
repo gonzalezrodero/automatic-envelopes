@@ -7,7 +7,9 @@ namespace AutomaticEnvelopes.Api.Features.Knowledge.Services;
 public interface IKnowledgeBaseService
 {
     Task<IReadOnlyList<DocumentChunk>> SearchAsync(string tenantId, string query, int limit = 3, CancellationToken ct = default);
-    Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, CancellationToken ct = default);
+    Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, Guid documentId = default, CancellationToken ct = default);
+    Task DeleteChunksForDocumentAsync(string tenantId, Guid documentId, CancellationToken ct = default);
+    Task DeleteLegacyChunksAsync(string tenantId, string source, CancellationToken ct = default);
     Task ClearTenantChunksAsync(string tenantId, CancellationToken ct = default);
 }
 
@@ -30,7 +32,7 @@ public class KnowledgeBaseService(
         return [.. await session.QueryAsync<DocumentChunk>(sql, ct, tenantId, searchVector, limit)];
     }
 
-    public async Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, CancellationToken ct = default)
+    public async Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, Guid documentId = default, CancellationToken ct = default)
     {
         var validChunks = contents.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
         if (validChunks.Count == 0) return;
@@ -52,13 +54,36 @@ public class KnowledgeBaseService(
                 chunkText,
                 source,
                 embedding,
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow,
+                documentId);
 
             chunksToStore.Add(chunk);
         });
 
         using var session = store.LightweightSession(tenantId);
         session.Store(chunksToStore.ToArray());
+        await session.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteChunksForDocumentAsync(string tenantId, Guid documentId, CancellationToken ct = default)
+    {
+        using var session = store.LightweightSession(tenantId);
+        session.DeleteWhere<DocumentChunk>(chunk => chunk.DocumentId == documentId);
+        await session.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteLegacyChunksAsync(string tenantId, string source, CancellationToken ct = default)
+    {
+        using var session = store.LightweightSession(tenantId);
+        var chunks = await session.Query<DocumentChunk>()
+            .Where(chunk => chunk.SourceDocument == source)
+            .ToListAsync(ct);
+
+        foreach (var chunk in chunks.Where(chunk => chunk.DocumentId == Guid.Empty))
+        {
+            session.Delete<DocumentChunk>(chunk.Id);
+        }
+
         await session.SaveChangesAsync(ct);
     }
 

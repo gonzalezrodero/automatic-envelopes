@@ -9,5 +9,6 @@ public record DocumentChunk(
     string Content,
     string SourceDocument,
     float[] Embedding,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    Guid DocumentId = default
 );

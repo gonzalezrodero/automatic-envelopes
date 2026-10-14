@@ -22,7 +22,7 @@ public class TenantEndpoints
         IDocumentSession session,
         CancellationToken ct)
     {
-        NoStore(httpContext);
+        TenantRequest.NoStore(httpContext);
         if (Unauthenticated(user) is { } rejected)
         {
             return rejected;
@@ -47,8 +47,8 @@ public class TenantEndpoints
         IDocumentSession session,
         CancellationToken ct)
     {
-        NoStore(httpContext);
-        if (Gate(user, tenantId) is { } rejected)
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
         {
             return rejected;
         }
@@ -70,8 +70,8 @@ public class TenantEndpoints
         IDocumentSession session,
         CancellationToken ct)
     {
-        NoStore(httpContext);
-        if (Gate(user, tenantId) is { } rejected)
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
         {
             return rejected;
         }
@@ -115,33 +115,6 @@ public class TenantEndpoints
             .ToListAsync(ct);
     }
 
-    private static IResult? Gate(ClaimsPrincipal user, string tenantId)
-    {
-        if (Unauthenticated(user) is { } unauthenticated)
-        {
-            return unauthenticated;
-        }
-
-        if (!TenantIds.IsValid(tenantId))
-        {
-            return Results.BadRequest(new { Error = "tenantId is not valid." });
-        }
-
-        if (!TenantAccess.CanAccess(user, tenantId))
-        {
-            return Results.Json(
-                new { Error = "You do not have access to this organization." },
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
-        return null;
-    }
-
     private static IResult? Unauthenticated(ClaimsPrincipal user) =>
         TenantAccess.IsAuthenticated(user) ? null : Results.Unauthorized();
-
-    private static void NoStore(HttpContext httpContext)
-    {
-        httpContext.Response.Headers.CacheControl = "no-store";
-    }
 }

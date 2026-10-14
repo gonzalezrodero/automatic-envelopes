@@ -89,6 +89,30 @@ public class IngestEndpointTests
     }
 
     [Fact]
+    public async Task Ingest_ExtensionWithoutAMime_ReturnsBadRequest()
+    {
+        var fileMock = mocker.GetMock<IFormFile>();
+        fileMock.Setup(f => f.Length).Returns(100);
+        fileMock.Setup(f => f.FileName).Returns("notes.csv");
+        fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
+
+        var extractor = new Mock<IDocumentExtractor>();
+        extractor.Setup(e => e.SupportedExtensions).Returns([".csv"]);
+        extractor.Setup(e => e.ExtractTextAsync(It.IsAny<Stream>())).ReturnsAsync("cells");
+
+        var result = await sut.Ingest(
+            "TestTenant",
+            fileMock.Object,
+            sessionMock.Object,
+            [extractor.Object],
+            mocker.GetMock<IKnowledgeIngestionService>().Object,
+            CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(400);
+    }
+
+    [Fact]
     public async Task Ingest_ExtractorReturnsEmptyText_ReturnsBadRequest()
     {
         // Arrange
@@ -129,7 +153,7 @@ public class IngestEndpointTests
         var serviceMock = mocker.GetMock<IKnowledgeIngestionService>();
 
         serviceMock
-            .Setup(x => x.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Random failure in DB"));
 
         // Act
@@ -171,6 +195,8 @@ public class IngestEndpointTests
             tenantId,
             extractedText,
             fileName,
+            100,
+            "text/markdown",
             It.IsAny<CancellationToken>()),
         Times.Once);
     }

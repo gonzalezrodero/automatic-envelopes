@@ -1,0 +1,264 @@
+using System.Security.Claims;
+using AutomaticEnvelopes.Api.Features.AdminAuth;
+using AutomaticEnvelopes.Api.Features.Knowledge;
+using AutomaticEnvelopes.Api.Features.Knowledge.Extractors;
+using AutomaticEnvelopes.Api.Features.Knowledge.Services;
+using AutomaticEnvelopes.Api.Features.Tenancy;
+using Marten;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
+using Wolverine.Http;
+
+namespace AutomaticEnvelopes.Api.Features.Portal;
+
+public static class PortalEndpoints
+{
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineGet("/tenants/{tenantId}/dashboard")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> Dashboard(
+        string tenantId,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IDocumentStore store,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var conversations = await PortalConversations.ReadAsync(store, tenantId, ct);
+        return Results.Ok(PortalDashboardBuilder.Build(conversations, DateTimeOffset.UtcNow));
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineGet("/tenants/{tenantId}/conversations")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> Conversations(
+        string tenantId,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IDocumentStore store,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var conversations = await PortalConversations.ReadAsync(store, tenantId, ct);
+        var visible = PortalConversations.Filter(
+            conversations,
+            QueryValue(httpContext, "q"),
+            QueryValue(httpContext, "language"),
+            QueryValue(httpContext, "from"),
+            QueryValue(httpContext, "to"),
+            IncludeAnonymized(httpContext));
+        return Results.Ok(visible);
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineGet("/tenants/{tenantId}/conversations/{conversationId}")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> Conversation(
+        string tenantId,
+        string conversationId,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IDocumentStore store,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (!TenantIds.IsValid(conversationId))
+        {
+            return Results.BadRequest(new { Error = "conversationId is not valid." });
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var conversations = await PortalConversations.ReadAsync(store, tenantId, ct);
+        var match = PortalConversations.Find(conversations, conversationId);
+        return match is null
+            ? Results.NotFound(new { Error = "Conversation was not found." })
+            : Results.Ok(match);
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineGet("/tenants/{tenantId}/documents")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> Documents(
+        string tenantId,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IKnowledgeCatalog catalog,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var files = await catalog.ListAsync(tenantId, ct);
+        var documents = files
+            .OrderByDescending(file => file.UploadedAt)
+            .Select(file => PortalKnowledgeDocument.From(tenantId, file))
+            .ToArray();
+        return Results.Ok(documents);
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverinePost("/tenants/{tenantId}/documents")]
+    [EnableRateLimiting("AdminPolicy")]
+    public static async Task<IResult> Upload(
+        string tenantId,
+        IFormFile file,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IEnumerable<IDocumentExtractor> extractors,
+        IKnowledgeIngestionService ingestionService,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        if (file == null || file.Length == 0)
+        {
+            return Results.BadRequest(new { Error = "No file uploaded." });
+        }
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var extractor = extractors.FirstOrDefault(item => item.SupportedExtensions.Contains(extension));
+        if (extractor == null)
+        {
+            return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            var extractedText = await extractor.ExtractTextAsync(stream);
+            if (string.IsNullOrWhiteSpace(extractedText))
+            {
+                return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
+            }
+
+            var fileName = Path.GetFileName(file.FileName);
+            var mime = KnowledgeIngestionService.MimeFor(fileName);
+            if (mime is null)
+            {
+                return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
+            }
+
+            var saved = await ingestionService.IngestDocumentAsync(tenantId, extractedText, fileName, file.Length, mime, ct);
+            if (saved is null)
+            {
+                return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
+            }
+
+            return Results.Created($"/tenants/{tenantId}/documents/{saved.Id:D}", PortalKnowledgeDocument.From(tenantId, saved));
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(detail: ex.Message, title: "Ingestion failed");
+        }
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineDelete("/tenants/{tenantId}/documents/{documentId}")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> DeleteDocument(
+        string tenantId,
+        string documentId,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IKnowledgeCatalog catalog,
+        IKnowledgeBaseService knowledge,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (!Guid.TryParse(documentId, out var id))
+        {
+            return Results.BadRequest(new { Error = "documentId is not valid." });
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var file = await catalog.FindAsync(tenantId, id, ct);
+        if (file is null)
+        {
+            return Results.NotFound(new { Error = "Document was not found." });
+        }
+
+        await knowledge.DeleteChunksForDocumentAsync(tenantId, id, ct);
+        await knowledge.DeleteLegacyChunksAsync(tenantId, file.Filename, ct);
+        await catalog.DeleteAsync(tenantId, id, ct);
+        return Results.NoContent();
+    }
+
+    private static string? QueryValue(HttpContext httpContext, string name)
+    {
+        var value = httpContext.Request.Query[name];
+        return value.Count == 0 ? null : value.ToString();
+    }
+
+    private static bool IncludeAnonymized(HttpContext httpContext)
+    {
+        var raw = QueryValue(httpContext, "includeAnonymized");
+        return !bool.TryParse(raw, out var parsed) || parsed;
+    }
+
+    private static async Task<IResult?> MissingTenant(IDocumentSession session, string tenantId, CancellationToken ct)
+    {
+        var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
+        return profile is null
+            ? Results.NotFound(new { Error = "Tenant was not found." })
+            : null;
+    }
+}
