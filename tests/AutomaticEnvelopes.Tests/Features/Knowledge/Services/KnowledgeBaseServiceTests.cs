@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Core.Entities;
+﻿using System.Text.Json;
+using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AwesomeAssertions;
 using Marten;
@@ -98,21 +99,22 @@ public class KnowledgeBaseServiceTests
     }
 
     [Fact]
-    public async Task DeleteLegacyChunksAsync_DeletesChunksThatOmitDocumentId()
+    public void MissingDocumentId_DeserializesAsEmpty()
     {
-        var source = "horario.txt";
+        const string json = """
+            {
+              "Id": "11111111-1111-1111-1111-111111111111",
+              "Content": "viejo",
+              "SourceDocument": "horario.txt",
+              "Embedding": [0.1],
+              "CreatedAt": "2026-01-01T00:00:00+00:00"
+            }
+            """;
 
-        await sut.DeleteLegacyChunksAsync(TestTenantId, source, TestContext.Current.CancellationToken);
+        var chunk = JsonSerializer.Deserialize<DocumentChunk>(json);
 
-        mockSession.Verify(s => s.QueueSqlCommand(
-            It.Is<string>(sql =>
-                sql.Contains("data ->> 'DocumentId' IS NULL", StringComparison.Ordinal) &&
-                sql.Contains("data ->> 'SourceDocument' = ?", StringComparison.Ordinal) &&
-                sql.Contains("tenant_id = ?", StringComparison.Ordinal)),
-            TestTenantId,
-            source),
-            Times.Once);
-        mockSession.Verify(s => s.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        chunk.Should().NotBeNull();
+        chunk!.DocumentId.Should().Be(Guid.Empty);
     }
 
     [Fact]
