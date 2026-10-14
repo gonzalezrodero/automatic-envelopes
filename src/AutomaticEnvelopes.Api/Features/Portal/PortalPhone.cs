@@ -16,9 +16,7 @@ public static class PortalPhone
             return $"+34 {local[..3]} ** ** {local[^2..]}";
         }
 
-        var cc = digits.StartsWith("44", StringComparison.Ordinal) ? "44"
-            : digits.StartsWith("33", StringComparison.Ordinal) ? "33"
-            : digits.Length >= 2 ? digits[..2] : digits;
+        var cc = CountryCode(digits);
         var rest = digits[cc.Length..];
         if (rest.Length < 4)
         {
@@ -26,5 +24,20 @@ public static class PortalPhone
         }
 
         return $"+{cc} {rest[..2]}** *** *{rest[^2..]}";
+    }
+
+    private static string CountryCode(string digits)
+    {
+        if (digits.StartsWith("44", StringComparison.Ordinal))
+        {
+            return "44";
+        }
+
+        if (digits.StartsWith("33", StringComparison.Ordinal))
+        {
+            return "33";
+        }
+
+        return digits.Length >= 2 ? digits[..2] : digits;
     }
 }

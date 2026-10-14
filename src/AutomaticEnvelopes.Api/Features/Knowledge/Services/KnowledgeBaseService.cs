@@ -7,7 +7,7 @@ namespace AutomaticEnvelopes.Api.Features.Knowledge.Services;
 public interface IKnowledgeBaseService
 {
     Task<IReadOnlyList<DocumentChunk>> SearchAsync(string tenantId, string query, int limit = 3, CancellationToken ct = default);
-    Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, CancellationToken ct = default, Guid documentId = default);
+    Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, Guid documentId = default, CancellationToken ct = default);
     Task DeleteChunksForDocumentAsync(string tenantId, Guid documentId, CancellationToken ct = default);
     Task DeleteLegacyChunksAsync(string tenantId, string source, CancellationToken ct = default);
     Task ClearTenantChunksAsync(string tenantId, CancellationToken ct = default);
@@ -32,7 +32,7 @@ public class KnowledgeBaseService(
         return [.. await session.QueryAsync<DocumentChunk>(sql, ct, tenantId, searchVector, limit)];
     }
 
-    public async Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, CancellationToken ct = default, Guid documentId = default)
+    public async Task IngestChunksAsync(string tenantId, IEnumerable<string> contents, string source, Guid documentId = default, CancellationToken ct = default)
     {
         var validChunks = contents.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
         if (validChunks.Count == 0) return;

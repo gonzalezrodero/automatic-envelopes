@@ -42,7 +42,7 @@ public class KnowledgeIngestionServiceTests
 
         dbMock.Verify(x => x.ClearTenantChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         dbMock.Verify(x => x.DeleteLegacyChunksAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        dbMock.Verify(x => x.IngestChunksAsync(It.IsAny<string>(), It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>()), Times.Never);
+        dbMock.Verify(x => x.IngestChunksAsync(It.IsAny<string>(), It.IsAny<List<string>>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         mocker.GetMock<IKnowledgeCatalog>().Verify(x => x.UpsertAsync(It.IsAny<string>(), It.IsAny<KnowledgeFile>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -72,8 +72,8 @@ public class KnowledgeIngestionServiceTests
             tenantId,
             It.Is<List<string>>(chunks => chunks.Count == 1 && chunks[0] == text),
             fileName,
-            It.IsAny<CancellationToken>(),
-            It.IsAny<Guid>()),
+            It.IsAny<Guid>(),
+            It.IsAny<CancellationToken>()),
         Times.Once);
         mocker.GetMock<IKnowledgeCatalog>().Verify(
             x => x.UpsertAsync(tenantId, It.Is<KnowledgeFile>(file => file.Filename == fileName && file.Bytes == 28), It.IsAny<CancellationToken>()),
@@ -99,8 +99,8 @@ public class KnowledgeIngestionServiceTests
             tenantId,
             It.IsAny<List<string>>(),
             fileName,
-            It.IsAny<CancellationToken>(),
-            existing.Id),
+            existing.Id,
+            It.IsAny<CancellationToken>()),
         Times.Once);
     }
 
@@ -127,8 +127,8 @@ public class KnowledgeIngestionServiceTests
                 chunks[0].Length == 1000 &&
                 chunks[1].Length == 400), // Second chunk starts at 800, so it takes the remaining 400 chars
             fileName,
-            It.IsAny<CancellationToken>(),
-            It.IsAny<Guid>()),
+            It.IsAny<Guid>(),
+            It.IsAny<CancellationToken>()),
         Times.Once);
     }
 }

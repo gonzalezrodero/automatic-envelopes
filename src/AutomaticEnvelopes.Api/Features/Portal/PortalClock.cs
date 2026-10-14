@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AutomaticEnvelopes.Api.Features.Portal;
 
 public static class PortalClock
@@ -8,7 +10,7 @@ public static class PortalClock
         TimeZoneInfo.ConvertTime(instant, Madrid).ToString("yyyy-MM-dd");
 
     public static bool IsDay(string? value) =>
-        value is { Length: 10 } && DateOnly.TryParseExact(value, "yyyy-MM-dd", out _);
+        value is { Length: 10 } && DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
 
     public static string Label(DateTimeOffset instant) =>
         TimeZoneInfo.ConvertTime(instant, Madrid).ToString("d MMM", System.Globalization.CultureInfo.GetCultureInfo("es-ES")).Replace(".", "");

@@ -44,11 +44,6 @@ public static class PortalEndpoints
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
     public static async Task<IResult> Conversations(
         string tenantId,
-        string? q,
-        string? language,
-        string? from,
-        string? to,
-        bool? includeAnonymized,
         ClaimsPrincipal user,
         HttpContext httpContext,
         IDocumentSession session,
@@ -67,7 +62,13 @@ public static class PortalEndpoints
         }
 
         var conversations = await PortalConversations.ReadAsync(store, tenantId, ct);
-        var visible = PortalConversations.Filter(conversations, q, language, from, to, includeAnonymized ?? true);
+        var visible = PortalConversations.Filter(
+            conversations,
+            QueryValue(httpContext, "q"),
+            QueryValue(httpContext, "language"),
+            QueryValue(httpContext, "from"),
+            QueryValue(httpContext, "to"),
+            IncludeAnonymized(httpContext));
         return Results.Ok(visible);
     }
 
@@ -142,7 +143,6 @@ public static class PortalEndpoints
     public static async Task<IResult> Upload(
         string tenantId,
         IFormFile file,
-        ClaimsPrincipal user,
         HttpContext httpContext,
         IDocumentSession session,
         IEnumerable<IDocumentExtractor> extractors,
@@ -150,7 +150,7 @@ public static class PortalEndpoints
         CancellationToken ct)
     {
         TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
         {
             return rejected;
         }
@@ -208,7 +208,6 @@ public static class PortalEndpoints
     public static async Task<IResult> DeleteDocument(
         string tenantId,
         string documentId,
-        ClaimsPrincipal user,
         HttpContext httpContext,
         IDocumentSession session,
         IKnowledgeCatalog catalog,
@@ -216,7 +215,7 @@ public static class PortalEndpoints
         CancellationToken ct)
     {
         TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
         {
             return rejected;
         }
@@ -241,6 +240,18 @@ public static class PortalEndpoints
         await knowledge.DeleteLegacyChunksAsync(tenantId, file.Filename, ct);
         await catalog.DeleteAsync(tenantId, id, ct);
         return Results.NoContent();
+    }
+
+    private static string? QueryValue(HttpContext httpContext, string name)
+    {
+        var value = httpContext.Request.Query[name];
+        return value.Count == 0 ? null : value.ToString();
+    }
+
+    private static bool IncludeAnonymized(HttpContext httpContext)
+    {
+        var raw = QueryValue(httpContext, "includeAnonymized");
+        return !bool.TryParse(raw, out var parsed) || parsed;
     }
 
     private static async Task<IResult?> MissingTenant(IDocumentSession session, string tenantId, CancellationToken ct)

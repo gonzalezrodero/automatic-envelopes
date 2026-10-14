@@ -115,8 +115,7 @@ public class PortalScreenTests
         var bad = await PortalEndpoints.DeleteDocument(
             "club-a",
             "not-a-guid",
-            User("club-a"),
-            new DefaultHttpContext(),
+            Context(User("club-a")),
             Session(Profile("club-a")),
             new Mock<IKnowledgeCatalog>().Object,
             new Mock<IKnowledgeBaseService>().Object,
@@ -129,8 +128,7 @@ public class PortalScreenTests
         var missing = await PortalEndpoints.DeleteDocument(
             "club-a",
             Guid.NewGuid().ToString("D"),
-            User("club-a"),
-            new DefaultHttpContext(),
+            Context(User("club-a")),
             Session(Profile("club-a")),
             catalog.Object,
             new Mock<IKnowledgeBaseService>().Object,
@@ -177,18 +175,18 @@ public class PortalScreenTests
         IDocumentSession session,
         string conversationId)
     {
-        var http = new DefaultHttpContext();
+        var http = Context(user);
         var store = new Mock<IDocumentStore>().Object;
         var catalog = new Mock<IKnowledgeCatalog>().Object;
         var knowledge = new Mock<IKnowledgeBaseService>().Object;
         var result = route switch
         {
             "dashboard" => await PortalEndpoints.Dashboard(tenantId, user, http, session, store, CancellationToken.None),
-            "conversations" => await PortalEndpoints.Conversations(tenantId, null, null, null, null, null, user, http, session, store, CancellationToken.None),
+            "conversations" => await PortalEndpoints.Conversations(tenantId, user, http, session, store, CancellationToken.None),
             "conversation" => await PortalEndpoints.Conversation(tenantId, conversationId, user, http, session, store, CancellationToken.None),
             "documents" => await PortalEndpoints.Documents(tenantId, user, http, session, catalog, CancellationToken.None),
-            "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), user, http, session, [], Ingestion(), CancellationToken.None),
-            "delete" => await PortalEndpoints.DeleteDocument(tenantId, Guid.NewGuid().ToString("D"), user, http, session, catalog, knowledge, CancellationToken.None),
+            "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), http, session, [], Ingestion(), CancellationToken.None),
+            "delete" => await PortalEndpoints.DeleteDocument(tenantId, Guid.NewGuid().ToString("D"), http, session, catalog, knowledge, CancellationToken.None),
             _ => throw new ArgumentOutOfRangeException(nameof(route))
         };
         return Status(result);
@@ -199,8 +197,7 @@ public class PortalScreenTests
         return await PortalEndpoints.Upload(
             "club-a",
             file,
-            User("club-a"),
-            new DefaultHttpContext(),
+            Context(User("club-a")),
             Session(Profile("club-a")),
             extractors,
             ingestion,
@@ -235,6 +232,8 @@ public class PortalScreenTests
     }
 
     private static TenantProfile Profile(string id) => new() { Id = id, BotPhoneNumberId = "1" };
+
+    private static DefaultHttpContext Context(ClaimsPrincipal user) => new() { User = user };
 
     private static ClaimsPrincipal User(string role)
     {

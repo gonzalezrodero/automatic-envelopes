@@ -39,7 +39,7 @@ public class KnowledgeIngestionService(
         }
 
         await knowledgeBaseService.DeleteLegacyChunksAsync(tenantId, fileName, ct);
-        await knowledgeBaseService.IngestChunksAsync(tenantId, chunks, fileName, ct, documentId);
+        await knowledgeBaseService.IngestChunksAsync(tenantId, chunks, fileName, documentId, ct);
 
         var file = new KnowledgeFile
         {
