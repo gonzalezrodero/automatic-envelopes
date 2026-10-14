@@ -75,7 +75,19 @@ public class KnowledgeBaseService(
     public async Task DeleteLegacyChunksAsync(string tenantId, string source, CancellationToken ct = default)
     {
         using var session = store.LightweightSession(tenantId);
-        session.DeleteWhere<DocumentChunk>(chunk => chunk.DocumentId == Guid.Empty && chunk.SourceDocument == source);
+        // Older chunks omit DocumentId. A Guid.Empty comparison does not match a missing JSON property.
+        session.QueueSqlCommand(
+            """
+            DELETE FROM mt_doc_documentchunk
+            WHERE tenant_id = ?
+              AND data ->> 'SourceDocument' = ?
+              AND (
+                data ->> 'DocumentId' IS NULL
+                OR data ->> 'DocumentId' = '00000000-0000-0000-0000-000000000000'
+              )
+            """,
+            tenantId,
+            source);
         await session.SaveChangesAsync(ct);
     }
 

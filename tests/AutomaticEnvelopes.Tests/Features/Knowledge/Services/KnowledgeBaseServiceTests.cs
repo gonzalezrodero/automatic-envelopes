@@ -98,6 +98,24 @@ public class KnowledgeBaseServiceTests
     }
 
     [Fact]
+    public async Task DeleteLegacyChunksAsync_DeletesChunksThatOmitDocumentId()
+    {
+        var source = "horario.txt";
+
+        await sut.DeleteLegacyChunksAsync(TestTenantId, source, TestContext.Current.CancellationToken);
+
+        mockSession.Verify(s => s.QueueSqlCommand(
+            It.Is<string>(sql =>
+                sql.Contains("data ->> 'DocumentId' IS NULL", StringComparison.Ordinal) &&
+                sql.Contains("data ->> 'SourceDocument' = ?", StringComparison.Ordinal) &&
+                sql.Contains("tenant_id = ?", StringComparison.Ordinal)),
+            TestTenantId,
+            source),
+            Times.Once);
+        mockSession.Verify(s => s.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ClearTenantChunksAsync_DeletesChunksAndSaves()
     {
         // Act
