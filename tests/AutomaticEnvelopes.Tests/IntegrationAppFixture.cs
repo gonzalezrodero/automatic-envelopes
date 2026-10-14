@@ -146,14 +146,6 @@ public class IntegrationAppFixture : IAsyncLifetime
                     }
                     """;
                 }
-                else if (requestJson.Contains("language detection module"))
-                {
-                    jsonResponse = $$"""
-                    {
-                        "content": [ { "text": "es" } ]
-                    }
-                    """;
-                }
                 else if (requestJson.Contains("strict data privacy filter"))
                 {
                     jsonResponse = $$"""
