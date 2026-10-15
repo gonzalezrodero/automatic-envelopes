@@ -112,6 +112,25 @@ public static partial class UnansweredInboxRules
         return removed.Count > 0;
     }
 
+    /// <summary>
+    /// Drops every still-open question with the same wording. Answered copies stay in the knowledge.
+    /// </summary>
+    public static bool TryDiscard(
+        IReadOnlyList<UnansweredQuestion> questions,
+        Guid id,
+        out IReadOnlyList<UnansweredQuestion> removed)
+    {
+        removed = [];
+        var target = questions.FirstOrDefault(question => question.Id == id && question.Answer is null);
+        if (target is null)
+        {
+            return false;
+        }
+
+        removed = OpenWithWording(questions, target.Question).ToArray();
+        return removed.Count > 0;
+    }
+
     public static IReadOnlyList<UnansweredQuestion> LatestAnswered(IEnumerable<UnansweredQuestion> questions) =>
         questions
             .Where(question => !string.IsNullOrWhiteSpace(question.Answer))
@@ -273,6 +292,14 @@ public static partial class UnansweredInboxRules
         var key = question.Trim();
         return questions.Where(item =>
             item.Answer is not null &&
+            string.Equals(item.Question.Trim(), key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<UnansweredQuestion> OpenWithWording(IReadOnlyList<UnansweredQuestion> questions, string question)
+    {
+        var key = question.Trim();
+        return questions.Where(item =>
+            item.Answer is null &&
             string.Equals(item.Question.Trim(), key, StringComparison.OrdinalIgnoreCase));
     }
 

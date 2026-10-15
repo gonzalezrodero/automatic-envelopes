@@ -14,6 +14,7 @@ namespace AutomaticEnvelopes.Api.Features.Portal;
 
 public static class PortalEndpoints
 {
+    private const string QuestionNotFound = "Question was not found.";
     [Authorize(Policy = "TenantAdmin")]
     [WolverineGet("/tenants/{tenantId}/dashboard")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
@@ -197,7 +198,7 @@ public static class PortalEndpoints
 
         var saved = await inbox.AnswerAsync(tenantId, gate.Id, gate.Answer, ct);
         return saved is null
-            ? Results.NotFound(new { Error = "Question was not found." })
+            ? Results.NotFound(new { Error = QuestionNotFound })
             : Results.Ok(PortalUnansweredQuestion.From(saved));
     }
 
@@ -221,7 +222,7 @@ public static class PortalEndpoints
 
         var saved = await inbox.ReviseAsync(tenantId, gate.Id, gate.Answer, ct);
         return saved is null
-            ? Results.NotFound(new { Error = "Question was not found." })
+            ? Results.NotFound(new { Error = QuestionNotFound })
             : Results.Ok(PortalAnsweredQuestion.From(saved));
     }
 
@@ -236,26 +237,39 @@ public static class PortalEndpoints
         IUnansweredInbox inbox,
         CancellationToken ct)
     {
-        TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        var gate = await AdmitQuestion(tenantId, questionId, httpContext, session, ct);
+        if (gate.Blocked is { } blocked)
         {
-            return rejected;
+            return blocked;
         }
 
-        if (!Guid.TryParse(questionId, out var id))
-        {
-            return Results.BadRequest(new { Error = "questionId is not valid." });
-        }
-
-        if (await MissingTenant(session, tenantId, ct) is { } missing)
-        {
-            return missing;
-        }
-
-        var removed = await inbox.WithdrawAsync(tenantId, id, ct);
+        var removed = await inbox.WithdrawAsync(tenantId, gate.Id, ct);
         return removed
             ? Results.NoContent()
-            : Results.NotFound(new { Error = "Question was not found." });
+            : Results.NotFound(new { Error = QuestionNotFound });
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineDelete("/tenants/{tenantId}/unanswered/{questionId}/discard")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> DiscardUnanswered(
+        string tenantId,
+        string questionId,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IUnansweredInbox inbox,
+        CancellationToken ct)
+    {
+        var gate = await AdmitQuestion(tenantId, questionId, httpContext, session, ct);
+        if (gate.Blocked is { } blocked)
+        {
+            return blocked;
+        }
+
+        var removed = await inbox.DiscardAsync(tenantId, gate.Id, ct);
+        return removed
+            ? Results.NoContent()
+            : Results.NotFound(new { Error = QuestionNotFound });
     }
 
     [Authorize(Policy = "TenantAdmin")]
@@ -377,6 +391,34 @@ public static class PortalEndpoints
         }
 
         return await MissingTenant(session, tenantId, ct);
+    }
+
+    private readonly record struct AdmittedQuestion(Guid Id, IResult? Blocked);
+
+    private static async Task<AdmittedQuestion> AdmitQuestion(
+        string tenantId,
+        string questionId,
+        HttpContext httpContext,
+        IDocumentSession session,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        {
+            return new AdmittedQuestion(Guid.Empty, rejected);
+        }
+
+        if (!Guid.TryParse(questionId, out var id))
+        {
+            return new AdmittedQuestion(Guid.Empty, Results.BadRequest(new { Error = "questionId is not valid." }));
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return new AdmittedQuestion(Guid.Empty, missing);
+        }
+
+        return new AdmittedQuestion(id, null);
     }
 
     private readonly record struct AdmittedAnswer(Guid Id, string Answer, IResult? Blocked);

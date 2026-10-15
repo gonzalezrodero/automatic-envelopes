@@ -298,6 +298,46 @@ public class UnansweredInboxTests
     }
 
     [Fact]
+    public async Task Discard_RemovesTheOpenQuestionAndLeavesTheAnswer()
+    {
+        var harness = new InboxHarness();
+        var askedAt = DateTimeOffset.UtcNow;
+        await harness.Inbox.RecordAsync("club-a", "one", "Horario", askedAt, CancellationToken.None);
+        var answered = harness.Rows.Single();
+        harness.Ingestion
+            .Setup(item => item.IngestDocumentAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KnowledgeFile { Filename = AnsweredKnowledge.FileName });
+        await harness.Inbox.AnswerAsync("club-a", answered.Id, "A las 9.", CancellationToken.None);
+        await harness.Inbox.RecordAsync("club-a", "two", " horario ", askedAt.AddMinutes(1), CancellationToken.None);
+        await harness.Inbox.RecordAsync("club-a", "three", "Lugar", askedAt.AddMinutes(2), CancellationToken.None);
+        var pending = harness.Rows.Single(question => question.Answer is null && question.Question.Contains("horario", StringComparison.OrdinalIgnoreCase));
+
+        var removed = await harness.Inbox.DiscardAsync("club-a", pending.Id, CancellationToken.None);
+
+        removed.Should().BeTrue();
+        (await harness.Inbox.DiscardAsync("club-a", answered.Id, CancellationToken.None)).Should().BeFalse();
+        (await harness.Inbox.ListOpenAsync("club-a", CancellationToken.None))
+            .Should().ContainSingle(question => question.Question == "Lugar");
+        (await harness.Inbox.ListAnsweredAsync("club-a", CancellationToken.None))
+            .Should().ContainSingle(question => question.Question == "Horario");
+        harness.Ingestion.Verify(
+            item => item.IngestDocumentAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task Forget_RetriesTheCleanedFileWhenPublishingFails()
     {
         var harness = new InboxHarness();

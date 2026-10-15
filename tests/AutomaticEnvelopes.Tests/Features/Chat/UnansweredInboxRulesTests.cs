@@ -119,6 +119,21 @@ public class UnansweredInboxRulesTests
     }
 
     [Fact]
+    public void TryDiscard_DropsOnlyTheOpenCopies()
+    {
+        var open = Question("Horario");
+        var copy = Question(" horario ");
+        var done = Question("Horario");
+        done.Answer = "A las 9.";
+        var other = Question("Lugar");
+
+        UnansweredInboxRules.TryDiscard([open, copy, done, other], open.Id, out var removed).Should().BeTrue();
+
+        removed.Should().Equal(open, copy);
+        UnansweredInboxRules.TryDiscard([done], done.Id, out _).Should().BeFalse();
+    }
+
+    [Fact]
     public void ApplyErasure_CutsTheLinkAndCleansTheCopiedAnswer()
     {
         var owned = Question("¿Viene Lucía?");

@@ -206,6 +206,55 @@ public class UnansweredEndpointTests
         Status(result).Should().Be(404);
     }
 
+    [Fact]
+    public async Task Discard_ReturnsNoContentWhenThePendingQuestionIsRemoved()
+    {
+        var id = Guid.NewGuid();
+        var inbox = new Mock<IUnansweredInbox>();
+        inbox.Setup(item => item.DiscardAsync("club-a", id, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var result = await PortalEndpoints.DiscardUnanswered(
+            "club-a",
+            id.ToString("D"),
+            Context(),
+            Session(),
+            inbox.Object,
+            CancellationToken.None);
+
+        Status(result).Should().Be(204);
+    }
+
+    [Fact]
+    public async Task Discard_ReturnsNotFoundWhenTheQuestionIsAlreadyAnswered()
+    {
+        var inbox = new Mock<IUnansweredInbox>();
+        inbox.Setup(item => item.DiscardAsync("club-a", It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var result = await PortalEndpoints.DiscardUnanswered(
+            "club-a",
+            Guid.NewGuid().ToString("D"),
+            Context(),
+            Session(),
+            inbox.Object,
+            CancellationToken.None);
+
+        Status(result).Should().Be(404);
+    }
+
+    [Fact]
+    public async Task Discard_RejectsAnIdThatIsNotAGuid()
+    {
+        var result = await PortalEndpoints.DiscardUnanswered(
+            "club-a",
+            "not-a-guid",
+            Context(),
+            Session(),
+            Inbox(null),
+            CancellationToken.None);
+
+        Status(result).Should().Be(400);
+    }
+
     private static async Task<int> Answer(string questionId, AnswerUnansweredRequest body, IUnansweredInbox inbox)
     {
         var result = await PortalEndpoints.AnswerUnanswered(
