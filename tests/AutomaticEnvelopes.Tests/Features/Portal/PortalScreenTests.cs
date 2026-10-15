@@ -78,6 +78,7 @@ public class PortalScreenTests
     [InlineData("answer")]
     [InlineData("revise")]
     [InlineData("withdraw")]
+    [InlineData("discard")]
     [InlineData("upload")]
     [InlineData("delete")]
     public async Task Endpoints_RejectAnInvalidTenantId(string route)
@@ -96,6 +97,7 @@ public class PortalScreenTests
     [InlineData("answer")]
     [InlineData("revise")]
     [InlineData("withdraw")]
+    [InlineData("discard")]
     [InlineData("upload")]
     [InlineData("delete")]
     public async Task Endpoints_ReturnNotFoundWhenTheTenantIsMissing(string route)
@@ -199,6 +201,7 @@ public class PortalScreenTests
             "answer" => await PortalEndpoints.AnswerUnanswered(tenantId, Guid.NewGuid().ToString("D"), new AnswerUnansweredRequest { Answer = "A las 9." }, http, session, Inbox(), CancellationToken.None),
             "revise" => await PortalEndpoints.ReviseUnanswered(tenantId, Guid.NewGuid().ToString("D"), new AnswerUnansweredRequest { Answer = "A las 9." }, http, session, Inbox(), CancellationToken.None),
             "withdraw" => await PortalEndpoints.WithdrawUnanswered(tenantId, Guid.NewGuid().ToString("D"), http, session, Inbox(), CancellationToken.None),
+            "discard" => await PortalEndpoints.DiscardUnanswered(tenantId, Guid.NewGuid().ToString("D"), http, session, Inbox(), CancellationToken.None),
             "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), http, session, [], Ingestion(), CancellationToken.None),
             "delete" => await PortalEndpoints.DeleteDocument(tenantId, Guid.NewGuid().ToString("D"), http, session, catalog, knowledge, CancellationToken.None),
             _ => throw new ArgumentOutOfRangeException(nameof(route))

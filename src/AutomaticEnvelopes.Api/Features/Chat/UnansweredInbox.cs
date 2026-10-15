@@ -17,6 +17,8 @@ public interface IUnansweredInbox
 
     Task<bool> WithdrawAsync(string tenantId, Guid id, CancellationToken ct);
 
+    Task<bool> DiscardAsync(string tenantId, Guid id, CancellationToken ct);
+
     Task ForgetConversationAsync(string tenantId, string conversationId, CancellationToken ct);
 }
 
@@ -95,6 +97,18 @@ public class UnansweredInbox(
 
         await questions.DeleteAsync(tenantId, removed, ct);
         await PublishAsync(tenantId, ct);
+        return true;
+    }
+
+    public async Task<bool> DiscardAsync(string tenantId, Guid id, CancellationToken ct)
+    {
+        var stored = (await questions.ListAsync(tenantId, ct)).ToList();
+        if (!UnansweredInboxRules.TryDiscard(stored, id, out var removed))
+        {
+            return false;
+        }
+
+        await questions.DeleteAsync(tenantId, removed, ct);
         return true;
     }
 
