@@ -36,7 +36,9 @@ public class KnowledgeCatalogLegacyTests
             Chunk("aviso.txt", Guid.Empty, later)
         };
 
-        var (files, created) = KnowledgeCatalog.IncludeLegacySources([catalogued], chunks);
+        var (files, created) = KnowledgeCatalog.IncludeLegacySources("club-a", [catalogued], chunks);
+        var again = KnowledgeCatalog.IncludeLegacySources("club-a", [catalogued], chunks);
+        var otherClub = KnowledgeCatalog.IncludeLegacySources("club-b", [catalogued], chunks);
 
         files.Should().Contain(file => file.Id == catalogued.Id && file.Filename == "already.txt");
         created.Should().NotContain(file => file.Filename == "already.txt");
@@ -52,6 +54,8 @@ public class KnowledgeCatalogLegacyTests
         var mixed = files.Should().ContainSingle(file => file.Filename == "notas.md").Subject;
         mixed.Id.Should().NotBe(Guid.Empty);
         mixed.Id.Should().NotBe(otherId);
+        mixed.Id.Should().Be(again.Files.Single(file => file.Filename == "notas.md").Id);
+        mixed.Id.Should().NotBe(otherClub.Files.Single(file => file.Filename == "notas.md").Id);
         mixed.Mime.Should().Be("text/markdown");
         mixed.ChunkCount.Should().Be(2);
         mixed.UploadedAt.Should().Be(earlier);
@@ -62,7 +66,8 @@ public class KnowledgeCatalogLegacyTests
             file.Id != Guid.Empty &&
             file.Bytes == 0 &&
             file.Status == "indexed");
-        files.Should().ContainSingle(file => file.Filename == "aviso.txt" && file.Mime == "text/plain");
+        var notice = files.Should().ContainSingle(file => file.Filename == "aviso.txt" && file.Mime == "text/plain").Subject;
+        notice.Id.Should().Be(again.Files.Single(file => file.Filename == "aviso.txt").Id);
         created.Select(file => file.Filename).Should().BeEquivalentTo(
             "reglamento.pdf",
             "notas.md",

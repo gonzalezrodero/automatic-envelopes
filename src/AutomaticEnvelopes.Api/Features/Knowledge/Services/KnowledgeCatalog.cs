@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using AutomaticEnvelopes.Api.Core.Entities;
 using Marten;
 
@@ -43,7 +45,7 @@ public class KnowledgeCatalog(IDocumentStore store) : IKnowledgeCatalog
         using var session = store.LightweightSession(tenantId);
         var files = await session.Query<KnowledgeFile>().ToListAsync(ct);
         var chunks = await session.Query<DocumentChunk>().ToListAsync(ct);
-        var (listed, created) = IncludeLegacySources(files, chunks);
+        var (listed, created) = IncludeLegacySources(tenantId, files, chunks);
         if (created.Count > 0)
         {
             session.Store(created.ToArray());
@@ -58,6 +60,7 @@ public class KnowledgeCatalog(IDocumentStore store) : IKnowledgeCatalog
     /// One catalog row per source lets the portal list them and delete them later.
     /// </summary>
     public static (IReadOnlyList<KnowledgeFile> Files, IReadOnlyList<KnowledgeFile> Created) IncludeLegacySources(
+        string tenantId,
         IReadOnlyList<KnowledgeFile> files,
         IEnumerable<DocumentChunk> chunks)
     {
@@ -66,7 +69,7 @@ public class KnowledgeCatalog(IDocumentStore store) : IKnowledgeCatalog
             .Where(chunk => !string.IsNullOrWhiteSpace(chunk.SourceDocument))
             .GroupBy(chunk => chunk.SourceDocument, StringComparer.Ordinal)
             .Where(group => !known.Contains(group.Key))
-            .Select(ToLegacyFile)
+            .Select(group => ToLegacyFile(tenantId, group))
             .ToArray();
 
         IReadOnlyList<KnowledgeFile> listed = created.Length == 0
@@ -75,12 +78,12 @@ public class KnowledgeCatalog(IDocumentStore store) : IKnowledgeCatalog
         return (listed, created);
     }
 
-    private static KnowledgeFile ToLegacyFile(IGrouping<string, DocumentChunk> group)
+    private static KnowledgeFile ToLegacyFile(string tenantId, IGrouping<string, DocumentChunk> group)
     {
         var documentIds = group.Select(chunk => chunk.DocumentId).Distinct().ToArray();
         var id = documentIds.Length == 1 && documentIds[0] != Guid.Empty
             ? documentIds[0]
-            : Guid.NewGuid();
+            : StableId(tenantId, group.Key);
 
         return new KnowledgeFile
         {
@@ -92,6 +95,18 @@ public class KnowledgeCatalog(IDocumentStore store) : IKnowledgeCatalog
             ChunkCount = group.Count(),
             Status = "indexed"
         };
+    }
+
+    /// <summary>
+    /// The same club and filename always get the same id, so two listings at once
+    /// write one catalog row instead of two.
+    /// </summary>
+    private static Guid StableId(string tenantId, string filename)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{tenantId}\n{filename}"));
+        hash[6] = (byte)((hash[6] & 0x0F) | 0x50);
+        hash[8] = (byte)((hash[8] & 0x3F) | 0x80);
+        return new Guid(hash.AsSpan(0, 16));
     }
 
     private static string MimeFor(string filename) => Path.GetExtension(filename).ToLowerInvariant() switch
