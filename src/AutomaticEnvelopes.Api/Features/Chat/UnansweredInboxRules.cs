@@ -156,77 +156,117 @@ public static partial class UnansweredInboxRules
 
         foreach (var question in questions)
         {
-            var owned = question.ConversationId == conversationId;
-            if (!owned && !keys.Contains(question.Question.Trim()))
+            if (!TouchesErasure(question, conversationId, keys))
             {
                 continue;
             }
 
-            var originalQuestion = question.Question;
-            var originalAnswer = question.Answer;
-            var hadAnswer = !string.IsNullOrWhiteSpace(originalAnswer);
-
-            if (cleaned.TryGetValue(question.Question, out var nextQuestion))
-            {
-                var trimmed = TrimQuestion(nextQuestion);
-                if (!string.Equals(trimmed, question.Question.Trim(), StringComparison.OrdinalIgnoreCase) || !HasSubstance(trimmed))
-                {
-                    question.Question = trimmed;
-                }
-            }
-
-            if (hadAnswer && cleaned.TryGetValue(originalAnswer!, out var nextAnswer))
-            {
-                var trimmed = nextAnswer.Trim();
-                if (!string.Equals(trimmed, originalAnswer!.Trim(), StringComparison.OrdinalIgnoreCase) || !HasSubstance(trimmed))
-                {
-                    question.Answer = trimmed;
-                }
-            }
-
-            if (owned)
-            {
-                question.ConversationId = string.Empty;
-            }
-
-            if (!HasSubstance(question.Question))
+            var outcome = CleanErased(question, conversationId, cleaned);
+            if (outcome.Removed)
             {
                 removed.Add(question);
-                if (hadAnswer)
-                {
-                    knowledgeChanged = true;
-                }
-
-                continue;
             }
-
-            if (hadAnswer && !HasSubstance(question.Answer))
-            {
-                question.Answer = null;
-                question.AnsweredAt = null;
-                knowledgeChanged = true;
-            }
-            else if (hadAnswer && (
-                !string.Equals(question.Question.Trim(), originalQuestion.Trim(), StringComparison.Ordinal) ||
-                !string.Equals(question.Answer?.Trim(), originalAnswer?.Trim(), StringComparison.Ordinal)))
-            {
-                knowledgeChanged = true;
-            }
-
-            if (question.Question != originalQuestion ||
-                question.Answer != originalAnswer ||
-                question.ConversationId != conversationId && owned)
+            else if (outcome.Changed)
             {
                 changed.Add(question);
             }
-            else if (owned && question.ConversationId.Length == 0)
-            {
-                changed.Add(question);
-            }
+
+            knowledgeChanged |= outcome.KnowledgeChanged;
         }
 
         return new ErasureResult(changed, removed, knowledgeChanged);
     }
+
+    private static bool TouchesErasure(UnansweredQuestion question, string conversationId, HashSet<string> keys) =>
+        question.ConversationId == conversationId || keys.Contains(question.Question.Trim());
+
+    private static CleanOutcome CleanErased(
+        UnansweredQuestion question,
+        string conversationId,
+        IReadOnlyDictionary<string, string> cleaned)
+    {
+        var originalQuestion = question.Question;
+        var originalAnswer = question.Answer;
+        var hadAnswer = !string.IsNullOrWhiteSpace(originalAnswer);
+        var owned = question.ConversationId == conversationId;
+
+        ApplyCleanedQuestion(question, cleaned);
+        ApplyCleanedAnswer(question, originalAnswer, hadAnswer, cleaned);
+        if (owned)
+        {
+            question.ConversationId = string.Empty;
+        }
+
+        if (!HasSubstance(question.Question))
+        {
+            return new CleanOutcome(true, false, hadAnswer);
+        }
+
+        var knowledgeChanged = NoteKnowledgeChange(question, hadAnswer, originalQuestion, originalAnswer);
+        var changed = question.Question != originalQuestion
+            || question.Answer != originalAnswer
+            || (owned && question.ConversationId.Length == 0);
+        return new CleanOutcome(false, changed, knowledgeChanged);
+    }
+
+    private static void ApplyCleanedQuestion(UnansweredQuestion question, IReadOnlyDictionary<string, string> cleaned)
+    {
+        if (!cleaned.TryGetValue(question.Question, out var next))
+        {
+            return;
+        }
+
+        var trimmed = TrimQuestion(next);
+        if (ReplaceWith(question.Question, trimmed))
+        {
+            question.Question = trimmed;
+        }
+    }
+
+    private static void ApplyCleanedAnswer(
+        UnansweredQuestion question,
+        string? originalAnswer,
+        bool hadAnswer,
+        IReadOnlyDictionary<string, string> cleaned)
+    {
+        if (!hadAnswer || originalAnswer is null || !cleaned.TryGetValue(originalAnswer, out var next))
+        {
+            return;
+        }
+
+        var trimmed = next.Trim();
+        if (ReplaceWith(originalAnswer, trimmed))
+        {
+            question.Answer = trimmed;
+        }
+    }
+
+    private static bool ReplaceWith(string current, string cleaned) =>
+        !string.Equals(cleaned, current.Trim(), StringComparison.OrdinalIgnoreCase) || !HasSubstance(cleaned);
+
+    private static bool NoteKnowledgeChange(
+        UnansweredQuestion question,
+        bool hadAnswer,
+        string originalQuestion,
+        string? originalAnswer)
+    {
+        if (!hadAnswer)
+        {
+            return false;
+        }
+
+        if (!HasSubstance(question.Answer))
+        {
+            question.Answer = null;
+            question.AnsweredAt = null;
+            return true;
+        }
+
+        return !string.Equals(question.Question.Trim(), originalQuestion.Trim(), StringComparison.Ordinal)
+            || !string.Equals(question.Answer?.Trim(), originalAnswer?.Trim(), StringComparison.Ordinal);
+    }
+
+    private readonly record struct CleanOutcome(bool Removed, bool Changed, bool KnowledgeChanged);
 
     private static IEnumerable<UnansweredQuestion> ClosedWithWording(IReadOnlyList<UnansweredQuestion> questions, string question)
     {
