@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
+using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Knowledge.Extractors;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
@@ -134,6 +135,169 @@ public static class PortalEndpoints
             .Select(file => PortalKnowledgeDocument.From(tenantId, file))
             .ToArray();
         return Results.Ok(documents);
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineGet("/tenants/{tenantId}/unanswered")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> Unanswered(
+        string tenantId,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IUnansweredInbox inbox,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var questions = await inbox.ListOpenAsync(tenantId, ct);
+        return Results.Ok(questions.Select(PortalUnansweredQuestion.From).ToArray());
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineGet("/tenants/{tenantId}/unanswered/answered")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> Answered(
+        string tenantId,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IUnansweredInbox inbox,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var questions = await inbox.ListAnsweredAsync(tenantId, ct);
+        return Results.Ok(questions.Select(PortalAnsweredQuestion.From).ToArray());
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverinePost("/tenants/{tenantId}/unanswered/{questionId}")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> AnswerUnanswered(
+        string tenantId,
+        string questionId,
+        AnswerUnansweredRequest? body,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IUnansweredInbox inbox,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (!Guid.TryParse(questionId, out var id))
+        {
+            return Results.BadRequest(new { Error = "questionId is not valid." });
+        }
+
+        if (!UnansweredInboxRules.TryNormalizeAnswer(body?.Answer, out var answer, out var error))
+        {
+            return Results.BadRequest(new { Error = error });
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var saved = await inbox.AnswerAsync(tenantId, id, answer, ct);
+        return saved is null
+            ? Results.NotFound(new { Error = "Question was not found." })
+            : Results.Ok(PortalUnansweredQuestion.From(saved));
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverinePost("/tenants/{tenantId}/unanswered/{questionId}/revision")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> ReviseUnanswered(
+        string tenantId,
+        string questionId,
+        AnswerUnansweredRequest? body,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IUnansweredInbox inbox,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (!Guid.TryParse(questionId, out var id))
+        {
+            return Results.BadRequest(new { Error = "questionId is not valid." });
+        }
+
+        if (!UnansweredInboxRules.TryNormalizeAnswer(body?.Answer, out var answer, out var error))
+        {
+            return Results.BadRequest(new { Error = error });
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var saved = await inbox.ReviseAsync(tenantId, id, answer, ct);
+        return saved is null
+            ? Results.NotFound(new { Error = "Question was not found." })
+            : Results.Ok(PortalAnsweredQuestion.From(saved));
+    }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineDelete("/tenants/{tenantId}/unanswered/{questionId}")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> WithdrawUnanswered(
+        string tenantId,
+        string questionId,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IUnansweredInbox inbox,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (!Guid.TryParse(questionId, out var id))
+        {
+            return Results.BadRequest(new { Error = "questionId is not valid." });
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        var removed = await inbox.WithdrawAsync(tenantId, id, ct);
+        return removed
+            ? Results.NoContent()
+            : Results.NotFound(new { Error = "Question was not found." });
     }
 
     [Authorize(Policy = "TenantAdmin")]

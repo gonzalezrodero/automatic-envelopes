@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Knowledge.Extractors;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
@@ -72,6 +73,11 @@ public class PortalScreenTests
     [InlineData("conversations")]
     [InlineData("conversation")]
     [InlineData("documents")]
+    [InlineData("unanswered")]
+    [InlineData("answered")]
+    [InlineData("answer")]
+    [InlineData("revise")]
+    [InlineData("withdraw")]
     [InlineData("upload")]
     [InlineData("delete")]
     public async Task Endpoints_RejectAnInvalidTenantId(string route)
@@ -85,6 +91,11 @@ public class PortalScreenTests
     [InlineData("conversations")]
     [InlineData("conversation")]
     [InlineData("documents")]
+    [InlineData("unanswered")]
+    [InlineData("answered")]
+    [InlineData("answer")]
+    [InlineData("revise")]
+    [InlineData("withdraw")]
     [InlineData("upload")]
     [InlineData("delete")]
     public async Task Endpoints_ReturnNotFoundWhenTheTenantIsMissing(string route)
@@ -183,6 +194,11 @@ public class PortalScreenTests
             "conversations" => await PortalEndpoints.Conversations(tenantId, user, http, session, store, CancellationToken.None),
             "conversation" => await PortalEndpoints.Conversation(tenantId, conversationId, user, http, session, store, CancellationToken.None),
             "documents" => await PortalEndpoints.Documents(tenantId, user, http, session, catalog, CancellationToken.None),
+            "unanswered" => await PortalEndpoints.Unanswered(tenantId, user, http, session, Inbox(), CancellationToken.None),
+            "answered" => await PortalEndpoints.Answered(tenantId, user, http, session, Inbox(), CancellationToken.None),
+            "answer" => await PortalEndpoints.AnswerUnanswered(tenantId, Guid.NewGuid().ToString("D"), new AnswerUnansweredRequest { Answer = "A las 9." }, http, session, Inbox(), CancellationToken.None),
+            "revise" => await PortalEndpoints.ReviseUnanswered(tenantId, Guid.NewGuid().ToString("D"), new AnswerUnansweredRequest { Answer = "A las 9." }, http, session, Inbox(), CancellationToken.None),
+            "withdraw" => await PortalEndpoints.WithdrawUnanswered(tenantId, Guid.NewGuid().ToString("D"), http, session, Inbox(), CancellationToken.None),
             "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), http, session, [], Ingestion(), CancellationToken.None),
             "delete" => await PortalEndpoints.DeleteDocument(tenantId, Guid.NewGuid().ToString("D"), http, session, catalog, knowledge, CancellationToken.None),
             _ => throw new ArgumentOutOfRangeException(nameof(route))
@@ -220,6 +236,8 @@ public class PortalScreenTests
     }
 
     private static IKnowledgeIngestionService Ingestion() => new Mock<IKnowledgeIngestionService>().Object;
+
+    private static IUnansweredInbox Inbox() => new Mock<IUnansweredInbox>().Object;
 
     private static IDocumentSession Session(TenantProfile? profile)
     {

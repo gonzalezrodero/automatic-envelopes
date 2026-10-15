@@ -1,5 +1,6 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
+using AutomaticEnvelopes.Api.Features.Portal;
 using Marten;
 using Wolverine;
 
@@ -18,6 +19,10 @@ public static class DeleteChatHistoryHandler
         IMessageBus bus,
         CancellationToken ct)
     {
+        await bus.InvokeAsync(
+            new ForgetUnansweredConversation(command.TenantId, PortalIds.ForStream(command.PhoneNumber)),
+            ct);
+
         using var session = store.LightweightSession(command.TenantId);
 
         var streamEvents = await session.Events.FetchStreamAsync(command.PhoneNumber, token: ct);

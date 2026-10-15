@@ -1,6 +1,7 @@
 using System.Data;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
+using AutomaticEnvelopes.Api.Features.Portal;
 using AutomaticEnvelopes.Api.Features.Chat.Handlers;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AwesomeAssertions;
@@ -59,6 +60,8 @@ public class DeleteChatHistoryHandlerTests
         var bus = new Mock<IMessageBus>();
         bus.Setup(item => item.InvokeAsync(It.IsAny<ReplyGenerated>(), It.IsAny<CancellationToken>(), null))
             .Returns(Task.CompletedTask);
+        bus.Setup(item => item.InvokeAsync(It.IsAny<ForgetUnansweredConversation>(), It.IsAny<CancellationToken>(), null))
+            .Returns(Task.CompletedTask);
 
         await DeleteChatHistoryHandler.Handle(
             new DeleteChatHistoryCommand(phone, tenantId, "wamid.1", "bot-phone"),
@@ -67,6 +70,11 @@ public class DeleteChatHistoryHandlerTests
             bus.Object,
             CancellationToken.None);
 
+        bus.Verify(item => item.InvokeAsync(
+            It.Is<ForgetUnansweredConversation>(command =>
+                command.TenantId == tenantId && command.ConversationId == PortalIds.ForStream(phone)),
+            It.IsAny<CancellationToken>(),
+            null), Times.Once);
         transcript.Should().Be("User: Me llamo Ana\nBot: Hola Ana");
         stored.Should().NotBeNull();
         stored!.Transcript.Should().Be(sanitized);

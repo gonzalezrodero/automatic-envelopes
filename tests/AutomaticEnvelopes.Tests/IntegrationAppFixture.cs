@@ -7,6 +7,7 @@ using Amazon.SQS.Model;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Core.Events;
+using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
@@ -109,6 +110,7 @@ public class IntegrationAppFixture : IAsyncLifetime
                     opts.Schema.For<TenantProfile>().SingleTenanted();
                     opts.Schema.For<KnowledgeFile>().MultiTenanted();
                     opts.Schema.For<AnonymizedChat>().MultiTenanted();
+                    opts.Schema.For<UnansweredQuestion>().MultiTenanted();
                 });
 
                 services.Configure<WhatsAppOptions>(opts => {
