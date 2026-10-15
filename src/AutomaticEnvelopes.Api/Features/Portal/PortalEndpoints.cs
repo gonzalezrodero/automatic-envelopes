@@ -14,6 +14,7 @@ namespace AutomaticEnvelopes.Api.Features.Portal;
 
 public static class PortalEndpoints
 {
+    private const string QuestionNotFound = "Question was not found.";
     [Authorize(Policy = "TenantAdmin")]
     [WolverineGet("/tenants/{tenantId}/dashboard")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
@@ -197,7 +198,7 @@ public static class PortalEndpoints
 
         var saved = await inbox.AnswerAsync(tenantId, gate.Id, gate.Answer, ct);
         return saved is null
-            ? Results.NotFound(new { Error = "Question was not found." })
+            ? Results.NotFound(new { Error = QuestionNotFound })
             : Results.Ok(PortalUnansweredQuestion.From(saved));
     }
 
@@ -221,7 +222,7 @@ public static class PortalEndpoints
 
         var saved = await inbox.ReviseAsync(tenantId, gate.Id, gate.Answer, ct);
         return saved is null
-            ? Results.NotFound(new { Error = "Question was not found." })
+            ? Results.NotFound(new { Error = QuestionNotFound })
             : Results.Ok(PortalAnsweredQuestion.From(saved));
     }
 
@@ -245,7 +246,7 @@ public static class PortalEndpoints
         var removed = await inbox.WithdrawAsync(tenantId, gate.Id, ct);
         return removed
             ? Results.NoContent()
-            : Results.NotFound(new { Error = "Question was not found." });
+            : Results.NotFound(new { Error = QuestionNotFound });
     }
 
     [Authorize(Policy = "TenantAdmin")]
@@ -268,7 +269,7 @@ public static class PortalEndpoints
         var removed = await inbox.DiscardAsync(tenantId, gate.Id, ct);
         return removed
             ? Results.NoContent()
-            : Results.NotFound(new { Error = "Question was not found." });
+            : Results.NotFound(new { Error = QuestionNotFound });
     }
 
     [Authorize(Policy = "TenantAdmin")]
