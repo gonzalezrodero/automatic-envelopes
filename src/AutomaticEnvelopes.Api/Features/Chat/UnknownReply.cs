@@ -8,18 +8,21 @@ public static class UnknownReply
         "I am sorry, I do not have that specific information at this moment. Please contact the organization directly.";
 
     /// <summary>
-    /// The model ends an unanswered reply with <see cref="Marker"/>. That line is not shown to the user.
+    /// Removes <see cref="Marker"/> wherever the model placed it, including when the privacy notice follows it.
     /// </summary>
     public static bool TryStrip(string reply, out string visible)
     {
         var trimmed = reply.Trim();
-        if (!trimmed.EndsWith(Marker, StringComparison.Ordinal))
+        if (!trimmed.Contains(Marker, StringComparison.Ordinal))
         {
             visible = trimmed;
             return false;
         }
 
-        visible = trimmed[..^Marker.Length].Trim();
+        var lines = trimmed
+            .Replace(Marker, "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        visible = string.Join("\n", lines);
         return true;
     }
 }

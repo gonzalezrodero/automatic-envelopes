@@ -297,6 +297,57 @@ public class UnansweredInboxTests
             .Should().ContainSingle(question => question.Question == "Lugar");
     }
 
+    [Fact]
+    public async Task Forget_RetriesTheCleanedFileWhenPublishingFails()
+    {
+        var harness = new InboxHarness();
+        harness.Filter.Clean = text => text.Replace("Lucía", "[NAME]", StringComparison.Ordinal);
+        await harness.Inbox.RecordAsync("club-a", "one", "¿Viene Lucía?", DateTimeOffset.UtcNow, CancellationToken.None);
+        var target = harness.Rows.Single();
+        harness.Ingestion
+            .Setup(item => item.IngestDocumentAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KnowledgeFile { Filename = AnsweredKnowledge.FileName });
+        await harness.Inbox.AnswerAsync("club-a", target.Id, "A las 9.", CancellationToken.None);
+
+        harness.Ingestion
+            .Setup(item => item.IngestDocumentAsync(
+                "club-a",
+                It.IsAny<string>(),
+                AnsweredKnowledge.FileName,
+                It.IsAny<long>(),
+                "text/markdown",
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("storage down"));
+
+        var failed = () => harness.Inbox.ForgetConversationAsync("club-a", "one", CancellationToken.None);
+        await failed.Should().ThrowAsync<InvalidOperationException>();
+        harness.Rows.Single().ConversationId.Should().Be("one");
+        harness.Rows.Single().Question.Should().Be("¿Viene Lucía?");
+
+        string? markdown = null;
+        harness.Ingestion
+            .Setup(item => item.IngestDocumentAsync(
+                "club-a",
+                It.IsAny<string>(),
+                AnsweredKnowledge.FileName,
+                It.IsAny<long>(),
+                "text/markdown",
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, long, string, CancellationToken>((_, text, _, _, _, _) => markdown = text)
+            .ReturnsAsync(new KnowledgeFile { Filename = AnsweredKnowledge.FileName });
+
+        await harness.Inbox.ForgetConversationAsync("club-a", "one", CancellationToken.None);
+
+        markdown.Should().Be("Pregunta: ¿Viene [NAME]?\nRespuesta: A las 9.");
+        harness.Rows.Single().ConversationId.Should().BeEmpty();
+    }
+
     private sealed class InboxHarness
     {
         private readonly MemoryDocuments documents = new();
@@ -317,7 +368,7 @@ public class UnansweredInboxTests
         public List<UnansweredQuestion> Rows { get; } = [];
 
         public Task<IReadOnlyList<UnansweredQuestion>> ListAsync(string tenantId, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<UnansweredQuestion>>(Rows.ToList());
+            Task.FromResult<IReadOnlyList<UnansweredQuestion>>(Rows.Select(Copy).ToList());
 
         public Task SaveAsync(string tenantId, IReadOnlyList<UnansweredQuestion> questions, CancellationToken ct)
         {
@@ -340,6 +391,16 @@ public class UnansweredInboxTests
 
             return Task.CompletedTask;
         }
+
+        private static UnansweredQuestion Copy(UnansweredQuestion question) => new()
+        {
+            Id = question.Id,
+            ConversationId = question.ConversationId,
+            Question = question.Question,
+            AskedAt = question.AskedAt,
+            Answer = question.Answer,
+            AnsweredAt = question.AnsweredAt
+        };
     }
 
     private sealed class MapFilter : IPersonalDataFilter

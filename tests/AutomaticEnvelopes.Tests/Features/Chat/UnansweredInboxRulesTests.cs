@@ -6,10 +6,15 @@ namespace AutomaticEnvelopes.Tests.Features.Chat;
 public class UnansweredInboxRulesTests
 {
     [Fact]
-    public void TryStrip_RemovesOnlyATrailingMarker()
+    public void TryStrip_RemovesTheMarkerEvenWhenThePrivacyNoticeFollowsIt()
     {
         UnknownReply.TryStrip("No tengo ese dato.\n[[UNKNOWN]]", out var visible).Should().BeTrue();
         visible.Should().Be("No tengo ese dato.");
+
+        var withNotice = "No tengo ese dato.\n[[UNKNOWN]]\nAl usar este chat aceptas la política. BORRAR DATOS.";
+        UnknownReply.TryStrip(withNotice, out var keptNotice).Should().BeTrue();
+        keptNotice.Should().Be("No tengo ese dato.\nAl usar este chat aceptas la política. BORRAR DATOS.");
+        keptNotice.Should().NotContain(UnknownReply.Marker);
 
         UnknownReply.TryStrip("El horario es de 9 a 13.", out var kept).Should().BeFalse();
         kept.Should().Be("El horario es de 9 a 13.");

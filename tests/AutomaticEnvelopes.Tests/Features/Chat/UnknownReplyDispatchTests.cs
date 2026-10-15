@@ -80,6 +80,29 @@ public class UnknownReplyDispatchTests
         harness.Recorded.Should().BeNull();
     }
 
+    [Fact]
+    public async Task GivenAMarkerBeforeThePrivacyNotice_WhenHandled_ThenTheMarkerIsRemovedAndTheQuestionIsRecorded()
+    {
+        var phone = "34600111222";
+        var harness = new HandlerHarness(
+            phone,
+            "No tengo ese dato.\n[[UNKNOWN]]\nAl usar este chat aceptas la política.");
+
+        await ChatSessionHandler.Handle(
+            new AnalyzeChatSession(phone, "club-a", "bot-phone", "¿A qué hora abre?"),
+            harness.Store.Object,
+            harness.Knowledge.Object,
+            harness.Chat.Object,
+            harness.Bus.Object,
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        harness.Appended!.Text.Should().Be("No tengo ese dato.\nAl usar este chat aceptas la política.");
+        harness.Appended.Text.Should().NotContain(UnknownReply.Marker);
+        harness.Recorded.Should().NotBeNull();
+        harness.Recorded!.Question.Should().Be("¿A qué hora abre?");
+    }
+
     private sealed class HandlerHarness
     {
         public Mock<IDocumentStore> Store { get; } = new();

@@ -124,17 +124,24 @@ public class UnansweredInbox(
         }
 
         var erasure = UnansweredInboxRules.ApplyErasure(stored, conversationId, cleaned);
-        await questions.SaveAsync(tenantId, erasure.Changed, ct);
-        await questions.DeleteAsync(tenantId, erasure.Removed, ct);
+        var remaining = stored.Where(question => !erasure.Removed.Contains(question)).ToArray();
         if (erasure.KnowledgeChanged)
         {
-            await PublishAsync(tenantId, ct);
+            await PublishAsync(tenantId, remaining, ct);
         }
+
+        await questions.SaveAsync(tenantId, erasure.Changed, ct);
+        await questions.DeleteAsync(tenantId, erasure.Removed, ct);
     }
 
     private async Task PublishAsync(string tenantId, CancellationToken ct)
     {
         var stored = await questions.ListAsync(tenantId, ct);
+        await PublishAsync(tenantId, stored, ct);
+    }
+
+    private async Task PublishAsync(string tenantId, IReadOnlyList<UnansweredQuestion> stored, CancellationToken ct)
+    {
         var markdown = AnsweredKnowledge.Render(stored);
         if (markdown.Length == 0)
         {

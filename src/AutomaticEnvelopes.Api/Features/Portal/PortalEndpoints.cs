@@ -148,15 +148,9 @@ public static class PortalEndpoints
         IUnansweredInbox inbox,
         CancellationToken ct)
     {
-        TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        if (await AdmitTenant(user, tenantId, httpContext, session, ct) is { } blocked)
         {
-            return rejected;
-        }
-
-        if (await MissingTenant(session, tenantId, ct) is { } missing)
-        {
-            return missing;
+            return blocked;
         }
 
         var questions = await inbox.ListOpenAsync(tenantId, ct);
@@ -174,15 +168,9 @@ public static class PortalEndpoints
         IUnansweredInbox inbox,
         CancellationToken ct)
     {
-        TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        if (await AdmitTenant(user, tenantId, httpContext, session, ct) is { } blocked)
         {
-            return rejected;
-        }
-
-        if (await MissingTenant(session, tenantId, ct) is { } missing)
-        {
-            return missing;
+            return blocked;
         }
 
         var questions = await inbox.ListAnsweredAsync(tenantId, ct);
@@ -201,28 +189,13 @@ public static class PortalEndpoints
         IUnansweredInbox inbox,
         CancellationToken ct)
     {
-        TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        var gate = await AdmitAnswer(tenantId, questionId, body, httpContext, session, ct);
+        if (gate.Blocked is { } blocked)
         {
-            return rejected;
+            return blocked;
         }
 
-        if (!Guid.TryParse(questionId, out var id))
-        {
-            return Results.BadRequest(new { Error = "questionId is not valid." });
-        }
-
-        if (!UnansweredInboxRules.TryNormalizeAnswer(body?.Answer, out var answer, out var error))
-        {
-            return Results.BadRequest(new { Error = error });
-        }
-
-        if (await MissingTenant(session, tenantId, ct) is { } missing)
-        {
-            return missing;
-        }
-
-        var saved = await inbox.AnswerAsync(tenantId, id, answer, ct);
+        var saved = await inbox.AnswerAsync(tenantId, gate.Id, gate.Answer, ct);
         return saved is null
             ? Results.NotFound(new { Error = "Question was not found." })
             : Results.Ok(PortalUnansweredQuestion.From(saved));
@@ -240,28 +213,13 @@ public static class PortalEndpoints
         IUnansweredInbox inbox,
         CancellationToken ct)
     {
-        TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        var gate = await AdmitAnswer(tenantId, questionId, body, httpContext, session, ct);
+        if (gate.Blocked is { } blocked)
         {
-            return rejected;
+            return blocked;
         }
 
-        if (!Guid.TryParse(questionId, out var id))
-        {
-            return Results.BadRequest(new { Error = "questionId is not valid." });
-        }
-
-        if (!UnansweredInboxRules.TryNormalizeAnswer(body?.Answer, out var answer, out var error))
-        {
-            return Results.BadRequest(new { Error = error });
-        }
-
-        if (await MissingTenant(session, tenantId, ct) is { } missing)
-        {
-            return missing;
-        }
-
-        var saved = await inbox.ReviseAsync(tenantId, id, answer, ct);
+        var saved = await inbox.ReviseAsync(tenantId, gate.Id, gate.Answer, ct);
         return saved is null
             ? Results.NotFound(new { Error = "Question was not found." })
             : Results.Ok(PortalAnsweredQuestion.From(saved));
@@ -403,6 +361,50 @@ public static class PortalEndpoints
         await knowledge.DeleteLegacyChunksAsync(tenantId, file.Filename, ct);
         await catalog.DeleteAsync(tenantId, id, ct);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult?> AdmitTenant(
+        ClaimsPrincipal user,
+        string tenantId,
+        HttpContext httpContext,
+        IDocumentSession session,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        return await MissingTenant(session, tenantId, ct);
+    }
+
+    private readonly record struct AdmittedAnswer(Guid Id, string Answer, IResult? Blocked);
+
+    private static async Task<AdmittedAnswer> AdmitAnswer(
+        string tenantId,
+        string questionId,
+        AnswerUnansweredRequest? body,
+        HttpContext httpContext,
+        IDocumentSession session,
+        CancellationToken ct)
+    {
+        if (await AdmitTenant(httpContext.User, tenantId, httpContext, session, ct) is { } blocked)
+        {
+            return new AdmittedAnswer(Guid.Empty, string.Empty, blocked);
+        }
+
+        if (!Guid.TryParse(questionId, out var id))
+        {
+            return new AdmittedAnswer(Guid.Empty, string.Empty, Results.BadRequest(new { Error = "questionId is not valid." }));
+        }
+
+        if (!UnansweredInboxRules.TryNormalizeAnswer(body?.Answer, out var answer, out var error))
+        {
+            return new AdmittedAnswer(Guid.Empty, string.Empty, Results.BadRequest(new { Error = error }));
+        }
+
+        return new AdmittedAnswer(id, answer, null);
     }
 
     private static string? QueryValue(HttpContext httpContext, string name)
