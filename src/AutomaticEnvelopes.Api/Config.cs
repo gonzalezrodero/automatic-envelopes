@@ -121,6 +121,7 @@ public static class Config
             opts.Schema.For<WhatsAppRateLimitTracker>().MultiTenanted();
             opts.Schema.For<KnowledgeFile>().MultiTenanted();
             opts.Schema.For<AnonymizedChat>().MultiTenanted();
+            opts.Schema.For<UnansweredQuestion>().MultiTenanted();
         })
         .UseNpgsqlDataSource()
         .UseLightweightSessions()

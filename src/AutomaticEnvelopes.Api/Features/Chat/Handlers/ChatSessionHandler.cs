@@ -1,6 +1,8 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
+using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
+using AutomaticEnvelopes.Api.Features.Portal;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using Marten;
 using Microsoft.Extensions.AI;
@@ -70,7 +72,23 @@ public static class ChatSessionHandler
                 replyText = "I'm sorry, I couldn't process that request.";
             }
 
+            var unknown = UnknownReply.TryStrip(replyText, out var visible);
+            if (unknown)
+            {
+                replyText = string.IsNullOrWhiteSpace(visible) ? UnknownReply.Fallback : visible;
+            }
+
             await SaveAndPublishReplyAsync(command, replyText, session, bus, logger, ct);
+            if (unknown)
+            {
+                await bus.InvokeAsync(
+                    new RecordUnansweredQuestion(
+                        command.TenantId,
+                        PortalIds.ForStream(command.PhoneNumber),
+                        command.CombinedText,
+                        DateTimeOffset.UtcNow),
+                    ct);
+            }
         }
         catch (Exception ex)
         {

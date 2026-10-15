@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Knowledge;
 
 namespace AutomaticEnvelopes.Api.Features.Portal;
@@ -116,6 +117,58 @@ public sealed class PortalDashboard
 
     [JsonPropertyName("recent")]
     public required IReadOnlyList<PortalConversationPreview> Recent { get; init; }
+}
+
+public sealed class PortalUnansweredQuestion
+{
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    [JsonPropertyName("conversationId")]
+    public required string ConversationId { get; init; }
+
+    [JsonPropertyName("question")]
+    public required string Question { get; init; }
+
+    [JsonPropertyName("askedAt")]
+    public required DateTimeOffset AskedAt { get; init; }
+
+    public static PortalUnansweredQuestion From(UnansweredQuestion question) => new()
+    {
+        Id = question.Id.ToString("D"),
+        ConversationId = question.ConversationId,
+        Question = question.Question,
+        AskedAt = question.AskedAt
+    };
+}
+
+public sealed class PortalAnsweredQuestion
+{
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    [JsonPropertyName("question")]
+    public required string Question { get; init; }
+
+    [JsonPropertyName("answer")]
+    public required string Answer { get; init; }
+
+    [JsonPropertyName("answeredAt")]
+    public required DateTimeOffset AnsweredAt { get; init; }
+
+    public static PortalAnsweredQuestion From(UnansweredQuestion question) => new()
+    {
+        Id = question.Id.ToString("D"),
+        Question = question.Question,
+        Answer = question.Answer ?? string.Empty,
+        AnsweredAt = question.AnsweredAt ?? question.AskedAt
+    };
+}
+
+public sealed class AnswerUnansweredRequest
+{
+    [JsonPropertyName("answer")]
+    public string? Answer { get; set; }
 }
 
 public sealed class PortalKnowledgeDocument
