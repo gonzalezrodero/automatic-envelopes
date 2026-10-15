@@ -65,7 +65,6 @@ public static class PortalEndpoints
         var visible = PortalConversations.Filter(
             conversations,
             QueryValue(httpContext, "q"),
-            QueryValue(httpContext, "language"),
             QueryValue(httpContext, "from"),
             QueryValue(httpContext, "to"),
             IncludeAnonymized(httpContext));

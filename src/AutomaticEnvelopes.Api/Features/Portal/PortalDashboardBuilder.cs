@@ -7,7 +7,6 @@ public static class PortalDashboardBuilder
     private const int WindowDays = 7;
     private const int ChartDays = 14;
     private const string DayFormat = "yyyy-MM-dd";
-    private static readonly string[] KnownLanguages = ["es", "ca", "en"];
 
     public static PortalDashboard Build(IReadOnlyList<PortalConversation> conversations, DateTimeOffset now)
     {
@@ -36,10 +35,6 @@ public static class PortalDashboardBuilder
             DeletionRequests = tally.DeletionRequests,
             TopTopic = ranked.FirstOrDefault(),
             Topics = ranked.Take(5).ToArray(),
-            Languages = KnownLanguages
-                .Where(tally.Languages.ContainsKey)
-                .Select(language => new PortalLanguageCount { Language = language, Count = tally.Languages[language] })
-                .ToArray(),
             Activity = tally.Activity.Values.ToArray(),
             Recent = Recent(conversations)
         };
@@ -68,11 +63,6 @@ public static class PortalDashboardBuilder
         {
             tally.DeletionRequests += 1;
             return;
-        }
-
-        if (conversation.Language is "es" or "ca" or "en")
-        {
-            tally.Languages[conversation.Language] = tally.Languages.GetValueOrDefault(conversation.Language) + 1;
         }
 
         foreach (var evt in conversation.Events)
@@ -145,7 +135,6 @@ public static class PortalDashboardBuilder
         {
             Id = conversation.Id,
             Topic = conversation.Topic,
-            Language = conversation.Language,
             Preview = Preview(conversation),
             At = at?.ToString("o", CultureInfo.InvariantCulture) ?? string.Empty,
             Anonymized = conversation.Anonymized,
@@ -180,7 +169,6 @@ public static class PortalDashboardBuilder
     {
         public required Dictionary<string, PortalDayActivity> Activity { get; init; }
         public Dictionary<string, (int Count, string Latest)> Topics { get; } = new(StringComparer.Ordinal);
-        public Dictionary<string, int> Languages { get; } = new(StringComparer.Ordinal);
         public HashSet<string> ActivePhones { get; } = new(StringComparer.Ordinal);
         public required DateOnly WindowStart { get; init; }
         public required DateOnly Today { get; init; }

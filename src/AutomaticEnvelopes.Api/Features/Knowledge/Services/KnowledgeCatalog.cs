@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using AutomaticEnvelopes.Api.Core.Entities;
 using Marten;
 
 namespace AutomaticEnvelopes.Api.Features.Knowledge.Services;
@@ -40,8 +43,78 @@ public class KnowledgeCatalog(IDocumentStore store) : IKnowledgeCatalog
     public async Task<IReadOnlyList<KnowledgeFile>> ListAsync(string tenantId, CancellationToken ct)
     {
         using var session = store.LightweightSession(tenantId);
-        return await session.Query<KnowledgeFile>().ToListAsync(ct);
+        var files = await session.Query<KnowledgeFile>().ToListAsync(ct);
+        var chunks = await session.Query<DocumentChunk>().ToListAsync(ct);
+        var (listed, created) = IncludeLegacySources(tenantId, files, chunks);
+        if (created.Count > 0)
+        {
+            session.Store(created.ToArray());
+            await session.SaveChangesAsync(ct);
+        }
+
+        return listed;
     }
+
+    /// <summary>
+    /// Club files indexed before the catalog existed live only as chunks.
+    /// One catalog row per source lets the portal list them and delete them later.
+    /// </summary>
+    public static (IReadOnlyList<KnowledgeFile> Files, IReadOnlyList<KnowledgeFile> Created) IncludeLegacySources(
+        string tenantId,
+        IReadOnlyList<KnowledgeFile> files,
+        IEnumerable<DocumentChunk> chunks)
+    {
+        var known = new HashSet<string>(files.Select(file => file.Filename), StringComparer.Ordinal);
+        var created = chunks
+            .Where(chunk => !string.IsNullOrWhiteSpace(chunk.SourceDocument))
+            .GroupBy(chunk => chunk.SourceDocument, StringComparer.Ordinal)
+            .Where(group => !known.Contains(group.Key))
+            .Select(group => ToLegacyFile(tenantId, group))
+            .ToArray();
+
+        IReadOnlyList<KnowledgeFile> listed = created.Length == 0
+            ? files
+            : files.Concat(created).ToArray();
+        return (listed, created);
+    }
+
+    private static KnowledgeFile ToLegacyFile(string tenantId, IGrouping<string, DocumentChunk> group)
+    {
+        var documentIds = group.Select(chunk => chunk.DocumentId).Distinct().ToArray();
+        var id = documentIds.Length == 1 && documentIds[0] != Guid.Empty
+            ? documentIds[0]
+            : StableId(tenantId, group.Key);
+
+        return new KnowledgeFile
+        {
+            Id = id,
+            Filename = group.Key,
+            Mime = MimeFor(group.Key),
+            Bytes = 0,
+            UploadedAt = group.Min(chunk => chunk.CreatedAt),
+            ChunkCount = group.Count(),
+            Status = "indexed"
+        };
+    }
+
+    /// <summary>
+    /// The same club and filename always get the same id, so two listings at once
+    /// write one catalog row instead of two.
+    /// </summary>
+    private static Guid StableId(string tenantId, string filename)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{tenantId}\n{filename}"));
+        hash[6] = (byte)((hash[6] & 0x0F) | 0x50);
+        hash[8] = (byte)((hash[8] & 0x3F) | 0x80);
+        return new Guid(hash.AsSpan(0, 16));
+    }
+
+    private static string MimeFor(string filename) => Path.GetExtension(filename).ToLowerInvariant() switch
+    {
+        ".pdf" => "application/pdf",
+        ".md" or ".markdown" => "text/markdown",
+        _ => "text/plain"
+    };
 
     public async Task DeleteAsync(string tenantId, Guid id, CancellationToken ct)
     {

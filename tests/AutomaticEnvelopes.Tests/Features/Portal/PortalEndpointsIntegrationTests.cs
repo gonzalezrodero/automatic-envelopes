@@ -39,7 +39,6 @@ public class PortalEndpointsIntegrationTests(IntegrationAppFixture fixture)
         id.Should().Be(PortalIds.ForStream(phone));
         row.GetProperty("userPhone").GetString().Should().Be(phone);
         row.GetProperty("topic").GetString().Should().Be("¿A qué hora abre el club?");
-        row.GetProperty("language").ValueKind.Should().Be(JsonValueKind.Null);
         row.GetProperty("events").GetArrayLength().Should().Be(2);
 
         await fixture.Host.Scenario(s =>

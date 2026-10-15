@@ -42,7 +42,6 @@ public static class PortalConversations
     public static IReadOnlyList<PortalConversation> Filter(
         IReadOnlyList<PortalConversation> conversations,
         string? q,
-        string? language,
         string? from,
         string? to,
         bool includeAnonymized)
@@ -50,7 +49,6 @@ public static class PortalConversations
         var query = q?.Trim();
         return conversations
             .Where(conversation => includeAnonymized || !conversation.Anonymized)
-            .Where(conversation => language is null or "" or "all" || conversation.Language == language)
             .Where(conversation => InRange(Activity(conversation), from, to))
             .Where(conversation => string.IsNullOrEmpty(query) || Haystack(conversation).Contains(query, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(Activity)
@@ -166,6 +164,6 @@ public static class PortalConversations
         var phone = conversation.Anonymized
             ? "anonimizado borrado gdpr número eliminado"
             : $"{conversation.UserPhone} {new string(conversation.UserPhone.Where(char.IsDigit).ToArray())}";
-        return string.Join(' ', new[] { conversation.Topic, conversation.Language, phone }.Concat(conversation.Events.Select(evt => evt.Text)));
+        return string.Join(' ', new[] { conversation.Topic, phone }.Concat(conversation.Events.Select(evt => evt.Text)));
     }
 }

@@ -25,13 +25,12 @@ public class PortalScreenTests
     }
 
     [Fact]
-    public void Dashboard_CountsAnonymizedThreadsLanguagesAndEmptyPreviews()
+    public void Dashboard_CountsAnonymizedThreadsAndEmptyPreviews()
     {
         var anonymized = Conversation("archived", anonymized: true, deletion: Now, events: []);
         var spanish = Conversation(
             "live",
             phone: "34600111222",
-            language: "es",
             topic: "Horario",
             events: [Event("MessageReceived", "Hola", Now)]);
         var silent = Conversation(
@@ -42,7 +41,6 @@ public class PortalScreenTests
         var dashboard = PortalDashboardBuilder.Build([anonymized, spanish, silent], Now);
 
         dashboard.DeletionRequests.Should().Be(1);
-        dashboard.Languages.Should().ContainSingle(language => language.Language == "es" && language.Count == 1);
         dashboard.Recent.Should().Contain(item => item.Preview == "Historial anonimizado tras una solicitud de borrado.");
         dashboard.Recent.Should().Contain(item => item.Preview == "Sin mensajes");
         dashboard.Recent.Should().Contain(item => item.PhoneMasked == "+34 600 ** ** 22");
@@ -61,12 +59,12 @@ public class PortalScreenTests
         var undated = Conversation("blank", events: []);
 
         PortalConversations.Activity(anonymized).Should().Be(Now);
-        PortalConversations.Filter([anonymized], "anonimizado", null, "2026-10-01", "2026-10-31", true)
+        PortalConversations.Filter([anonymized], "anonimizado", "2026-10-01", "2026-10-31", true)
             .Should().ContainSingle(item => item.Id == "archived");
-        PortalConversations.Filter([spanish], null, null, "2026-11-01", null, true).Should().BeEmpty();
-        PortalConversations.Filter([spanish], null, null, null, "2026-09-01", true).Should().BeEmpty();
-        PortalConversations.Filter([undated], null, null, "2026-10-01", null, true).Should().BeEmpty();
-        PortalConversations.Filter([anonymized], null, null, null, null, false).Should().BeEmpty();
+        PortalConversations.Filter([spanish], null, "2026-11-01", null, true).Should().BeEmpty();
+        PortalConversations.Filter([spanish], null, null, "2026-09-01", true).Should().BeEmpty();
+        PortalConversations.Filter([undated], null, "2026-10-01", null, true).Should().BeEmpty();
+        PortalConversations.Filter([anonymized], null, null, null, false).Should().BeEmpty();
     }
 
     [Theory]
@@ -247,7 +245,6 @@ public class PortalScreenTests
     private static PortalConversation Conversation(
         string id,
         string phone = "",
-        string? language = null,
         string topic = "",
         bool anonymized = false,
         DateTimeOffset? deletion = null,
@@ -256,7 +253,6 @@ public class PortalScreenTests
         Id = id,
         TenantId = "club-a",
         UserPhone = phone,
-        Language = language,
         Topic = topic,
         Anonymized = anonymized,
         DeletionRequestedAt = deletion,

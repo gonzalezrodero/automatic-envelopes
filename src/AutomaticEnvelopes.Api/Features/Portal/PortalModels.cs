@@ -26,10 +26,6 @@ public sealed class PortalConversation
     [JsonPropertyName("userPhone")]
     public string UserPhone { get; init; } = string.Empty;
 
-    /// <summary>The bot does not classify language. Null until it does.</summary>
-    [JsonPropertyName("language")]
-    public string? Language { get; init; }
-
     [JsonPropertyName("topic")]
     public string Topic { get; init; } = string.Empty;
 
@@ -51,9 +47,6 @@ public sealed class PortalConversationPreview
 
     [JsonPropertyName("topic")]
     public required string Topic { get; init; }
-
-    [JsonPropertyName("language")]
-    public string? Language { get; init; }
 
     [JsonPropertyName("preview")]
     public required string Preview { get; init; }
@@ -92,15 +85,6 @@ public sealed class PortalTopicCount
     public int Count { get; init; }
 }
 
-public sealed class PortalLanguageCount
-{
-    [JsonPropertyName("language")]
-    public required string Language { get; init; }
-
-    [JsonPropertyName("count")]
-    public int Count { get; init; }
-}
-
 public sealed class PortalDashboard
 {
     [JsonPropertyName("generatedAt")]
@@ -126,9 +110,6 @@ public sealed class PortalDashboard
 
     [JsonPropertyName("topics")]
     public required IReadOnlyList<PortalTopicCount> Topics { get; init; }
-
-    [JsonPropertyName("languages")]
-    public required IReadOnlyList<PortalLanguageCount> Languages { get; init; }
 
     [JsonPropertyName("activity")]
     public required IReadOnlyList<PortalDayActivity> Activity { get; init; }
