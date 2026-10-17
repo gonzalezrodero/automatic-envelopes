@@ -16,12 +16,21 @@ public class WhatsAppOptions
 
 public static class WhatsAppOptionsRegistration
 {
-    public static IServiceCollection AddWhatsAppOptions(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddWhatsAppOptions(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool validateVerifyToken = false)
     {
-        services.AddOptions<WhatsAppOptions>()
-            .Bind(configuration.GetSection(WhatsAppOptions.SectionName))
-            .Validate(static options => !string.IsNullOrWhiteSpace(options.VerifyToken), WhatsAppOptions.VerifyTokenRequired)
-            .ValidateOnStart();
+        var options = services.AddOptions<WhatsAppOptions>()
+            .Bind(configuration.GetSection(WhatsAppOptions.SectionName));
+
+        if (validateVerifyToken)
+        {
+            options.Validate(
+                    static options => !string.IsNullOrWhiteSpace(options.VerifyToken),
+                    WhatsAppOptions.VerifyTokenRequired)
+                .ValidateOnStart();
+        }
 
         return services;
     }

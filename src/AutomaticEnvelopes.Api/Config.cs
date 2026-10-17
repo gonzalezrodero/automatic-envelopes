@@ -30,9 +30,12 @@ namespace AutomaticEnvelopes.Api;
 
 public static class Config
 {
-    public static IServiceCollection AddFeatures(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddFeatures(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool validateVerifyToken = false)
     {
-        services.AddWhatsAppOptions(configuration);
+        services.AddWhatsAppOptions(configuration, validateVerifyToken);
         services.AddChatFeature();
         services.AddWhatsAppWebhookFeature();
         services.AddKnowledgeFeature();
