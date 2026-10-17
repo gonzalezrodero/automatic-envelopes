@@ -1,6 +1,8 @@
-﻿using AutomaticEnvelopes.Api.Core.Events;
+﻿using AutomaticEnvelopes.Api.Common;
+using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Wolverine;
@@ -94,5 +96,46 @@ public class ChatDebounceSagaTests
             null), Times.Once);
 
         saga.IsCompleted().Should().BeTrue();
+    }
+
+    [Fact]
+    public void StartsOrHandles_DoesNotLogTheRawPhone()
+    {
+        const string phone = "34666555444";
+        var logger = new CaptureLogger();
+
+        new ChatDebounceSaga().StartsOrHandles(
+            new MessageReceived("msg-1", phone, "Hello", "tenant-1", "bot-1", DateTimeOffset.UtcNow),
+            logger);
+
+        var written = string.Join('\n', logger.Lines);
+        written.Should().NotContain(phone);
+        written.Should().Contain(LogMask.Phone(phone));
+    }
+
+    private sealed class CaptureLogger : ILogger<ChatDebounceSaga>
+    {
+        public List<string> Lines { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Lines.Add(formatter(state, exception));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
     }
 }
