@@ -61,6 +61,9 @@ resource "aws_iam_role" "github_actions_plan" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
             "token.actions.githubusercontent.com:sub" = "repo:${var.github_owner}/${var.github_repo}:pull_request"
           }
+          StringLike = {
+            "token.actions.githubusercontent.com:workflow_ref" = "${var.github_owner}/${var.github_repo}/.github/workflows/pr-terraform.yml@*"
+          }
         }
       }
     ]

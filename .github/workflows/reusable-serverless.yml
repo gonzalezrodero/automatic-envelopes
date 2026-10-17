@@ -84,6 +84,29 @@ jobs:
             echo "aws_ecr_repository.backend already in state"
           fi
 
+          # Adopt groups Lambda already created. Skip when they are absent so a
+          # later apply can create them again after destroy.
+          project=$(sed -n 's/^project_name *= *"\(.*\)"/\1/p' "config/$TF_FOLDER/config.tfvars")
+          if [ -z "$project" ]; then
+            echo "project_name missing from config/$TF_FOLDER/config.tfvars" >&2
+            exit 1
+          fi
+          for suffix in api worker; do
+            addr="aws_cloudwatch_log_group.$suffix"
+            name="/aws/lambda/${project}-${suffix}"
+            if terraform state show "$addr" >/dev/null 2>&1; then
+              continue
+            fi
+            count=$(aws logs describe-log-groups --log-group-name-prefix "$name" --region "$AWS_REGION" \
+              --query "length(logGroups[?logGroupName=='$name'])" --output text)
+            if [ "$count" = "1" ]; then
+              terraform import \
+                -var-file="config/$TF_FOLDER/config.tfvars" \
+                -var="image_tag=import" \
+                "$addr" "$name"
+            fi
+          done
+
       - name: Terraform Plan
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
