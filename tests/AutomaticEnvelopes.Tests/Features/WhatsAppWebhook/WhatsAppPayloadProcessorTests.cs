@@ -410,10 +410,49 @@ public class WhatsAppPayloadProcessorTests
         result.Should().BeNull();
     }
 
-    private static string ComputeHmacSha256(string payload, string secret)
+    [Fact]
+    public async Task IsSignatureValidAsync_WithNonAsciiPayload_ValidatesRawBytes()
     {
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        var body = "{\"text\":\"café 😀\"}"u8.ToArray();
+        (await SignatureIsValid(body, ComputeHmacSha256(body, TestSecret))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsSignatureValidAsync_WithTamperedNonAsciiPayload_ReturnsFalse()
+    {
+        var body = "{\"text\":\"café 😀\"}"u8.ToArray();
+        var signature = ComputeHmacSha256(body, TestSecret);
+        body[^1] ^= 0x01;
+        (await SignatureIsValid(body, signature)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsSignatureValidAsync_WithUtf8Bom_UsesRawBytesRatherThanDecodedText()
+    {
+        var json = "{\"text\":\"café\"}"u8.ToArray();
+        var raw = new byte[json.Length + 3];
+        raw[0] = 0xEF;
+        raw[1] = 0xBB;
+        raw[2] = 0xBF;
+        json.CopyTo(raw, 3);
+
+        (await SignatureIsValid(raw, ComputeHmacSha256(raw, TestSecret))).Should().BeTrue();
+    }
+
+    private Task<bool> SignatureIsValid(byte[] body, string signature)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={signature}";
+        context.Request.Body = new MemoryStream(body);
+        return sut.IsSignatureValidAsync(context.Request);
+    }
+
+    private static string ComputeHmacSha256(string payload, string secret) =>
+        ComputeHmacSha256(Encoding.UTF8.GetBytes(payload), secret);
+
+    private static string ComputeHmacSha256(byte[] payload, string secret)
+    {
+        var hashBytes = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), payload);
         return Convert.ToHexStringLower(hashBytes);
     }
 }

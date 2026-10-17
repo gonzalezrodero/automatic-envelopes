@@ -1,3 +1,4 @@
+using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using Microsoft.Extensions.Options;
@@ -59,30 +60,25 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
     public async Task<ProcessWhatsAppMessage?> ExtractMessageAsync(HttpRequest request)
     {
         var body = await ReadRequestBodyAsync(request);
-        return ParseJsonToMessage(body, logger);
+        return ParseJsonToMessage(Encoding.UTF8.GetString(body), logger);
     }
 
-    private static async Task<string> ReadRequestBodyAsync(HttpRequest request)
+    private static async Task<byte[]> ReadRequestBodyAsync(HttpRequest request)
     {
         request.EnableBuffering();
 
         request.Body.Position = 0;
-        using var reader = new StreamReader(request.Body, Encoding.UTF8, leaveOpen: true);
-        var body = await reader.ReadToEndAsync();
-
-        // Reset for downstream parsers
+        using var buffer = new MemoryStream();
+        await request.Body.CopyToAsync(buffer);
         request.Body.Position = 0;
 
-        return body;
+        return buffer.ToArray();
     }
 
-    private string ComputeSignature(string payload)
+    private string ComputeSignature(ReadOnlySpan<byte> payload)
     {
         var keyBytes = Encoding.UTF8.GetBytes(options.AppSecret);
-        var bodyBytes = Encoding.UTF8.GetBytes(payload);
-
-        using var hmac = new HMACSHA256(keyBytes);
-        var hashBytes = hmac.ComputeHash(bodyBytes);
+        var hashBytes = HMACSHA256.HashData(keyBytes, payload);
 
         return Convert.ToHexStringLower(hashBytes);
     }
@@ -126,7 +122,7 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
             {
                 // Logs when a user sends an image, audio, or document
                 var msgType = messageNode.TryGetProperty("type", out var typeNode) ? typeNode.GetString() : "unknown";
-                logger.LogInformation("Received non-text message type '{MessageType}' from {FromNumber}. Ignoring.", msgType, fromNumber);
+                logger.LogInformation("Received non-text message type '{MessageType}' from {FromNumber}. Ignoring.", msgType, LogMask.Phone(fromNumber));
                 return null;
             }
 
@@ -140,7 +136,7 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
 
             var timestamp = DateTimeOffset.FromUnixTimeSeconds(long.Parse(timestampStr));
 
-            logger.LogInformation("Successfully parsed WhatsApp text message. MessageId: {MessageId}, From: {FromNumber}, BotPhoneNumberId: {BotPhoneNumberId}", messageId, fromNumber, botNumberId);
+            logger.LogInformation("Successfully parsed WhatsApp text message. MessageId: {MessageId}, From: {FromNumber}, BotPhoneNumberId: {BotPhoneNumberId}", messageId, LogMask.Phone(fromNumber), botNumberId);
 
             return new ProcessWhatsAppMessage(messageId, botNumberId, fromNumber, messageText, timestamp);
         }

@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Core.Events;
+﻿using AutomaticEnvelopes.Api.Common;
+using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
@@ -34,7 +35,7 @@ public static class ChatSessionHandler
         var userText = command.CombinedText.Trim().ToUpperInvariant();
         if (BotPrompts.DeleteCommands.Contains(userText))
         {
-            logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", command.PhoneNumber);
+            logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", LogMask.Phone(command.PhoneNumber));
             await SendDeleteCommandAsync(command, bus, ct);
             return;
         }

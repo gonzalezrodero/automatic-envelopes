@@ -96,23 +96,68 @@ public class RegisterTenantEndpointTests(IntegrationAppFixture fixture)
     }
 
     [Fact]
-    public async Task Post_RegisterTenant_WithTenantAdminRole_Returns201_AndCoversPolicy()
+    public async Task Post_RegisterTenant_WithTenantAdminRole_Returns403()
     {
-        // Arrange
         var tenantId = $"club-{Guid.NewGuid():N}";
-        var profile = new TenantProfile { Id = tenantId, BotPhoneNumberId = "test-phone" };
+        var profile = new RegisterTenantRequest { BotPhoneNumberId = "test-phone" };
 
-        // Act
         await fixture.Host.Scenario(s =>
         {
             s.RemoveClaim(ClaimTypes.Role);
             s.RemoveClaim("cognito:groups");
-
             s.WithClaim(new Claim(ClaimTypes.Role, tenantId));
 
             s.Post.Json(profile).ToUrl($"/api/admin/tenants/{tenantId}");
+            s.StatusCodeShouldBe(403);
+        });
+    }
+
+    [Fact]
+    public async Task Post_RegisterTenant_AsPlatformAdmin_Returns201()
+    {
+        var tenantId = $"club-{Guid.NewGuid():N}";
+        var botPhoneId = $"phone-{Guid.NewGuid():N}";
+
+        var result = await fixture.Host.Scenario(s =>
+        {
+            s.RemoveClaim(ClaimTypes.Role);
+            s.RemoveClaim("cognito:groups");
+            s.WithClaim(new Claim("cognito:groups", TenantAccess.AdminGroup));
+
+            s.Post.Json(new RegisterTenantRequest { BotPhoneNumberId = botPhoneId })
+                .ToUrl($"/api/admin/tenants/{tenantId}");
             s.StatusCodeShouldBe(201);
         });
+
+        result.ReadAsJson<TenantProfile>()!.BotPhoneNumberId.Should().Be(botPhoneId);
+    }
+
+    [Fact]
+    public async Task Post_RegisterTenant_IgnoresUnknownFields()
+    {
+        var tenantId = $"club-{Guid.NewGuid():N}";
+        var botPhoneId = $"phone-{Guid.NewGuid():N}";
+        var started = DateTime.UtcNow.AddMinutes(-1);
+
+        var result = await fixture.Host.Scenario(s =>
+        {
+            s.Post.Json(new
+            {
+                id = "not-the-route",
+                createdAt = "2000-01-01T00:00:00Z",
+                botPhoneNumberId = botPhoneId,
+                systemPrompt = "Hello from the body",
+                unexpected = "ignored",
+                isPlatformAdmin = true
+            }).ToUrl($"/api/admin/tenants/{tenantId}");
+            s.StatusCodeShouldBe(201);
+        });
+
+        var response = result.ReadAsJson<TenantProfile>();
+        response!.Id.Should().Be(tenantId);
+        response.BotPhoneNumberId.Should().Be(botPhoneId);
+        response.SystemPrompt.Should().Be("Hello from the body");
+        response.CreatedAt.Should().BeAfter(started);
     }
 
     [Fact]

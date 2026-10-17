@@ -20,6 +20,7 @@ public static partial class TenantIds
 public static class TenantAccess
 {
     public const string AdminGroup = "admin";
+    public const string PlatformAdminPolicy = "PlatformAdmin";
 
     public static bool IsAuthenticated(ClaimsPrincipal user) =>
         user.Identity?.IsAuthenticated == true;

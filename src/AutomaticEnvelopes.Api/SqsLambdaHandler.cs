@@ -1,5 +1,6 @@
 ﻿using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
+using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Common.Extensions;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
@@ -103,9 +104,9 @@ public class SqsLambdaHandler
 
         var expiredMessage = JsonSerializer.Deserialize<ChatWindowExpired>(record.Body, jsonOptions);
 
-        if (expiredMessage != null && !string.IsNullOrEmpty(expiredMessage.PhoneNumber))
+        if (expiredMessage != null && !string.IsNullOrEmpty(expiredMessage.SagaId))
         {
-            logger.LogInformation("Successfully deserialized ChatWindowExpired for {PhoneNumber}. Invoking Wolverine bus.", expiredMessage.PhoneNumber);
+            logger.LogInformation("Successfully deserialized ChatWindowExpired for {SagaId}. Invoking Wolverine bus.", LogMask.Phone(expiredMessage.SagaId));
             await bus.InvokeAsync(expiredMessage, ct);
         }
         else

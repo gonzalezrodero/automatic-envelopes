@@ -30,9 +30,12 @@ namespace AutomaticEnvelopes.Api;
 
 public static class Config
 {
-    public static IServiceCollection AddFeatures(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddFeatures(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool validateVerifyToken = false)
     {
-        services.Configure<WhatsAppOptions>(configuration.GetSection(WhatsAppOptions.SectionName));
+        services.AddWhatsAppOptions(configuration, validateVerifyToken);
         services.AddChatFeature();
         services.AddWhatsAppWebhookFeature();
         services.AddKnowledgeFeature();
@@ -78,6 +81,11 @@ public static class Config
     public static IServiceCollection AddCustomAuthorization(this IServiceCollection services)
     {
         services.AddAuthorizationBuilder()
+            .AddPolicy(TenantAccess.PlatformAdminPolicy, policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireAssertion(context => TenantAccess.IsAdmin(context.User));
+            })
             .AddPolicy("TenantAdmin", policy =>
             {
                 policy.RequireAuthenticatedUser();

@@ -20,7 +20,7 @@ builder.Services.AddCustomAuthorization();
 builder.Services.AddRateLimiting();
 builder.Services.AddDatabase(connectionString);
 builder.Services.AddAi(builder.Configuration);
-builder.Services.AddFeatures(builder.Configuration);
+builder.Services.AddFeatures(builder.Configuration, validateVerifyToken: true);
 
 // Wolverine (ahora desde builder.Services)
 builder.Services.AddWolverine(builder.Configuration);
@@ -43,6 +43,7 @@ if (!args.Contains("codegen"))
 
 app.UseCors(AdminPortalCors.PolicyName);
 app.UseAuthentication();
+app.UseMiddleware<AdminCsrfMiddleware>();
 app.UseAuthorization();
 app.UseRateLimiter();
 app.MapWolverineEndpoints();

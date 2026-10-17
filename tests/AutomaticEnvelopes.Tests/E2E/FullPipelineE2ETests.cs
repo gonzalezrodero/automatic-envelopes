@@ -85,11 +85,11 @@ public class FullPipelineE2ETests(IntegrationAppFixture fixture)
         await WaitForConditionAsync(async () =>
         {
             using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
-            var saga = await session.LoadAsync<ChatDebounceSaga>(testPhoneNumber);
+            var saga = await session.LoadAsync<ChatDebounceSaga>(ChatSagaIds.For(tenant, testPhoneNumber));
             return saga != null;
         }, "The saga was not created in time.", timeoutSeconds: 15);
 
-        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(testPhoneNumber));
+        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(ChatSagaIds.For(tenant, testPhoneNumber)));
 
         // --- 4. Assert ---
         await WaitForConditionAsync(async () =>
@@ -201,11 +201,11 @@ public class FullPipelineE2ETests(IntegrationAppFixture fixture)
         await WaitForConditionAsync(async () =>
         {
             using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
-            var saga = await session.LoadAsync<ChatDebounceSaga>(testPhoneNumber);
+            var saga = await session.LoadAsync<ChatDebounceSaga>(ChatSagaIds.For(tenant, testPhoneNumber));
             return saga != null;
         }, "The initial saga was not created in time.", timeoutSeconds: 15);
 
-        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(testPhoneNumber));
+        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(ChatSagaIds.For(tenant, testPhoneNumber)));
 
         await WaitForConditionAsync(async () =>
         {
@@ -236,11 +236,11 @@ public class FullPipelineE2ETests(IntegrationAppFixture fixture)
         await WaitForConditionAsync(async () =>
         {
             using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
-            var saga = await session.LoadAsync<ChatDebounceSaga>(testPhoneNumber);
+            var saga = await session.LoadAsync<ChatDebounceSaga>(ChatSagaIds.For(tenant, testPhoneNumber));
             return saga != null;
         }, "The deletion saga was not created in time.", timeoutSeconds: 15);
 
-        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(testPhoneNumber));
+        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(ChatSagaIds.For(tenant, testPhoneNumber)));
 
         // --- 3. Assert: Verify Deletion and Anonymization ---
         await WaitForConditionAsync(async () =>
@@ -296,13 +296,13 @@ public class FullPipelineE2ETests(IntegrationAppFixture fixture)
         await WaitForConditionAsync(async () =>
         {
             using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
-            var saga = await session.LoadAsync<ChatDebounceSaga>(testPhoneNumber);
+            var saga = await session.LoadAsync<ChatDebounceSaga>(ChatSagaIds.For(tenant, testPhoneNumber));
 
             return saga != null && saga.CombinedText.Split('\n').Length == 3;
         }, "The saga did not process all 3 messages in time.", timeoutSeconds: 30);
 
         // --- 2. FAST-FORWARD SAGA: Force the 10-second window to close instantly ---
-        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(testPhoneNumber));
+        await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(ChatSagaIds.For(tenant, testPhoneNumber)));
 
         // --- 3. Assert: Verify the AI processed them as a single block ---
         await WaitForConditionAsync(async () =>
