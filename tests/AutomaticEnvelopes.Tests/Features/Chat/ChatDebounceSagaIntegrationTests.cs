@@ -95,47 +95,4 @@ public class ChatDebounceSagaIntegrationTests(IntegrationAppFixture fixture)
         commandB.PhoneNumber.Should().Be(phone);
         commandB.CombinedText.Should().Be("Hello from B");
     }
-
-    [Fact]
-    public async Task InFlightPhoneKeyedSaga_IsNotMergedWithAnotherTenant()
-    {
-        var phone = $"346{Random.Shared.Next(10000000, 99999999)}";
-        var legacyTenant = $"legacy-{Guid.NewGuid():N}";
-        var otherTenant = $"other-{Guid.NewGuid():N}";
-        await fixture.SeedTenantAsync(legacyTenant, "bot-legacy");
-        await fixture.SeedTenantAsync(otherTenant, "bot-other");
-
-        using (var setup = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession())
-        {
-            setup.Store(new ChatDebounceSaga
-            {
-                Id = phone,
-                TenantId = legacyTenant,
-                BotPhoneNumberId = "bot-legacy",
-                CombinedText = "already queued"
-            });
-            await setup.SaveChangesAsync(TestContext.Current.CancellationToken);
-        }
-
-        await fixture.Host.InvokeMessageAndWaitAsync(
-            new MessageReceived("new-1", phone, "from other", otherTenant, "bot-other", DateTimeOffset.UtcNow));
-
-        using var query = fixture.Host.Services.GetRequiredService<IDocumentStore>().QuerySession();
-        var legacy = await query.LoadAsync<ChatDebounceSaga>(phone, TestContext.Current.CancellationToken);
-        var other = await query.LoadAsync<ChatDebounceSaga>(ChatSagaIds.For(otherTenant, phone), TestContext.Current.CancellationToken);
-
-        legacy.Should().NotBeNull();
-        legacy!.TenantId.Should().Be(legacyTenant);
-        legacy.CombinedText.Should().Be("already queued");
-
-        other.Should().NotBeNull();
-        other!.TenantId.Should().Be(otherTenant);
-        other.CombinedText.Should().Be("from other");
-
-        var tracked = await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(phone));
-        var command = tracked.Executed.MessagesOf<AnalyzeChatSession>().Single();
-        command.PhoneNumber.Should().Be(phone);
-        command.TenantId.Should().Be(legacyTenant);
-        command.CombinedText.Should().Be("already queued");
-    }
 }

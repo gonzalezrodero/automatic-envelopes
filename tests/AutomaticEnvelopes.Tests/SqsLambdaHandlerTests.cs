@@ -77,12 +77,13 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
     }
 
     [Fact]
-    public async Task FunctionHandler_LegacyPhoneKeyedSaga_StillResolvesInMarten()
+    public async Task FunctionHandler_SystemMessage_ResolvesSagaInMarten()
     {
         // Arrange
         var tenantId = $"tenant-sys-{Guid.NewGuid():N}";
         var botPhoneId = "202020";
         var userPhone = $"346{Random.Shared.Next(10000000, 99999999)}";
+        var sagaId = ChatSagaIds.For(tenantId, userPhone);
 
         await fixture.SeedTenantAsync(tenantId, botPhoneId);
 
@@ -90,7 +91,8 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
         {
             var saga = new ChatDebounceSaga
             {
-                Id = userPhone,
+                Id = sagaId,
+                PhoneNumber = userPhone,
                 TenantId = tenantId,
                 BotPhoneNumberId = botPhoneId,
                 CombinedText = "Pending text"
@@ -99,7 +101,7 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
             await setupSession.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        var msg = new ChatWindowExpired(userPhone);
+        var msg = new ChatWindowExpired(sagaId);
         var sqsEvent = CreateSqsEvent(JsonSerializer.Serialize(msg), "arn:aws:sqs:eu-west-1:123:automatic-envelopes-system-queue", "sqs-msg-2");
 
         // Act
@@ -109,7 +111,7 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
         result.BatchItemFailures.Should().BeEmpty();
 
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
-        var deletedSaga = await session.LoadAsync<ChatDebounceSaga>(userPhone, token: TestContext.Current.CancellationToken);
+        var deletedSaga = await session.LoadAsync<ChatDebounceSaga>(sagaId, token: TestContext.Current.CancellationToken);
 
         deletedSaga.Should().BeNull("La saga debe haber sido procesada y eliminada (MarkCompleted) por el evento del sistema.");
     }
@@ -118,7 +120,7 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
     public async Task FunctionHandler_SystemMessageMissingPhone_LogsWarningAndIgnores()
     {
         // Arrange
-        var msg = new ChatWindowExpired(""); // Teléfono vacío
+        var msg = new ChatWindowExpired("");
         var sqsEvent = CreateSqsEvent(JsonSerializer.Serialize(msg), "arn:aws:sqs:automatic-envelopes-system-queue", "sys-msg-id");
 
         // Act

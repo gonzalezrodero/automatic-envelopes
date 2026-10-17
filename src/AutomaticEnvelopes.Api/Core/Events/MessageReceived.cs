@@ -5,8 +5,7 @@ namespace AutomaticEnvelopes.Api.Core.Events;
 
 /// <summary>
 /// Saga document id for one debounce window. Tenant ids are <c>[a-z0-9-]</c> and
-/// WhatsApp numbers are digits, so the colon cannot collide with either part or
-/// with a legacy document whose id is the phone number alone.
+/// WhatsApp numbers are digits, so the colon cannot appear in either part.
 /// </summary>
 public static class ChatSagaIds
 {

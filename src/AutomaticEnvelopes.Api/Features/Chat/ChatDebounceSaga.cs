@@ -7,11 +7,9 @@ using Wolverine.Persistence.Sagas;
 namespace AutomaticEnvelopes.Api.Features.Chat;
 
 /// <summary>
-/// <see cref="PhoneNumber"/> is the Wolverine saga id, not always the WhatsApp number.
-/// New windows publish "{tenantId}:{phone}". Payloads already on the system queue
-/// still carry the phone alone, which matches saga rows written before this change.
+/// <see cref="SagaId"/> is <c>{tenantId}:{phone}</c> from <see cref="ChatSagaIds.For"/>.
 /// </summary>
-public record ChatWindowExpired([property: SagaIdentity] string PhoneNumber);
+public record ChatWindowExpired([property: SagaIdentity] string SagaId);
 
 public record AnalyzeChatSession(string PhoneNumber, string TenantId, string BotPhoneNumberId, string CombinedText);
 
@@ -22,23 +20,13 @@ public class ChatDebounceSaga : Saga
 
     public string TenantId { get; set; } = string.Empty;
     public string BotPhoneNumberId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// WhatsApp number. Empty on documents stored before the composite saga id.
-    /// </summary>
     public string PhoneNumber { get; set; } = string.Empty;
-
     public string CombinedText { get; set; } = string.Empty;
-
-    public static string Identity(MessageReceived message) => message.SagaId;
 
     public OutgoingMessages StartsOrHandles(MessageReceived message, ILogger<ChatDebounceSaga> logger)
     {
         Id = message.SagaId;
-        if (string.IsNullOrEmpty(PhoneNumber))
-        {
-            PhoneNumber = message.PhoneNumber;
-        }
+        PhoneNumber = message.PhoneNumber;
 
         var messages = new OutgoingMessages();
         var maskedPhone = LogMask.Phone(message.PhoneNumber);
@@ -73,9 +61,8 @@ public class ChatDebounceSaga : Saga
 
     public async Task Handle(ChatWindowExpired _, IMessageBus bus, ILogger<ChatDebounceSaga> logger)
     {
-        var phone = string.IsNullOrEmpty(PhoneNumber) ? Id : PhoneNumber;
-        logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", LogMask.Phone(phone));
+        logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", LogMask.Phone(PhoneNumber));
         MarkCompleted();
-        await bus.InvokeAsync(new AnalyzeChatSession(phone, TenantId, BotPhoneNumberId, CombinedText));
+        await bus.InvokeAsync(new AnalyzeChatSession(PhoneNumber, TenantId, BotPhoneNumberId, CombinedText));
     }
 }

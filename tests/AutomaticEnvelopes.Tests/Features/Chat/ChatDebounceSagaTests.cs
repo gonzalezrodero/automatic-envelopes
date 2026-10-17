@@ -1,5 +1,4 @@
-﻿using System.Text.Json;
-using AutomaticEnvelopes.Api.Core.Events;
+﻿using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,7 +28,7 @@ public class ChatDebounceSagaTests
         var expiredEvent = result.OfType<ChatWindowExpired>().FirstOrDefault();
 
         expiredEvent.Should().NotBeNull("Un evento ChatWindowExpired debe haberse encolado.");
-        expiredEvent!.PhoneNumber.Should().Be(saga.Id);
+        expiredEvent!.SagaId.Should().Be(saga.Id);
     }
 
     [Fact]
@@ -95,50 +94,5 @@ public class ChatDebounceSagaTests
             null), Times.Once);
 
         saga.IsCompleted().Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task GivenLegacyPhoneKeyedSaga_WhenWindowExpires_ThenDispatchUsesTheStoredPhone()
-    {
-        var saga = new ChatDebounceSaga
-        {
-            Id = "34666555444",
-            TenantId = "tenant-1",
-            BotPhoneNumberId = "bot-1",
-            CombinedText = "Already queued"
-        };
-
-        var busMock = new Mock<IMessageBus>();
-
-        await saga.Handle(new ChatWindowExpired("34666555444"), busMock.Object, _logger);
-
-        busMock.Verify(b => b.InvokeAsync(
-            It.Is<AnalyzeChatSession>(c =>
-                c.PhoneNumber == "34666555444" &&
-                c.TenantId == "tenant-1" &&
-                c.CombinedText == "Already queued"),
-            It.IsAny<CancellationToken>(),
-            null), Times.Once);
-    }
-
-    [Fact]
-    public void SagaIdentity_IncludesTenant_AndLegacyPayloadStillDeserializes()
-    {
-        var samePhone = "34666555444";
-        var first = new MessageReceived("msg-1", samePhone, "Hello", "tenant-a", "bot-a", DateTimeOffset.UtcNow);
-        var second = new MessageReceived("msg-2", samePhone, "Hello", "tenant-b", "bot-b", DateTimeOffset.UtcNow);
-
-        first.SagaId.Should().Be(ChatSagaIds.For("tenant-a", samePhone));
-        second.SagaId.Should().Be(ChatSagaIds.For("tenant-b", samePhone));
-        first.SagaId.Should().NotBe(second.SagaId);
-        ChatDebounceSaga.Identity(first).Should().Be(first.SagaId);
-
-        var queued = JsonSerializer.Serialize(new ChatWindowExpired(first.SagaId));
-        queued.Should().Contain("\"PhoneNumber\"");
-        queued.Should().NotContain("\"SagaId\"");
-
-        var legacy = JsonSerializer.Deserialize<ChatWindowExpired>("""{"PhoneNumber":"34666555444"}""");
-        legacy.Should().NotBeNull();
-        legacy!.PhoneNumber.Should().Be("34666555444");
     }
 }
