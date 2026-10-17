@@ -1,3 +1,4 @@
+using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
@@ -82,7 +83,7 @@ public static class ProcessWhatsAppMessageHandler
 
         if (tracker.MessageCount > MaxMessagesPerMinute)
         {
-            logger.LogWarning("Spam shield triggered. Phone {PhoneNumber} dropped. Count: {Count}", phoneNumber, tracker.MessageCount);
+            logger.LogWarning("Spam shield triggered. Phone {PhoneNumber} dropped. Count: {Count}", LogMask.Phone(phoneNumber), tracker.MessageCount);
 
             // Commit the tracker immediately to keep the spammer locked out until the time window fully resets
             await session.SaveChangesAsync(ct);
@@ -100,7 +101,7 @@ public static class ProcessWhatsAppMessageHandler
         ILogger logger,
         CancellationToken ct)
     {
-        logger.LogInformation("New message detected. Appending MessageReceived event to Marten stream for {PhoneNumber}.", command.PhoneNumber);
+        logger.LogInformation("New message detected. Appending MessageReceived event to Marten stream for {PhoneNumber}.", LogMask.Phone(command.PhoneNumber));
 
         var receivedEvent = new MessageReceived(
             MessageId: command.MessageId,

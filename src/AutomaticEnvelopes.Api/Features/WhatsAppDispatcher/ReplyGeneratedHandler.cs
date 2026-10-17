@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Common.Configuration;
+﻿using AutomaticEnvelopes.Api.Common;
+using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Events;
 using Microsoft.Extensions.Options;
 
@@ -23,17 +24,17 @@ public static class ReplyGeneratedHandler
             Text: new WhatsAppMessageBody(@event.Text)
         );
 
-        logger.LogInformation("Dispatching reply to WhatsApp Graph API. PhoneNumber: {PhoneNumber}, TenantId: {TenantId}", @event.PhoneNumber, @event.TenantId);
+        logger.LogInformation("Dispatching reply to WhatsApp Graph API. PhoneNumber: {PhoneNumber}, TenantId: {TenantId}", LogMask.Phone(@event.PhoneNumber), @event.TenantId);
 
         try
         {
             await whatsappClient.SendMessageAsync(@event.BotPhoneNumberId, request, token, ct);
-            logger.LogInformation("Message successfully dispatched to Meta API for PhoneNumber: {PhoneNumber}.", @event.PhoneNumber);
+            logger.LogInformation("Message successfully dispatched to Meta API for PhoneNumber: {PhoneNumber}.", LogMask.Phone(@event.PhoneNumber));
         }
         catch (Exception ex)
         {
             // Logs the raw HTTP exception details for troubleshooting Meta token/permission errors
-            logger.LogError(ex, "Failed to send WhatsApp message to Meta API. PhoneNumber: {PhoneNumber}, TenantId: {TenantId}", @event.PhoneNumber, @event.TenantId);
+            logger.LogError(ex, "Failed to send WhatsApp message to Meta API. PhoneNumber: {PhoneNumber}, TenantId: {TenantId}", LogMask.Phone(@event.PhoneNumber), @event.TenantId);
             throw;
         }
     }

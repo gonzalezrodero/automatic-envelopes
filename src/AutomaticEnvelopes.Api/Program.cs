@@ -43,6 +43,7 @@ if (!args.Contains("codegen"))
 
 app.UseCors(AdminPortalCors.PolicyName);
 app.UseAuthentication();
+app.UseMiddleware<AdminCsrfMiddleware>();
 app.UseAuthorization();
 app.UseRateLimiter();
 app.MapWolverineEndpoints();

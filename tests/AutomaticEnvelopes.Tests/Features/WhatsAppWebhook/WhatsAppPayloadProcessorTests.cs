@@ -410,10 +410,62 @@ public class WhatsAppPayloadProcessorTests
         result.Should().BeNull();
     }
 
-    private static string ComputeHmacSha256(string payload, string secret)
+    [Fact]
+    public async Task IsSignatureValidAsync_WithNonAsciiPayload_ValidatesRawBytes()
     {
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        var payload = "{\"text\":\"café 😀\"}";
+        var body = Encoding.UTF8.GetBytes(payload);
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={ComputeHmacSha256(body, TestSecret)}";
+        context.Request.Body = new MemoryStream(body);
+
+        var result = await sut.IsSignatureValidAsync(context.Request);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsSignatureValidAsync_WithTamperedNonAsciiPayload_ReturnsFalse()
+    {
+        var payload = "{\"text\":\"café 😀\"}";
+        var body = Encoding.UTF8.GetBytes(payload);
+        var signature = ComputeHmacSha256(body, TestSecret);
+        body[^1] ^= 0x01;
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={signature}";
+        context.Request.Body = new MemoryStream(body);
+
+        var result = await sut.IsSignatureValidAsync(context.Request);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsSignatureValidAsync_WithUtf8Bom_UsesRawBytesRatherThanDecodedText()
+    {
+        var json = Encoding.UTF8.GetBytes("{\"text\":\"café\"}");
+        var raw = new byte[json.Length + 3];
+        raw[0] = 0xEF;
+        raw[1] = 0xBB;
+        raw[2] = 0xBF;
+        json.CopyTo(raw, 3);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={ComputeHmacSha256(raw, TestSecret)}";
+        context.Request.Body = new MemoryStream(raw);
+
+        var result = await sut.IsSignatureValidAsync(context.Request);
+
+        result.Should().BeTrue();
+    }
+
+    private static string ComputeHmacSha256(string payload, string secret) =>
+        ComputeHmacSha256(Encoding.UTF8.GetBytes(payload), secret);
+
+    private static string ComputeHmacSha256(byte[] payload, string secret)
+    {
+        var hashBytes = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), payload);
         return Convert.ToHexStringLower(hashBytes);
     }
 }

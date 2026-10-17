@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -19,7 +21,7 @@ public class WhatsAppWebhookEndpoint
         var verifyToken = options.Value.VerifyToken;
 
         bool isModeSubscribe = mode == "subscribe";
-        bool isTokenMatch = token == verifyToken;
+        bool isTokenMatch = VerifyTokensMatch(token, verifyToken);
         bool hasChallenge = !string.IsNullOrEmpty(challenge);
 
         logger.LogInformation(
@@ -41,6 +43,18 @@ public class WhatsAppWebhookEndpoint
             hasChallenge);
 
         return Results.StatusCode(403);
+    }
+
+    private static bool VerifyTokensMatch(string? provided, string? configured)
+    {
+        if (string.IsNullOrEmpty(provided) || string.IsNullOrEmpty(configured))
+        {
+            return false;
+        }
+
+        var providedBytes = Encoding.UTF8.GetBytes(provided);
+        var configuredBytes = Encoding.UTF8.GetBytes(configured);
+        return CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes);
     }
 
     [WolverinePost("/api/whatsapp/webhook")]

@@ -77,7 +77,7 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
     }
 
     [Fact]
-    public async Task FunctionHandler_ValidSystemMessage_ResolvesSagaInMarten()
+    public async Task FunctionHandler_LegacyPhoneKeyedSaga_StillResolvesInMarten()
     {
         // Arrange
         var tenantId = $"tenant-sys-{Guid.NewGuid():N}";

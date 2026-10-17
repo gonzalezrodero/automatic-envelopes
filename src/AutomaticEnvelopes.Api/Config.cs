@@ -32,7 +32,7 @@ public static class Config
 {
     public static IServiceCollection AddFeatures(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<WhatsAppOptions>(configuration.GetSection(WhatsAppOptions.SectionName));
+        services.AddWhatsAppOptions(configuration);
         services.AddChatFeature();
         services.AddWhatsAppWebhookFeature();
         services.AddKnowledgeFeature();
@@ -78,6 +78,11 @@ public static class Config
     public static IServiceCollection AddCustomAuthorization(this IServiceCollection services)
     {
         services.AddAuthorizationBuilder()
+            .AddPolicy(TenantAccess.PlatformAdminPolicy, policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireAssertion(context => TenantAccess.IsAdmin(context.User));
+            })
             .AddPolicy("TenantAdmin", policy =>
             {
                 policy.RequireAuthenticatedUser();
