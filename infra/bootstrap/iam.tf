@@ -86,6 +86,8 @@ resource "aws_iam_role_policy" "github_plan_deny_data" {
         Effect = "Deny"
         Action = [
           "ssm:GetParameter*",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:BatchGetSecretValue",
           "sqs:ReceiveMessage",
           "logs:GetLogEvents",
           "logs:FilterLogEvents",
