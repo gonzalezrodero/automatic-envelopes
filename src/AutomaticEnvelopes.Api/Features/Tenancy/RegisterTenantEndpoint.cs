@@ -67,13 +67,13 @@ public static class RegisterTenantEndpoint
         {
             Id = tenantId,
             BotPhoneNumberId = botPhoneNumberId,
-            SystemPrompt = request.SystemPrompt?.Trim() ?? string.Empty,
-            PrivacyPolicyUrl = request.PrivacyPolicyUrl?.Trim() ?? string.Empty,
-            Name = request.Name?.Trim() ?? string.Empty,
-            ShortName = request.ShortName?.Trim() ?? string.Empty,
-            City = request.City?.Trim() ?? string.Empty,
-            Kind = request.Kind?.Trim() ?? string.Empty,
-            DisplayPhone = request.DisplayPhone?.Trim() ?? string.Empty,
+            SystemPrompt = Text(request.SystemPrompt),
+            PrivacyPolicyUrl = Text(request.PrivacyPolicyUrl),
+            Name = Text(request.Name),
+            ShortName = Text(request.ShortName),
+            City = Text(request.City),
+            Kind = Text(request.Kind),
+            DisplayPhone = Text(request.DisplayPhone),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -82,4 +82,6 @@ public static class RegisterTenantEndpoint
 
         return Results.Created($"/api/admin/tenants/{tenantId}", profile);
     }
+
+    private static string Text(string? value) => value?.Trim() ?? string.Empty;
 }

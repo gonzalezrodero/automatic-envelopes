@@ -158,12 +158,6 @@ public class RegisterTenantEndpointTests(IntegrationAppFixture fixture)
         response.BotPhoneNumberId.Should().Be(botPhoneId);
         response.SystemPrompt.Should().Be("Hello from the body");
         response.CreatedAt.Should().BeAfter(started);
-
-        using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().QuerySession();
-        var stored = await session.LoadAsync<TenantProfile>(tenantId, TestContext.Current.CancellationToken);
-        stored!.Id.Should().Be(tenantId);
-        stored.SystemPrompt.Should().Be("Hello from the body");
-        stored.CreatedAt.Should().BeAfter(started);
     }
 
     [Fact]

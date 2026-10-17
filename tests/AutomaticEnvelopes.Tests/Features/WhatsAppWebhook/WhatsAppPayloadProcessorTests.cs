@@ -413,51 +413,38 @@ public class WhatsAppPayloadProcessorTests
     [Fact]
     public async Task IsSignatureValidAsync_WithNonAsciiPayload_ValidatesRawBytes()
     {
-        var payload = "{\"text\":\"café 😀\"}";
-        var body = Encoding.UTF8.GetBytes(payload);
-        var context = new DefaultHttpContext();
-        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={ComputeHmacSha256(body, TestSecret)}";
-        context.Request.Body = new MemoryStream(body);
-
-        var result = await sut.IsSignatureValidAsync(context.Request);
-
-        result.Should().BeTrue();
+        var body = "{\"text\":\"café 😀\"}"u8.ToArray();
+        (await SignatureIsValid(body, ComputeHmacSha256(body, TestSecret))).Should().BeTrue();
     }
 
     [Fact]
     public async Task IsSignatureValidAsync_WithTamperedNonAsciiPayload_ReturnsFalse()
     {
-        var payload = "{\"text\":\"café 😀\"}";
-        var body = Encoding.UTF8.GetBytes(payload);
+        var body = "{\"text\":\"café 😀\"}"u8.ToArray();
         var signature = ComputeHmacSha256(body, TestSecret);
         body[^1] ^= 0x01;
-
-        var context = new DefaultHttpContext();
-        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={signature}";
-        context.Request.Body = new MemoryStream(body);
-
-        var result = await sut.IsSignatureValidAsync(context.Request);
-
-        result.Should().BeFalse();
+        (await SignatureIsValid(body, signature)).Should().BeFalse();
     }
 
     [Fact]
     public async Task IsSignatureValidAsync_WithUtf8Bom_UsesRawBytesRatherThanDecodedText()
     {
-        var json = Encoding.UTF8.GetBytes("{\"text\":\"café\"}");
+        var json = "{\"text\":\"café\"}"u8.ToArray();
         var raw = new byte[json.Length + 3];
         raw[0] = 0xEF;
         raw[1] = 0xBB;
         raw[2] = 0xBF;
         json.CopyTo(raw, 3);
 
+        (await SignatureIsValid(raw, ComputeHmacSha256(raw, TestSecret))).Should().BeTrue();
+    }
+
+    private Task<bool> SignatureIsValid(byte[] body, string signature)
+    {
         var context = new DefaultHttpContext();
-        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={ComputeHmacSha256(raw, TestSecret)}";
-        context.Request.Body = new MemoryStream(raw);
-
-        var result = await sut.IsSignatureValidAsync(context.Request);
-
-        result.Should().BeTrue();
+        context.Request.Headers["X-Hub-Signature-256"] = $"sha256={signature}";
+        context.Request.Body = new MemoryStream(body);
+        return sut.IsSignatureValidAsync(context.Request);
     }
 
     private static string ComputeHmacSha256(string payload, string secret) =>

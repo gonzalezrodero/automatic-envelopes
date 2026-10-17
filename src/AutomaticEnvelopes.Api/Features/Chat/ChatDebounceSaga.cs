@@ -6,9 +6,6 @@ using Wolverine.Persistence.Sagas;
 
 namespace AutomaticEnvelopes.Api.Features.Chat;
 
-/// <summary>
-/// <see cref="SagaId"/> is <c>{tenantId}:{phone}</c> from <see cref="ChatSagaIds.For"/>.
-/// </summary>
 public record ChatWindowExpired([property: SagaIdentity] string SagaId);
 
 public record AnalyzeChatSession(string PhoneNumber, string TenantId, string BotPhoneNumberId, string CombinedText);

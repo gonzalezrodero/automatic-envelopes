@@ -10,55 +10,30 @@ namespace AutomaticEnvelopes.Tests.Features.WhatsAppWebhook;
 
 public class WhatsAppWebhookEndpointTests
 {
-    private readonly WhatsAppWebhookEndpoint endpoint = new();
-
-    [Fact]
-    public async Task VerifyChallenge_CorrectToken_ReturnsTheChallenge()
-    {
-        var result = endpoint.VerifyChallenge(
-            "subscribe",
-            "secret-token",
-            "1158201444",
-            Options.Create(new WhatsAppOptions { VerifyToken = "secret-token" }),
-            NullLogger<WhatsAppWebhookEndpoint>.Instance);
-
-        var (status, body) = Read(result);
-        status.Should().Be(StatusCodes.Status200OK);
-        body.Should().Be("1158201444");
-    }
-
-    [Fact]
-    public async Task VerifyChallenge_WrongToken_Returns403()
-    {
-        var result = endpoint.VerifyChallenge(
-            "subscribe",
-            "wrong-token",
-            "1158201444",
-            Options.Create(new WhatsAppOptions { VerifyToken = "secret-token" }),
-            NullLogger<WhatsAppWebhookEndpoint>.Instance);
-
-        Read(result).Status.Should().Be(StatusCodes.Status403Forbidden);
-    }
-
     [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task VerifyChallenge_EmptyConfiguredToken_Returns403(string configured)
+    [InlineData("secret-token", "secret-token", 200, "1158201444")]
+    [InlineData("wrong-token", "secret-token", 403, "")]
+    [InlineData("", "", 403, "")]
+    [InlineData("   ", "   ", 403, "")]
+    public void VerifyChallenge_MatchesTheConfiguredToken(string provided, string configured, int status, string body)
     {
-        var result = endpoint.VerifyChallenge(
+        var result = new WhatsAppWebhookEndpoint().VerifyChallenge(
             "subscribe",
-            configured,
+            provided,
             "1158201444",
             Options.Create(new WhatsAppOptions { VerifyToken = configured }),
             NullLogger<WhatsAppWebhookEndpoint>.Instance);
 
-        Read(result).Status.Should().Be(StatusCodes.Status403Forbidden);
+        var statusCode = result switch
+        {
+            ContentHttpResult content => content.StatusCode ?? StatusCodes.Status200OK,
+            IStatusCodeHttpResult coded => coded.StatusCode,
+            _ => null
+        };
+        statusCode.Should().Be(status);
+        if (result is ContentHttpResult ok)
+        {
+            ok.ResponseContent.Should().Be(body);
+        }
     }
-
-    private static (int Status, string Body) Read(IResult result) => result switch
-    {
-        ContentHttpResult content => (content.StatusCode ?? StatusCodes.Status200OK, content.ResponseContent ?? string.Empty),
-        StatusCodeHttpResult status => (status.StatusCode, string.Empty),
-        _ => throw new InvalidOperationException($"Unexpected result {result.GetType().Name}.")
-    };
 }

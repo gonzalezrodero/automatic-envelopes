@@ -70,8 +70,6 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
         request.Body.Position = 0;
         using var buffer = new MemoryStream();
         await request.Body.CopyToAsync(buffer);
-
-        // Reset for downstream parsers
         request.Body.Position = 0;
 
         return buffer.ToArray();

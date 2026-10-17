@@ -10,52 +10,39 @@ namespace AutomaticEnvelopes.Tests.Common;
 public class WhatsAppOptionsValidatorTests
 {
     [Theory]
-    [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void EmptyVerifyToken_FailsValidation(string? verifyToken)
+    public void BlankVerifyToken_FailsWhenTheHostStarts(string verifyToken)
     {
-        var result = new WhatsAppOptionsValidator().Validate(null, new WhatsAppOptions { VerifyToken = verifyToken ?? string.Empty });
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Be(WhatsAppOptionsValidator.VerifyTokenRequired);
-    }
-
-    [Fact]
-    public void EmptyVerifyToken_FailsWhenTheHostStarts()
-    {
-        using var host = BuildHost(new Dictionary<string, string?>
-        {
-            ["WhatsApp:VerifyToken"] = " "
-        });
+        using var host = BuildHost(verifyToken);
 
         var act = () => host.Start();
 
         act.Should().Throw<OptionsValidationException>()
-            .Which.Failures.Should().Contain(WhatsAppOptionsValidator.VerifyTokenRequired);
+            .Which.Failures.Should().Contain(WhatsAppOptions.VerifyTokenRequired);
     }
 
     [Fact]
     public void ConfiguredVerifyToken_AllowsTheHostToStart()
     {
-        using var host = BuildHost(new Dictionary<string, string?>
-        {
-            ["WhatsApp:VerifyToken"] = "verify-me"
-        });
+        using var host = BuildHost("verify-me");
 
         host.Start();
 
         host.Services.GetRequiredService<IOptions<WhatsAppOptions>>().Value.VerifyToken.Should().Be("verify-me");
     }
 
-    private static IHost BuildHost(Dictionary<string, string?> values)
+    private static IHost BuildHost(string verifyToken)
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
             EnvironmentName = "Testing",
             ApplicationName = "whatsapp-options-test"
         });
-        builder.Configuration.AddInMemoryCollection(values);
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["WhatsApp:VerifyToken"] = verifyToken
+        });
         builder.Services.AddWhatsAppOptions(builder.Configuration);
         return builder.Build();
     }

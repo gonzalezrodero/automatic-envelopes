@@ -2,33 +2,12 @@ using Microsoft.Extensions.Options;
 
 namespace AutomaticEnvelopes.Api.Features.AdminAuth;
 
-/// <summary>
-/// Rejects cookie-authenticated state changes on admin and portal routes unless
-/// Origin, or Referer when Origin is absent, is one of the configured portal origins.
-/// Bearer requests are not cookie-authenticated: the JWT bearer handler ignores the
-/// session cookie when Authorization is present.
-/// </summary>
-public sealed class AdminCsrfMiddleware(
-    RequestDelegate next,
-    IOptions<AdminAuthOptions> options,
-    ILogger<AdminCsrfMiddleware> logger)
+public sealed class AdminCsrfMiddleware(RequestDelegate next, IOptions<AdminAuthOptions> options)
 {
-    private static readonly HashSet<string> UnsafeMethods = new(StringComparer.OrdinalIgnoreCase)
-    {
-        HttpMethods.Post,
-        HttpMethods.Put,
-        HttpMethods.Patch,
-        HttpMethods.Delete
-    };
-
     public async Task InvokeAsync(HttpContext context)
     {
         if (RequiresOrigin(context.Request) && !HasAllowedOrigin(context.Request))
         {
-            logger.LogWarning(
-                "Rejected cookie-authenticated {Method} {Path} because Origin is not an allowed portal origin.",
-                context.Request.Method,
-                context.Request.Path);
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
@@ -38,7 +17,7 @@ public sealed class AdminCsrfMiddleware(
 
     private static bool RequiresOrigin(HttpRequest request)
     {
-        if (!UnsafeMethods.Contains(request.Method) || !IsAdminOrPortal(request.Path))
+        if (!IsUnsafe(request.Method) || !IsAdminOrPortal(request.Path))
         {
             return false;
         }
@@ -63,28 +42,17 @@ public sealed class AdminCsrfMiddleware(
         return options.Value.IsAllowedOrigin(origin);
     }
 
-    private static bool IsAdminOrPortal(PathString path)
-    {
-        if (path.StartsWithSegments("/api/whatsapp"))
-        {
-            return false;
-        }
+    private static bool IsUnsafe(string method) =>
+        HttpMethods.IsPost(method)
+        || HttpMethods.IsPut(method)
+        || HttpMethods.IsPatch(method)
+        || HttpMethods.IsDelete(method);
 
-        return path.StartsWithSegments("/api/admin") || path.StartsWithSegments("/tenants");
-    }
+    private static bool IsAdminOrPortal(PathString path) =>
+        path.StartsWithSegments("/api/admin") || path.StartsWithSegments("/tenants");
 
-    private static string? OriginOf(string? referer)
-    {
-        if (string.IsNullOrWhiteSpace(referer) || !Uri.TryCreate(referer, UriKind.Absolute, out var uri))
-        {
-            return null;
-        }
-
-        if (string.IsNullOrEmpty(uri.Host))
-        {
-            return null;
-        }
-
-        return uri.GetLeftPart(UriPartial.Authority);
-    }
+    private static string? OriginOf(string? referer) =>
+        Uri.TryCreate(referer, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Host)
+            ? uri.GetLeftPart(UriPartial.Authority)
+            : null;
 }

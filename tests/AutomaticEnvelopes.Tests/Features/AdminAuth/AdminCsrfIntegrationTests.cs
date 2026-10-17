@@ -1,5 +1,4 @@
 using System.Net.Http.Headers;
-using System.Text;
 using Alba;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Tenancy;
@@ -10,110 +9,55 @@ namespace AutomaticEnvelopes.Tests.Features.AdminAuth;
 [Collection("Integration")]
 public class AdminCsrfIntegrationTests(IntegrationAppFixture fixture)
 {
-    private const string AllowedOrigin = "http://localhost:5173";
-
-    [Fact]
-    public async Task MultipartIngest_WithoutOrigin_Returns403()
+    [Theory]
+    [InlineData("ingest", null, 403)]
+    [InlineData("ingest", "https://evil.example", 403)]
+    [InlineData("ingest", "http://localhost:5173", 200)]
+    [InlineData("patch", null, 403)]
+    [InlineData("patch", "https://evil.example", 403)]
+    [InlineData("patch", "http://localhost:5173", 200)]
+    public async Task CookieSession_RequiresAllowedOrigin(string route, string? origin, int status)
     {
-        await fixture.Host.Scenario(s =>
+        var tenantId = $"csrf-{Guid.NewGuid():N}";
+        if (status == 200)
         {
-            WithSessionCookie(s);
-            s.Post.MultipartFormData(Notes("notes.txt")).ToUrl($"/api/admin/ingest/{TenantId()}");
-            s.StatusCodeShouldBe(403);
-        });
-    }
-
-    [Fact]
-    public async Task MultipartIngest_WithForeignOrigin_Returns403()
-    {
-        await fixture.Host.Scenario(s =>
-        {
-            WithSessionCookie(s);
-            s.WithRequestHeader("Origin", "https://evil.example");
-            s.Post.MultipartFormData(Notes("notes.txt")).ToUrl($"/api/admin/ingest/{TenantId()}");
-            s.StatusCodeShouldBe(403);
-        });
-    }
-
-    [Fact]
-    public async Task MultipartIngest_WithAllowedOrigin_ReturnsOk()
-    {
-        var tenantId = TenantId();
-        await fixture.SeedTenantAsync(tenantId, $"phone-{Guid.NewGuid():N}");
-
-        await fixture.Host.Scenario(s =>
-        {
-            WithSessionCookie(s);
-            s.WithRequestHeader("Origin", AllowedOrigin);
-            s.Post.MultipartFormData(Notes($"notes-{Guid.NewGuid():N}.txt")).ToUrl($"/api/admin/ingest/{tenantId}");
-            s.StatusCodeShouldBeOk();
-        });
-    }
-
-    [Fact]
-    public async Task PatchTenant_WithoutOrigin_Returns403()
-    {
-        var tenantId = TenantId();
-        await fixture.SeedTenantAsync(tenantId, $"phone-{Guid.NewGuid():N}");
-
-        await fixture.Host.Scenario(s =>
-        {
-            WithSessionCookie(s);
-            s.Patch.Json(Settings()).ToUrl($"/tenants/{tenantId}");
-            s.StatusCodeShouldBe(403);
-        });
-    }
-
-    [Fact]
-    public async Task PatchTenant_WithForeignOrigin_Returns403()
-    {
-        var tenantId = TenantId();
-        await fixture.SeedTenantAsync(tenantId, $"phone-{Guid.NewGuid():N}");
-
-        await fixture.Host.Scenario(s =>
-        {
-            WithSessionCookie(s);
-            s.WithRequestHeader("Origin", "https://evil.example");
-            s.Patch.Json(Settings()).ToUrl($"/tenants/{tenantId}");
-            s.StatusCodeShouldBe(403);
-        });
-    }
-
-    [Fact]
-    public async Task PatchTenant_WithAllowedOrigin_ReturnsOk()
-    {
-        var tenantId = TenantId();
-        await fixture.SeedTenantAsync(tenantId, $"phone-{Guid.NewGuid():N}");
+            await fixture.SeedTenantAsync(tenantId, $"phone-{Guid.NewGuid():N}");
+        }
 
         var result = await fixture.Host.Scenario(s =>
         {
-            WithSessionCookie(s);
-            s.WithRequestHeader("Origin", AllowedOrigin);
-            s.Patch.Json(Settings()).ToUrl($"/tenants/{tenantId}");
-            s.StatusCodeShouldBe(200);
+            s.WithRequestHeader("Cookie", $"{AdminAuthCookies.AccessToken}=integration-session");
+            if (origin is not null)
+            {
+                s.WithRequestHeader("Origin", origin);
+            }
+
+            if (route == "ingest")
+            {
+                s.Post.MultipartFormData(Notes($"notes-{Guid.NewGuid():N}.txt")).ToUrl($"/api/admin/ingest/{tenantId}");
+            }
+            else
+            {
+                s.Patch.Json(new UpdateTenantSettingsRequest
+                {
+                    SystemPrompt = "Updated persona",
+                    PrivacyPolicyUrl = "https://example.com/privacy"
+                }).ToUrl($"/tenants/{tenantId}");
+            }
+
+            s.StatusCodeShouldBe(status);
         });
 
-        result.ReadAsText().Should().Contain("Updated persona");
+        if (route == "patch" && status == 200)
+        {
+            result.ReadAsText().Should().Contain("Updated persona");
+        }
     }
-
-    private static void WithSessionCookie(Alba.Scenario scenario) =>
-        scenario.WithRequestHeader("Cookie", $"{AdminAuthCookies.AccessToken}=integration-session");
-
-    private static string TenantId() => $"csrf-{Guid.NewGuid():N}";
-
-    private static UpdateTenantSettingsRequest Settings() => new()
-    {
-        SystemPrompt = "Updated persona",
-        PrivacyPolicyUrl = "https://example.com/privacy"
-    };
 
     private static MultipartFormDataContent Notes(string fileName)
     {
-        var file = new ByteArrayContent(Encoding.UTF8.GetBytes("Portal knowledge for the CSRF check."));
+        var file = new ByteArrayContent("Portal knowledge for the CSRF check."u8.ToArray());
         file.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        return new MultipartFormDataContent
-        {
-            { file, "file", fileName }
-        };
+        return new MultipartFormDataContent { { file, "file", fileName } };
     }
 }
