@@ -41,12 +41,6 @@ variable "skip_final_snapshot" {
   default     = false
 }
 
-variable "copy_tags_to_snapshot" {
-  description = "Copy instance tags onto RDS snapshots."
-  type        = bool
-  default     = true
-}
-
 variable "rds_auto_start" {
   description = "If true, EventBridge starts RDS at 08:00 Europe/Madrid. Keep false while the app is unused."
   type        = bool

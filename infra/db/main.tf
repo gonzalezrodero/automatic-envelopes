@@ -11,8 +11,9 @@ resource "aws_security_group" "db_sg" {
   vpc_id      = data.terraform_remote_state.network.outputs.vpc_id
 
   # Lambdas are outside the VPC and use this public endpoint.
+  # Keep this description: AWS revokes and recreates the rule if it changes.
   ingress {
-    description = "PostgreSQL from Lambdas over the public endpoint"
+    description = "PostgreSQL Public Access for Lambdas"
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
@@ -42,17 +43,6 @@ resource "aws_db_subnet_group" "db_subnets" {
   }
 }
 
-resource "aws_db_parameter_group" "postgres" {
-  name   = "${var.project_name}-postgres16"
-  family = "postgres16"
-
-  parameter {
-    name         = "rds.force_ssl"
-    value        = "1"
-    apply_method = "immediate"
-  }
-}
-
 # ==========================================
 # RDS INSTANCE (PostgreSQL)
 # ==========================================
@@ -73,9 +63,7 @@ resource "aws_db_instance" "postgres" {
 
   storage_encrypted       = true
   backup_retention_period = var.backup_retention_period
-  copy_tags_to_snapshot   = var.copy_tags_to_snapshot
   deletion_protection     = var.deletion_protection
-  parameter_group_name    = aws_db_parameter_group.postgres.name
 
   db_subnet_group_name      = aws_db_subnet_group.db_subnets.name
   vpc_security_group_ids    = [aws_security_group.db_sg.id]

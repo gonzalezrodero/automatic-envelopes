@@ -16,6 +16,7 @@ on:
 env:
   AWS_REGION: eu-west-1
   ECR_REPOSITORY: automatic-envelopes-api
+  PROJECT_NAME: automatic-envelopes
   TF_WORKING_DIR: 'infra/serverless'
   TF_VERSION: "1.11.4"
 
@@ -86,14 +87,9 @@ jobs:
 
           # Adopt groups Lambda already created. Skip when they are absent so a
           # later apply can create them again after destroy.
-          project=$(sed -n 's/^project_name *= *"\(.*\)"/\1/p' "config/$TF_FOLDER/config.tfvars")
-          if [ -z "$project" ]; then
-            echo "project_name missing from config/$TF_FOLDER/config.tfvars" >&2
-            exit 1
-          fi
           for suffix in api worker; do
             addr="aws_cloudwatch_log_group.$suffix"
-            name="/aws/lambda/${project}-${suffix}"
+            name="/aws/lambda/${PROJECT_NAME}-${suffix}"
             if terraform state show "$addr" >/dev/null 2>&1; then
               continue
             fi
