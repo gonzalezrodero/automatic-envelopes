@@ -24,9 +24,21 @@ variable "allocated_storage" {
 }
 
 variable "backup_retention_period" {
-  description = "Days of automated RDS backups to keep (0 disables automated backups)"
+  description = "Days of automated RDS backups to keep. Prod stays at 7 or more; dev overrides this."
   type        = number
-  default     = 1
+  default     = 7
+}
+
+variable "deletion_protection" {
+  description = "Block deletion of the RDS instance. Prod keeps the default."
+  type        = bool
+  default     = true
+}
+
+variable "skip_final_snapshot" {
+  description = "Skip the snapshot taken when the instance is destroyed. Prod keeps the default."
+  type        = bool
+  default     = false
 }
 
 variable "rds_auto_start" {

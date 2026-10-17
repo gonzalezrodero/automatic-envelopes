@@ -59,15 +59,6 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
   }
 
   statement {
-    sid    = "AllowKMSDecryptForSecrets"
-    effect = "Allow"
-    actions = [
-      "kms:Decrypt"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
     sid    = "AllowBedrockSonnet46"
     effect = "Allow"
     actions = [

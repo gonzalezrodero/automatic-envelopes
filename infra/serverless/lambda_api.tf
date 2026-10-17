@@ -31,6 +31,8 @@ resource "aws_lambda_function" "api" {
   image_config {
     command = ["AutomaticEnvelopes.Api"]
   }
+
+  depends_on = [aws_cloudwatch_log_group.api]
 }
 
 # Credentialed CORS is applied by the ASP.NET pipeline (exact origins).

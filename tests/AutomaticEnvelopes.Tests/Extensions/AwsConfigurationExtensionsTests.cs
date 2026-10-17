@@ -46,6 +46,7 @@ public class AwsConfigurationExtensionsTests : IDisposable
         injectedValue.Should().Contain("Port=5432");
         injectedValue.Should().Contain("Username=dbadmin");
         injectedValue.Should().Contain("Database=automaticenvelopes");
+        injectedValue.Should().Contain("SSL Mode=Require");
 
         secretsMock.Verify(x => x.GetSecretValueAsync(It.IsAny<GetSecretValueRequest>(), default), Times.Once);
         ssmMock.Verify(x => x.GetParametersByPathAsync(It.IsAny<GetParametersByPathRequest>(), default), Times.Never);
@@ -109,5 +110,6 @@ public class AwsConfigurationExtensionsTests : IDisposable
     {
         Environment.SetEnvironmentVariable("SECRET_ARN_MARTEN", null);
         Environment.SetEnvironmentVariable("SSM_PATH_WHATSAPP", null);
+        Environment.SetEnvironmentVariable("DB_HOST", null);
     }
 }

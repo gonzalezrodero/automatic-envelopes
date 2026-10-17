@@ -16,6 +16,7 @@ on:
 env:
   AWS_REGION: eu-west-1
   ECR_REPOSITORY: automatic-envelopes-api
+  PROJECT_NAME: automatic-envelopes
   TF_WORKING_DIR: 'infra/serverless'
   TF_VERSION: "1.11.4"
 
@@ -83,6 +84,24 @@ jobs:
           else
             echo "aws_ecr_repository.backend already in state"
           fi
+
+          # Adopt groups Lambda already created. Skip when they are absent so a
+          # later apply can create them again after destroy.
+          for suffix in api worker; do
+            addr="aws_cloudwatch_log_group.$suffix"
+            name="/aws/lambda/${PROJECT_NAME}-${suffix}"
+            if terraform state show "$addr" >/dev/null 2>&1; then
+              continue
+            fi
+            count=$(aws logs describe-log-groups --log-group-name-prefix "$name" --region "$AWS_REGION" \
+              --query "length(logGroups[?logGroupName=='$name'])" --output text)
+            if [ "$count" = "1" ]; then
+              terraform import \
+                -var-file="config/$TF_FOLDER/config.tfvars" \
+                -var="image_tag=import" \
+                "$addr" "$name"
+            fi
+          done
 
       - name: Terraform Plan
         env:
