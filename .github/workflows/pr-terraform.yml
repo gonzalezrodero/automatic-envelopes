@@ -131,7 +131,7 @@ jobs:
             export TF_VAR_cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
             export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
           fi
-          terraform plan "${PLAN_ARGS[@]}" -detailed-exitcode 2>&1 | tee plan-output.txt
+          terraform plan "${PLAN_ARGS[@]}" -lock=false -detailed-exitcode 2>&1 | tee plan-output.txt
           EXIT=${PIPESTATUS[0]}
           echo "exitcode=$EXIT" >> "$GITHUB_OUTPUT"
           exit 0
