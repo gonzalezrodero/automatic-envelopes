@@ -47,7 +47,7 @@ public class WhatsAppWebhookEndpoint
 
     private static bool VerifyTokensMatch(string? provided, string? configured)
     {
-        if (string.IsNullOrEmpty(provided) || string.IsNullOrEmpty(configured))
+        if (string.IsNullOrWhiteSpace(provided) || string.IsNullOrWhiteSpace(configured))
         {
             return false;
         }

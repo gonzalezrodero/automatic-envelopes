@@ -2,6 +2,7 @@ using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -21,7 +22,7 @@ public class WhatsAppWebhookEndpointTests
             Options.Create(new WhatsAppOptions { VerifyToken = "secret-token" }),
             NullLogger<WhatsAppWebhookEndpoint>.Instance);
 
-        var (status, body) = await Execute(result);
+        var (status, body) = Read(result);
         status.Should().Be(StatusCodes.Status200OK);
         body.Should().Be("1158201444");
     }
@@ -36,8 +37,7 @@ public class WhatsAppWebhookEndpointTests
             Options.Create(new WhatsAppOptions { VerifyToken = "secret-token" }),
             NullLogger<WhatsAppWebhookEndpoint>.Instance);
 
-        var (status, _) = await Execute(result);
-        status.Should().Be(StatusCodes.Status403Forbidden);
+        Read(result).Status.Should().Be(StatusCodes.Status403Forbidden);
     }
 
     [Theory]
@@ -52,17 +52,13 @@ public class WhatsAppWebhookEndpointTests
             Options.Create(new WhatsAppOptions { VerifyToken = configured }),
             NullLogger<WhatsAppWebhookEndpoint>.Instance);
 
-        var (status, _) = await Execute(result);
-        status.Should().Be(StatusCodes.Status403Forbidden);
+        Read(result).Status.Should().Be(StatusCodes.Status403Forbidden);
     }
 
-    private static async Task<(int Status, string Body)> Execute(IResult result)
+    private static (int Status, string Body) Read(IResult result) => result switch
     {
-        var context = new DefaultHttpContext();
-        context.Response.Body = new MemoryStream();
-        await result.ExecuteAsync(context);
-        context.Response.Body.Position = 0;
-        using var reader = new StreamReader(context.Response.Body);
-        return (context.Response.StatusCode, await reader.ReadToEndAsync());
-    }
+        ContentHttpResult content => (content.StatusCode ?? StatusCodes.Status200OK, content.ResponseContent ?? string.Empty),
+        StatusCodeHttpResult status => (status.StatusCode, string.Empty),
+        _ => throw new InvalidOperationException($"Unexpected result {result.GetType().Name}.")
+    };
 }
