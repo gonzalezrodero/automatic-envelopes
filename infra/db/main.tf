@@ -10,20 +10,13 @@ resource "aws_security_group" "db_sg" {
   description = "Allow inbound PostgreSQL traffic"
   vpc_id      = data.terraform_remote_state.network.outputs.vpc_id
 
+  # Lambdas are outside the VPC and use this public endpoint.
   ingress {
-    description = "PostgreSQL Public Access for Lambdas"
+    description = "PostgreSQL from Lambdas over the public endpoint"
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Direct access from Daniel Laptop"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["176.84.209.177/32"]
   }
 
   egress {
@@ -38,7 +31,7 @@ resource "aws_security_group" "db_sg" {
 # DB SUBNET GROUP
 # ==========================================
 resource "aws_db_subnet_group" "db_subnets" {
-  name       = "${var.project_name}-db-subnet-group"
+  name = "${var.project_name}-db-subnet-group"
   # Keep the existing public subnets. Replacing them in-place fails:
   # AWS will not drop subnets that the live RDS instance still uses.
   # Move to private subnets later via a new subnet group, then attach it.
@@ -46,6 +39,17 @@ resource "aws_db_subnet_group" "db_subnets" {
 
   tags = {
     Name = "${var.project_name}-db-subnet-group"
+  }
+}
+
+resource "aws_db_parameter_group" "postgres" {
+  name   = "${var.project_name}-postgres16"
+  family = "postgres16"
+
+  parameter {
+    name         = "rds.force_ssl"
+    value        = "1"
+    apply_method = "immediate"
   }
 }
 
@@ -69,10 +73,14 @@ resource "aws_db_instance" "postgres" {
 
   storage_encrypted       = true
   backup_retention_period = var.backup_retention_period
+  copy_tags_to_snapshot   = var.copy_tags_to_snapshot
+  deletion_protection     = var.deletion_protection
+  parameter_group_name    = aws_db_parameter_group.postgres.name
 
-  db_subnet_group_name   = aws_db_subnet_group.db_subnets.name
-  vpc_security_group_ids = [aws_security_group.db_sg.id]
-  skip_final_snapshot    = true
+  db_subnet_group_name      = aws_db_subnet_group.db_subnets.name
+  vpc_security_group_ids    = [aws_security_group.db_sg.id]
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.project_name}-db-final"
 
   manage_master_user_password = true
 

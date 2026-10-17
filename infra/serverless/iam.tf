@@ -65,6 +65,15 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
       "kms:Decrypt"
     ]
     resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values = [
+        "ssm.${var.aws_region}.amazonaws.com",
+        "secretsmanager.${var.aws_region}.amazonaws.com",
+      ]
+    }
   }
 
   statement {
