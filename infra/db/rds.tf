@@ -33,10 +33,12 @@ resource "aws_db_instance" "postgres" {
 
   storage_encrypted       = true
   backup_retention_period = var.backup_retention_period
+  deletion_protection     = var.deletion_protection
 
-  db_subnet_group_name   = aws_db_subnet_group.db_subnets.name
-  vpc_security_group_ids = [aws_security_group.db_sg.id]
-  skip_final_snapshot    = true
+  db_subnet_group_name      = aws_db_subnet_group.db_subnets.name
+  vpc_security_group_ids    = [aws_security_group.db_sg.id]
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.project_name}-db-final"
 
   manage_master_user_password = true
 
