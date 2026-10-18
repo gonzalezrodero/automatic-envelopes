@@ -4,7 +4,12 @@ namespace AutomaticEnvelopes.Api.Features.Knowledge;
 
 public static class IngestLimits
 {
-    public const long MaxUploadBytes = 10 * 1024 * 1024;
+    /// <summary>
+    /// Largest accepted file. Lambda's synchronous payload is 6 MB, and a Function URL
+    /// base64-encodes a binary body, so the file that fits is about 4.5 MB. 4 MiB stays under that.
+    /// <c>file.Length</c> is the guard on Lambda. <c>[RequestSizeLimit]</c> applies only under Kestrel.
+    /// </summary>
+    public const long MaxUploadBytes = 4 * 1024 * 1024;
     public const int MaxPdfPages = 100;
     public const int MaxCharacters = 200_000;
 
@@ -13,7 +18,7 @@ public static class IngestLimits
         if (file.Length > MaxUploadBytes)
         {
             return Results.Json(
-                new { Error = $"The file is larger than {MaxUploadBytes} bytes." },
+                new { Error = $"The file is larger than {MaxUploadBytes / (1024 * 1024)} MiB ({MaxUploadBytes} bytes)." },
                 statusCode: StatusCodes.Status413PayloadTooLarge);
         }
 

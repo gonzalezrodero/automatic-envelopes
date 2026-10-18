@@ -14,6 +14,7 @@ public class IngestEndpoint
     [Authorize(Policy = "TenantAdmin")]
     [WolverinePost("/api/admin/ingest/{tenantId}")]
     [EnableRateLimiting("AdminPolicy")]
+    // Kestrel only. Amazon.Lambda.AspNetCoreServer does not set IHttpMaxRequestBodySizeFeature.
     [RequestSizeLimit(IngestLimits.MaxUploadBytes)]
     public async Task<IResult> Ingest(
         string tenantId,

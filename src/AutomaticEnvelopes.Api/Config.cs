@@ -63,7 +63,7 @@ public static class Config
             // Login, logout, GET /me, and /tenants stay off AdminPolicy so a portal session is not capped at 10/min.
             options.AddPolicy(AdminAuthPolicies.Auth, httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Path}",
+                    partitionKey: AuthRateLimitKey(httpContext),
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
                         PermitLimit = AdminAuthPolicies.PermitLimit,
@@ -84,7 +84,17 @@ public static class Config
             caller = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         }
 
-        return $"{caller}:{httpContext.Request.Path}";
+        return $"{caller}:{RateLimitPath(httpContext.Request.Path)}";
+    }
+
+    public static string AuthRateLimitKey(HttpContext httpContext)
+    {
+        return $"{httpContext.Connection.RemoteIpAddress}:{RateLimitPath(httpContext.Request.Path)}";
+    }
+
+    private static string RateLimitPath(PathString path)
+    {
+        return (path.Value ?? string.Empty).TrimEnd('/').ToLowerInvariant();
     }
 
     public static IServiceCollection AddAuthentication(this IServiceCollection services, IConfiguration configuration)

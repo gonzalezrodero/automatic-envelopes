@@ -1,4 +1,6 @@
-﻿namespace AutomaticEnvelopes.Api.Features.Chat;
+﻿using System.Text;
+
+namespace AutomaticEnvelopes.Api.Features.Chat;
 
 /// <summary>
 /// Centralized store for all AI prompts, system messages, and command constants.
@@ -37,9 +39,11 @@ public static class BotPrompts
 
     public static string DelimitUntrustedContext(string? context)
     {
-        var body = context ?? string.Empty;
-        body = body.Replace(UntrustedContextOpen, string.Empty, StringComparison.OrdinalIgnoreCase);
-        body = body.Replace(UntrustedContextClose, string.Empty, StringComparison.OrdinalIgnoreCase);
+        // NFKC folds fullwidth brackets to ASCII. Escaping them leaves exactly one wrapper pair.
+        // Stripping the tag would let a nested close tag reassemble on a single pass.
+        var body = (context ?? string.Empty).Normalize(NormalizationForm.FormKC);
+        body = body.Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal);
         return $"{UntrustedContextOpen}\n{body}\n{UntrustedContextClose}";
     }
 

@@ -9,6 +9,8 @@ using AwesomeAssertions;
 using Marten;
 using Microsoft.AspNetCore.Http;
 using Moq;
+using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Writer;
 
 namespace AutomaticEnvelopes.Tests.Features.Portal;
 
@@ -177,6 +179,47 @@ public class PortalScreenTests
         var broken = Extractor(".txt", "hola");
         broken.Setup(item => item.ExtractTextAsync(It.IsAny<Stream>())).ThrowsAsync(new InvalidOperationException("boom"));
         Status(await Upload(File("notes.txt", 12), [broken.Object], Ingestion())).Should().Be(500);
+    }
+
+    [Fact]
+    public async Task Upload_RejectsBytePageAndCharacterCaps()
+    {
+        var service = new Mock<IKnowledgeIngestionService>();
+
+        var tooBig = await Upload(File("notes.pdf", IngestLimits.MaxUploadBytes + 1), [new PdfDocumentExtractor()], service.Object);
+        Status(tooBig).Should().Be(413);
+        tooBig.Should().BeAssignableTo<IValueHttpResult>()
+            .Which.Value.Should().BeEquivalentTo(new
+            {
+                Error = $"The file is larger than 4 MiB ({IngestLimits.MaxUploadBytes} bytes)."
+            });
+
+        var builder = new PdfDocumentBuilder();
+        for (var page = 0; page < IngestLimits.MaxPdfPages + 1; page++)
+        {
+            builder.AddPage(PageSize.A4);
+        }
+
+        var bytes = builder.Build();
+        ((long)bytes.Length).Should().BeLessThanOrEqualTo(IngestLimits.MaxUploadBytes);
+        var longPdf = new Mock<IFormFile>();
+        longPdf.Setup(item => item.FileName).Returns("long.pdf");
+        longPdf.Setup(item => item.Length).Returns(bytes.Length);
+        longPdf.Setup(item => item.OpenReadStream()).Returns(() => new MemoryStream(bytes));
+        Status(await Upload(longPdf.Object, [new PdfDocumentExtractor()], service.Object)).Should().Be(400);
+
+        var longText = Extractor(".txt", new string('a', IngestLimits.MaxCharacters + 1));
+        Status(await Upload(File("notes.txt", 100), [longText.Object], service.Object)).Should().Be(400);
+
+        service.Verify(
+            item => item.IngestDocumentAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     private static async Task<int> Call(
