@@ -7,6 +7,8 @@ using Marten;
 using Microsoft.AspNetCore.Http;
 using Moq;
 using Moq.AutoMock;
+using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Writer;
 
 namespace AutomaticEnvelopes.Tests.Features.Knowledge;
 
@@ -28,6 +30,85 @@ public class IngestEndpointTests
                        id == "TestTenant" || id == "ClubSama-123"
                        ? new TenantProfile { Id = id }
                        : null);
+    }
+
+    [Fact]
+    public async Task Ingest_FileOverByteCap_Returns413()
+    {
+        var fileMock = mocker.GetMock<IFormFile>();
+        fileMock.Setup(f => f.Length).Returns(IngestLimits.MaxUploadBytes + 1);
+        fileMock.Setup(f => f.FileName).Returns("big.pdf");
+
+        var result = await sut.Ingest(
+            "TestTenant",
+            fileMock.Object,
+            sessionMock.Object,
+            [],
+            mocker.GetMock<IKnowledgeIngestionService>().Object,
+            CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(413);
+    }
+
+    [Fact]
+    public async Task Ingest_TextOverCharacterCap_Returns400()
+    {
+        var fileMock = mocker.GetMock<IFormFile>();
+        fileMock.Setup(f => f.Length).Returns(100);
+        fileMock.Setup(f => f.FileName).Returns("notes.txt");
+        fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
+
+        var extractor = new Mock<IDocumentExtractor>();
+        extractor.Setup(e => e.SupportedExtensions).Returns([".txt"]);
+        extractor.Setup(e => e.ExtractTextAsync(It.IsAny<Stream>()))
+            .ReturnsAsync(new string('a', IngestLimits.MaxCharacters + 1));
+
+        var service = mocker.GetMock<IKnowledgeIngestionService>();
+        var result = await sut.Ingest(
+            "TestTenant",
+            fileMock.Object,
+            sessionMock.Object,
+            [extractor.Object],
+            service.Object,
+            CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(400);
+        service.Verify(
+            s => s.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Ingest_PdfOverPageCap_Returns400()
+    {
+        var builder = new PdfDocumentBuilder();
+        for (var page = 0; page < IngestLimits.MaxPdfPages + 1; page++)
+        {
+            builder.AddPage(PageSize.A4);
+        }
+
+        var bytes = builder.Build();
+        var fileMock = new Mock<IFormFile>();
+        fileMock.Setup(f => f.Length).Returns(bytes.Length);
+        fileMock.Setup(f => f.FileName).Returns("long.pdf");
+        fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream(bytes));
+
+        var service = mocker.GetMock<IKnowledgeIngestionService>();
+        var result = await sut.Ingest(
+            "TestTenant",
+            fileMock.Object,
+            sessionMock.Object,
+            [new PdfDocumentExtractor()],
+            service.Object,
+            CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(400);
+        service.Verify(
+            s => s.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

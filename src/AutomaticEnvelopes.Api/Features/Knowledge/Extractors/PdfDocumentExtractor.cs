@@ -8,6 +8,12 @@ public class PdfDocumentExtractor : IDocumentExtractor
 {
     public string[] SupportedExtensions => [".pdf"];
 
+    public static int CountPages(Stream stream)
+    {
+        using var document = PdfDocument.Open(stream);
+        return document.NumberOfPages;
+    }
+
     public async Task<string> ExtractTextAsync(Stream stream)
     {
         var textBuilder = new StringBuilder();
