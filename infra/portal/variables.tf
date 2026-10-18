@@ -17,6 +17,7 @@ variable "cloudflare_api_token" {
   description = "Cloudflare API token with Pages write. Set TF_VAR_cloudflare_api_token from the GitHub secret CLOUDFLARE_API_TOKEN."
   type        = string
   sensitive   = true
+  ephemeral   = true
 }
 
 variable "pages_project_name" {
