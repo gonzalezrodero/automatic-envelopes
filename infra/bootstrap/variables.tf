@@ -20,3 +20,9 @@ variable "github_owner" {
 variable "github_repo" {
   default = "automatic-envelopes"
 }
+
+variable "create_plan_role" {
+  description = "Create the read-only GitHub plan role. Dev only."
+  type        = bool
+  default     = false
+}
