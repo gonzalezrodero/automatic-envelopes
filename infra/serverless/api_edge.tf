@@ -1,12 +1,3 @@
-provider "aws" {
-  region = var.aws_region
-}
-
-provider "aws" {
-  alias  = "use1"
-  region = "us-east-1"
-}
-
 # Development records live in the zone this account already owns.
 # Production uses its own zone (infra/api-dns) and does not call this module.
 data "aws_route53_zone" "api" {
