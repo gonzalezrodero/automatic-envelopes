@@ -61,8 +61,9 @@ resource "aws_iam_role" "github_actions_plan" {
         }
         Condition = {
           StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_owner}/${var.github_repo}:pull_request"
+            "token.actions.githubusercontent.com:aud"           = "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:repository_id" = "1189964517"
+            "token.actions.githubusercontent.com:sub"           = "repo:${var.github_owner}/${var.github_repo}:pull_request"
           }
         }
       }
@@ -77,8 +78,9 @@ resource "aws_iam_role_policy_attachment" "github_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# ReadOnlyAccess already covers state reads. Deny payload reads. GetObject on
-# state objects stays allowed: s3:GetObject is authorized on object ARNs.
+# ReadOnlyAccess already covers the current state object. GetObject on that
+# object stays allowed. GetObjectVersion is denied everywhere: old state
+# versions from April-May 2026 contain the RDS password.
 resource "aws_iam_role_policy" "github_plan_deny_data" {
   count = var.create_plan_role ? 1 : 0
 
@@ -99,13 +101,17 @@ resource "aws_iam_role_policy" "github_plan_deny_data" {
           "logs:GetLogEvents",
           "logs:FilterLogEvents",
           "logs:StartQuery",
+          "logs:GetQueryResults",
+          "logs:GetLogRecord",
           "logs:StartLiveTail",
+          "cloudtrail:LookupEvents",
           "cognito-idp:ListUsers*",
-          "cognito-idp:AdminGetUser",
+          "cognito-idp:Admin*",
           "ecr:BatchGetImage",
           "ecr:GetDownloadUrlForLayer",
           "rds:DownloadDBLogFilePortion",
           "rds:DownloadCompleteDBLogFile",
+          "s3:GetObjectVersion",
         ]
         Resource = "*"
       },
@@ -114,7 +120,6 @@ resource "aws_iam_role_policy" "github_plan_deny_data" {
         Effect = "Deny"
         Action = [
           "s3:GetObject",
-          "s3:GetObjectVersion",
         ]
         NotResource = [
           aws_s3_bucket.tf_state.arn,
