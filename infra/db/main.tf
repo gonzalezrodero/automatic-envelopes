@@ -11,7 +11,7 @@ resource "aws_security_group" "db_sg" {
   vpc_id      = data.terraform_remote_state.network.outputs.vpc_id
 
   # Lambdas are outside the VPC and use this public endpoint.
-  # Keep this description: AWS revokes and recreates the rule if it changes.
+  # Terraform revokes and re-adds the rule if this changes.
   ingress {
     description = "PostgreSQL Public Access for Lambdas"
     from_port   = 5432

@@ -26,8 +26,9 @@ resource "aws_iam_role" "github_actions" {
         }
         Condition = {
           StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:ref" = "refs/heads/main"
+            "token.actions.githubusercontent.com:aud"           = "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:ref"           = "refs/heads/main"
+            "token.actions.githubusercontent.com:repository_id" = "1189964517"
             "token.actions.githubusercontent.com:sub" = [
               "repo:${var.github_owner}/${var.github_repo}:environment:development",
               "repo:${var.github_owner}/${var.github_repo}:environment:production",
