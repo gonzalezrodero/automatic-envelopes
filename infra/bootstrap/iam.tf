@@ -40,6 +40,83 @@ resource "aws_iam_role_policy_attachment" "admin_attach" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
+resource "aws_iam_role" "github_actions_plan" {
+  count = var.create_plan_role ? 1 : 0
+
+  name = "${var.project_name}-github-plan-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_owner}/${var.github_repo}:pull_request"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "github_plan_readonly" {
+  count = var.create_plan_role ? 1 : 0
+
+  role       = aws_iam_role.github_actions_plan[0].name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+# ReadOnlyAccess already covers state reads. Deny payload reads. GetObject on
+# state objects stays allowed: s3:GetObject is authorized on object ARNs.
+resource "aws_iam_role_policy" "github_plan_deny_data" {
+  count = var.create_plan_role ? 1 : 0
+
+  name = "${var.project_name}-github-plan-deny-data"
+  role = aws_iam_role.github_actions_plan[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DenyDataReads"
+        Effect = "Deny"
+        Action = [
+          "ssm:GetParameter*",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:BatchGetSecretValue",
+          "sqs:ReceiveMessage",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents",
+          "logs:StartQuery",
+          "logs:StartLiveTail",
+          "cognito-idp:ListUsers*",
+          "cognito-idp:AdminGetUser",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+          "rds:DownloadDBLogFilePortion",
+          "rds:DownloadCompleteDBLogFile",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "DenyGetObjectOutsideState"
+        Effect = "Deny"
+        Action = "s3:GetObject"
+        NotResource = [
+          aws_s3_bucket.tf_state.arn,
+          "${aws_s3_bucket.tf_state.arn}/*",
+        ]
+      },
+    ]
+  })
+}
+
 # ==========================================
 # 3. BEDROCK "STANDARD MODELS" POLICY
 # ==========================================
