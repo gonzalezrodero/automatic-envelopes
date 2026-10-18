@@ -1,30 +1,3 @@
-provider "aws" {
-  region = var.aws_region
-}
-
-provider "cloudflare" {
-  api_token = var.cloudflare_api_token
-}
-
-locals {
-  function_url = trimsuffix(data.terraform_remote_state.serverless.outputs.lambda_url_raw, "/")
-  api_base     = var.vite_api_base != "" ? var.vite_api_base : local.function_url
-  # Plain values copied into the static bundle at build time. They are not server secrets.
-  build_env = {
-    VITE_API_BASE          = local.api_base
-    VITE_COGNITO_DOMAIN    = var.cognito_domain
-    VITE_COGNITO_CLIENT_ID = data.terraform_remote_state.serverless.outputs.cognito_client_id
-    VITE_BASE              = "/"
-    NODE_VERSION           = "22"
-  }
-  pages_env_vars = {
-    for key, value in local.build_env : key => {
-      type  = "plain_text"
-      value = value
-    }
-  }
-}
-
 # The Cloudflare account must already have the GitHub integration installed.
 # Preview deployments stay off so a branch build cannot publish the admin.
 resource "cloudflare_pages_project" "admin" {
@@ -66,20 +39,4 @@ resource "cloudflare_pages_domain" "admin" {
   account_id   = var.cloudflare_account_id
   project_name = cloudflare_pages_project.admin.name
   name         = var.portal_hostname
-}
-
-data "aws_route53_zone" "portal" {
-  count = var.dns_zone_name == "" ? 0 : 1
-
-  name = var.dns_zone_name
-}
-
-resource "aws_route53_record" "portal" {
-  for_each = var.dns_cname_records
-
-  zone_id = data.aws_route53_zone.portal[0].zone_id
-  name    = each.key
-  type    = "CNAME"
-  ttl     = 300
-  records = [each.value]
 }

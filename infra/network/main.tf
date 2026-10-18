@@ -1,7 +1,3 @@
-provider "aws" {
-  region = var.aws_region
-}
-
 # Fetch available Availability Zones in the region
 data "aws_availability_zones" "available" {
   state = "available"
