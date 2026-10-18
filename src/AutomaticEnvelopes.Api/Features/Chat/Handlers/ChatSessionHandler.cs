@@ -156,10 +156,10 @@ public static class ChatSessionHandler
 
         var personaPrompt = !string.IsNullOrWhiteSpace(tenant.SystemPrompt)
             ? tenant.SystemPrompt
-            : "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the information provided inside the <context> tags.";
+            : "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the retrieved document data inside <untrusted_document_context>.";
 
         var currentDate = DateTimeOffset.UtcNow.ToString("dd MMMM yyyy");
-        return string.Format(BotPrompts.SystemPromptTemplate, personaPrompt, privacyWarningRule, currentDate, context);
+        return BotPrompts.Compose(personaPrompt, privacyWarningRule, currentDate, context);
     }
 
     private static async Task SaveAndPublishReplyAsync(AnalyzeChatSession command, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)

@@ -7,6 +7,7 @@ using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Wolverine.Http;
 
@@ -275,6 +276,7 @@ public static class PortalEndpoints
     [Authorize(Policy = "TenantAdmin")]
     [WolverinePost("/tenants/{tenantId}/documents")]
     [EnableRateLimiting("AdminPolicy")]
+    [RequestSizeLimit(IngestLimits.MaxUploadBytes)]
     public static async Task<IResult> Upload(
         string tenantId,
         IFormFile file,
@@ -300,6 +302,11 @@ public static class PortalEndpoints
             return Results.BadRequest(new { Error = "No file uploaded." });
         }
 
+        if (IngestLimits.RejectFile(file) is { } tooLarge)
+        {
+            return tooLarge;
+        }
+
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var extractor = extractors.FirstOrDefault(item => item.SupportedExtensions.Contains(extension));
         if (extractor == null)
@@ -310,10 +317,20 @@ public static class PortalEndpoints
         try
         {
             await using var stream = file.OpenReadStream();
+            if (IngestLimits.RejectPdf(stream, extractor) is { } tooManyPages)
+            {
+                return tooManyPages;
+            }
+
             var extractedText = await extractor.ExtractTextAsync(stream);
             if (string.IsNullOrWhiteSpace(extractedText))
             {
                 return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
+            }
+
+            if (IngestLimits.RejectText(extractedText) is { } tooLong)
+            {
+                return tooLong;
             }
 
             var fileName = Path.GetFileName(file.FileName);

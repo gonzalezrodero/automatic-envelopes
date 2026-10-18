@@ -20,6 +20,7 @@ using JasperFx.Events.Projections;
 using JasperFx.MultiTenancy;
 using Marten;
 using Npgsql;
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Wolverine;
 using Wolverine.AmazonSqs;
@@ -51,11 +52,12 @@ public static class Config
 
             options.AddPolicy("AdminPolicy", httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: httpContext.Request.Path.ToString(),
-                    factory: partition => new FixedWindowRateLimiterOptions
+                    partitionKey: AdminRateLimitKey(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
                     {
                         PermitLimit = 10,
-                        Window = TimeSpan.FromMinutes(1)
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
                     }));
 
             // Login, logout, GET /me, and /tenants stay off AdminPolicy so a portal session is not capped at 10/min.
@@ -71,6 +73,18 @@ public static class Config
         });
 
         return services;
+    }
+
+    public static string AdminRateLimitKey(HttpContext httpContext)
+    {
+        var caller = httpContext.User.FindFirst("sub")?.Value
+            ?? httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(caller))
+        {
+            caller = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        }
+
+        return $"{caller}:{httpContext.Request.Path}";
     }
 
     public static IServiceCollection AddAuthentication(this IServiceCollection services, IConfiguration configuration)
