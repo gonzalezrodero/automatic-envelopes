@@ -23,6 +23,8 @@ resource "aws_lambda_function" "worker" {
   image_config {
     command = ["AutomaticEnvelopes.Api::AutomaticEnvelopes.Api.SqsLambdaHandler::FunctionHandler"]
   }
+
+  depends_on = [aws_cloudwatch_log_group.worker]
 }
 
 resource "aws_lambda_event_source_mapping" "sqs_trigger" {

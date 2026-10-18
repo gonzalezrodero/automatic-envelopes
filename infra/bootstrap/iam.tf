@@ -13,6 +13,8 @@ resource "aws_iam_openid_connect_provider" "github" {
 resource "aws_iam_role" "github_actions" {
   name = "${var.project_name}-github-deploy-role"
 
+  # Apply jobs set environment development or production, so `sub` is the
+  # environment form. `ref` still has to be main. PRs use the plan role.
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -23,11 +25,13 @@ resource "aws_iam_role" "github_actions" {
           Federated = aws_iam_openid_connect_provider.github.arn
         }
         Condition = {
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" : "repo:${var.github_owner}/${var.github_repo}:*"
-          },
           StringEquals = {
-            "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:ref" = "refs/heads/main"
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_owner}/${var.github_repo}:environment:development",
+              "repo:${var.github_owner}/${var.github_repo}:environment:production",
+            ]
           }
         }
       }

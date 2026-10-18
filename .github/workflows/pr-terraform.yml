@@ -24,6 +24,9 @@ env:
   AWS_REGION: eu-west-1
   TF_VERSION: "1.11.4"
   ECR_REPOSITORY: automatic-envelopes-api
+  # Pull requests plan only dev. There is no prod plan job.
+  # The role is created by dev bootstrap; plans fail until that apply exists.
+  PLAN_ROLE_ARN: arn:aws:iam::543704476214:role/automatic-envelopes-github-plan-role
 
 jobs:
   changes:
@@ -103,7 +106,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
@@ -131,7 +134,7 @@ jobs:
             export TF_VAR_cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
             export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
           fi
-          terraform plan "${PLAN_ARGS[@]}" -detailed-exitcode 2>&1 | tee plan-output.txt
+          terraform plan "${PLAN_ARGS[@]}" -lock=false -detailed-exitcode 2>&1 | tee plan-output.txt
           EXIT=${PIPESTATUS[0]}
           echo "exitcode=$EXIT" >> "$GITHUB_OUTPUT"
           exit 0
