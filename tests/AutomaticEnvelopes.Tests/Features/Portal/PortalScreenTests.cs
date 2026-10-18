@@ -222,6 +222,34 @@ public class PortalScreenTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task Upload_AcceptsAFileAtTheByteCap()
+    {
+        var service = new Mock<IKnowledgeIngestionService>();
+        service.Setup(item => item.IngestDocumentAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                IngestLimits.MaxUploadBytes,
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new KnowledgeFile
+            {
+                Id = Guid.NewGuid(),
+                Filename = "notes.txt",
+                Mime = "text/plain",
+                Bytes = IngestLimits.MaxUploadBytes,
+                UploadedAt = DateTimeOffset.UnixEpoch
+            });
+
+        var result = await Upload(
+            File("notes.txt", IngestLimits.MaxUploadBytes),
+            [Extractor(".txt", "hola").Object],
+            service.Object);
+
+        Status(result).Should().Be(201);
+    }
+
     private static async Task<int> Call(
         string route,
         string tenantId,
