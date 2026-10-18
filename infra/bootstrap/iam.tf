@@ -107,7 +107,10 @@ resource "aws_iam_role_policy" "github_plan_deny_data" {
       {
         Sid    = "DenyGetObjectOutsideState"
         Effect = "Deny"
-        Action = "s3:GetObject"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+        ]
         NotResource = [
           aws_s3_bucket.tf_state.arn,
           "${aws_s3_bucket.tf_state.arn}/*",
