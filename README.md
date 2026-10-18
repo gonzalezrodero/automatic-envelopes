@@ -56,7 +56,7 @@ Access tokens are checked against `client_id` (they have no `aud` claim). ID tok
 
 `POST /auth/logout` only clears the API cookies. It does not call Cognito `/oauth2/revoke`, and the refresh token is not stored. The Cognito Hosted UI session stays alive until the browser navigates to `cognitoLogoutUrl`. That URL is `https://{COGNITO_DOMAIN}/logout?client_id={COGNITO_CLIENT_ID}&logout_uri={sign-out url}` for the logout URL whose origin matches the request `Origin`. The portal must redirect there after logout. A cross-site form post is rejected (403, cookies kept) unless `Origin` is an exact portal origin.
 
-`AdminPolicy` (10 requests/minute) still applies only to tenant registration and document ingest. `/auth/*`, `/me`, and `/tenants` use `AuthPolicy` (60 requests/minute per caller and path). That limit is not a substitute for Cognito's own throttling. The Cognito app client does not reject `/oauth2/authorize` requests that omit PKCE. The portal must send `code_challenge_method=S256` on authorize. `POST /auth/token` always requires `codeVerifier`. This slice does not change the user pool client.
+`AdminPolicy` (10 requests/minute) still applies only to tenant registration and document ingest. Each caller and route has its own window: the JWT `sub` (or the inbound name identifier), or the client IP when there is no subject. `/auth/*`, `/me`, and `/tenants` use `AuthPolicy` (60 requests/minute per caller and path). That limit is not a substitute for Cognito's own throttling. The Cognito app client does not reject `/oauth2/authorize` requests that omit PKCE. The portal must send `code_challenge_method=S256` on authorize. `POST /auth/token` always requires `codeVerifier`. This slice does not change the user pool client.
 
 ### Environment variables
 
@@ -89,7 +89,7 @@ Group `admin` may read and update every tenant. Any other group is a tenant id. 
 | `GET` | `/tenants/{tenantId}/conversations` | same | Threads for that tenant. Query: `q`, `language`, `from`, `to` (`yyyy-MM-dd`), `includeAnonymized` (`true` when omitted). |
 | `GET` | `/tenants/{tenantId}/conversations/{conversationId}` | same | One thread. Phone numbers are not used as the path id; the id is `[a-z0-9-]`. `language` is `null` because the bot does not classify it. `topic` is the opening user message. |
 | `GET` | `/tenants/{tenantId}/documents` | same | Files indexed for that tenant. |
-| `POST` | `/tenants/{tenantId}/documents` | same, `AdminPolicy` | Multipart field `file` (`.pdf`, `.md`, `.txt`). Indexes that file and returns the document. A second upload of the same filename replaces its chunks. |
+| `POST` | `/tenants/{tenantId}/documents` | same, `AdminPolicy` | Multipart field `file` (`.pdf`, `.md`, `.txt`), at most 10 MiB, 100 PDF pages, and 200000 characters. Larger files return 413. Too many pages or characters return 400. Indexes that file and returns the document. A second upload of the same filename replaces its chunks. |
 | `DELETE` | `/tenants/{tenantId}/documents/{documentId}` | same | Removes the file and its chunks. `204`. |
 
 `POST /api/admin/tenants/{tenantId}` is unchanged. `POST /api/admin/ingest/{tenantId}` still ingests a file and now keeps other files for that tenant instead of clearing the whole knowledge base. The portal uses `/tenants/{tenantId}/documents`.
