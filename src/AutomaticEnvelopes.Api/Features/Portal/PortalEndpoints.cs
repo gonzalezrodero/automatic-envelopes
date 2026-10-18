@@ -276,6 +276,7 @@ public static class PortalEndpoints
     [Authorize(Policy = "TenantAdmin")]
     [WolverinePost("/tenants/{tenantId}/documents")]
     [EnableRateLimiting("AdminPolicy")]
+    // Kestrel only. Amazon.Lambda.AspNetCoreServer does not set IHttpMaxRequestBodySizeFeature.
     [RequestSizeLimit(IngestLimits.MaxUploadBytes)]
     public static async Task<IResult> Upload(
         string tenantId,

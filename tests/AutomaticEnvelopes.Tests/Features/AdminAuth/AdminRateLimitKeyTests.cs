@@ -33,6 +33,32 @@ public class AdminRateLimitKeyTests
         Config.AdminRateLimitKey(context).Should().Be("203.0.113.8:/tenants/acme/documents");
     }
 
+    [Theory]
+    [InlineData("/api/admin/ingest/acme")]
+    [InlineData("/API/admin/ingest/acme")]
+    [InlineData("/api/admin/ingest/acme/")]
+    [InlineData("/API/Admin/Ingest/acme/")]
+    public void Case_and_trailing_slash_share_the_admin_window(string path)
+    {
+        var context = Context(new Claim("sub", "user-1"));
+        context.Request.Path = path;
+
+        Config.AdminRateLimitKey(context).Should().Be("user-1:/api/admin/ingest/acme");
+    }
+
+    [Theory]
+    [InlineData("/tenants/acme/documents")]
+    [InlineData("/Tenants/acme/documents")]
+    [InlineData("/tenants/acme/documents/")]
+    public void Case_and_trailing_slash_share_the_auth_window(string path)
+    {
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.8");
+        context.Request.Path = path;
+
+        Config.AuthRateLimitKey(context).Should().Be("203.0.113.8:/tenants/acme/documents");
+    }
+
     private static DefaultHttpContext Context(params Claim[] claims)
     {
         var context = new DefaultHttpContext();
