@@ -24,7 +24,7 @@ public class VectorSchemaPrivilegeTests(IntegrationAppFixture fixture)
     private const string EmptyDatabase = "vector_schema_priv";
 
     [Fact]
-    public void Ensure_WhenLoginOwnsTheFunction_ReplacesItWithoutSuperuser()
+    public void Ensure_WhenFunctionAlreadyExists_DoesNotRequireOwnership()
     {
         fixture.Host.Should().NotBeNull();
         var admin = AdminConnectionString();
@@ -33,23 +33,14 @@ public class VectorSchemaPrivilegeTests(IntegrationAppFixture fixture)
         {
             connection.Open();
             EnsureLogin(connection);
-            GrantSchema(connection, admin);
-            SetExtractEmbeddingOwner(connection, Login);
+            var database = new NpgsqlConnectionStringBuilder(admin).Database;
+            Execute(connection, $"GRANT CONNECT ON DATABASE {database} TO {Login};");
         }
 
-        try
-        {
-            using var app = new NpgsqlConnection(AppConnectionString(admin, new NpgsqlConnectionStringBuilder(admin).Database!));
-            app.Open();
-            var act = () => VectorSchema.Ensure(app);
-            act.Should().NotThrow();
-        }
-        finally
-        {
-            using var connection = new NpgsqlConnection(admin);
-            connection.Open();
-            SetExtractEmbeddingOwner(connection, "CURRENT_USER");
-        }
+        using var app = new NpgsqlConnection(AppConnectionString(admin, new NpgsqlConnectionStringBuilder(admin).Database!));
+        app.Open();
+        var act = () => VectorSchema.Ensure(app);
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -112,34 +103,6 @@ public class VectorSchemaPrivilegeTests(IntegrationAppFixture fixture)
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{Login}') THEN
                     CREATE ROLE {Login} LOGIN PASSWORD '{Password}' NOSUPERUSER NOCREATEDB NOCREATEROLE;
                 END IF;
-            END
-            $$;
-            """);
-    }
-
-    private static void GrantSchema(NpgsqlConnection connection, string admin)
-    {
-        var database = new NpgsqlConnectionStringBuilder(admin).Database;
-        Execute(connection, $"GRANT CONNECT, TEMPORARY ON DATABASE {database} TO {Login};");
-        Execute(connection, $"GRANT USAGE, CREATE ON SCHEMA public TO {Login};");
-    }
-
-    private static void SetExtractEmbeddingOwner(NpgsqlConnection connection, string owner)
-    {
-        var ownerSql = owner == "CURRENT_USER" ? "CURRENT_USER" : $"\"{owner}\"";
-        Execute(connection, $"""
-            DO $$
-            DECLARE
-                args text;
-            BEGIN
-                SELECT pg_get_function_identity_arguments(p.oid) INTO args
-                FROM pg_proc p
-                JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'public' AND p.proname = 'extract_embedding';
-                IF args IS NULL THEN
-                    RAISE EXCEPTION 'extract_embedding is missing';
-                END IF;
-                EXECUTE format('ALTER FUNCTION public.extract_embedding(%s) OWNER TO {ownerSql}', args);
             END
             $$;
             """);

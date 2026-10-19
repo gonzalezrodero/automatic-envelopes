@@ -51,3 +51,11 @@ variable "aws_account_id" {
   type    = string
   default = "543704476214"
 }
+
+variable "db_master_password" {
+  description = "RDS master password. Ephemeral, so Terraform omits it from the plan and state. PR plans leave it unset."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+  default     = null
+}

@@ -1,6 +1,11 @@
-resource "random_password" "marten_app" {
+ephemeral "random_password" "marten_app" {
   length  = 32
   special = false
+}
+
+locals {
+  # Bump to rotate. Both resources use it, so the role and the secret move together.
+  marten_app_password_version = 1
 }
 
 resource "aws_secretsmanager_secret" "marten_app" {
@@ -9,16 +14,18 @@ resource "aws_secretsmanager_secret" "marten_app" {
 
 resource "aws_secretsmanager_secret_version" "marten_app" {
   secret_id = aws_secretsmanager_secret.marten_app.id
-  secret_string = jsonencode({
+  secret_string_wo = jsonencode({
     username = postgresql_role.marten_app.name
-    password = random_password.marten_app.result
+    password = ephemeral.random_password.marten_app.result
   })
+  secret_string_wo_version = local.marten_app_password_version
 }
 
 resource "postgresql_role" "marten_app" {
   name                = "marten_app"
   login               = true
-  password            = random_password.marten_app.result
+  password_wo         = ephemeral.random_password.marten_app.result
+  password_wo_version = tostring(local.marten_app_password_version)
   superuser           = false
   create_database     = false
   create_role         = false

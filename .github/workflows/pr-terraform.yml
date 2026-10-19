@@ -130,8 +130,9 @@ jobs:
           if [ "${{ matrix.stack }}" = "serverless" ]; then
             PLAN_ARGS+=(-var=image_tag=pr-${{ github.event.pull_request.number }})
           fi
-          # Plan role cannot read the master secret, so it must not connect as dbadmin.
+          # No master secret here. Skip refresh so the provider does not connect.
           if [ "${{ matrix.stack }}" = "db" ]; then
+            curl -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
             PLAN_ARGS+=(-refresh=false)
           fi
           if [ "${{ matrix.stack }}" = "portal" ]; then

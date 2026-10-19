@@ -43,7 +43,6 @@ resource "aws_db_instance" "postgres" {
   manage_master_user_password = true
 
   enabled_cloudwatch_logs_exports = ["postgresql"]
-  apply_immediately               = true
 
   depends_on = [aws_cloudwatch_log_group.postgresql]
 
