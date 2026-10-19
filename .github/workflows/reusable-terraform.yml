@@ -50,6 +50,11 @@ jobs:
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: |
+          if [ "${{ inputs.working_dir }}" = "infra/db" ]; then
+            name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "config/${TF_FOLDER}/config.tfvars")
+            arn=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
+            export PGPASSWORD="$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text | jq -r .password)"
+          fi
           terraform plan \
             -var-file=config/$TF_FOLDER/config.tfvars \
             -out=tfplan \

@@ -130,6 +130,10 @@ jobs:
           if [ "${{ matrix.stack }}" = "serverless" ]; then
             PLAN_ARGS+=(-var=image_tag=pr-${{ github.event.pull_request.number }})
           fi
+          # Plan role cannot read the master secret, so it must not connect as dbadmin.
+          if [ "${{ matrix.stack }}" = "db" ]; then
+            PLAN_ARGS+=(-refresh=false)
+          fi
           if [ "${{ matrix.stack }}" = "portal" ]; then
             export TF_VAR_cloudflare_api_token="$CLOUDFLARE_API_TOKEN"
             export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"

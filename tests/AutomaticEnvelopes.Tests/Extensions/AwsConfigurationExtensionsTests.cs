@@ -30,7 +30,7 @@ public class AwsConfigurationExtensionsTests : IDisposable
         Environment.SetEnvironmentVariable("SECRET_ARN_MARTEN", testArn);
         Environment.SetEnvironmentVariable("DB_HOST", "localhost:5432");
 
-        var secretJson = "{\"username\":\"dbadmin\", \"password\":\"secret123\"}";
+        var secretJson = "{\"username\":\"marten_app\", \"password\":\"secret123\"}";
 
         secretsMock
             .Setup(x => x.GetSecretValueAsync(It.Is<GetSecretValueRequest>(req => req.SecretId == testArn), default))
@@ -44,7 +44,7 @@ public class AwsConfigurationExtensionsTests : IDisposable
         injectedValue.Should().NotBeNull();
         injectedValue.Should().Contain("Host=localhost");
         injectedValue.Should().Contain("Port=5432");
-        injectedValue.Should().Contain("Username=dbadmin");
+        injectedValue.Should().Contain("Username=marten_app");
         injectedValue.Should().Contain("Database=automaticenvelopes");
         injectedValue.Should().Contain("SSL Mode=Require");
 
