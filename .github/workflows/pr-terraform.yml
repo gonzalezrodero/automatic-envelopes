@@ -132,7 +132,7 @@ jobs:
           fi
           # No master secret here. Skip refresh so the provider does not connect.
           if [ "${{ matrix.stack }}" = "db" ]; then
-            curl -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+            curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
             PLAN_ARGS+=(-refresh=false)
           fi
           if [ "${{ matrix.stack }}" = "portal" ]; then

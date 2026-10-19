@@ -53,7 +53,7 @@ jobs:
         working-directory: ${{ inputs.working_dir }}
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
           name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "config/${TF_FOLDER}/config.tfvars")
           arn=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
           raw=$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text)
@@ -132,7 +132,7 @@ jobs:
         working-directory: ${{ inputs.working_dir }}
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
           name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "config/${TF_FOLDER}/config.tfvars")
           arn=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
           raw=$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text)
