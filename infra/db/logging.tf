@@ -1,6 +1,6 @@
 resource "aws_cloudwatch_log_group" "postgresql" {
   name              = "/aws/rds/instance/${var.project_name}-db/postgresql"
-  retention_in_days = 7
+  retention_in_days = 14
 }
 
 resource "aws_cloudwatch_log_metric_filter" "password_auth_failed" {
