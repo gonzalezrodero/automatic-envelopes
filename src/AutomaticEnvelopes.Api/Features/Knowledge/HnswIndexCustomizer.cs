@@ -16,7 +16,7 @@ public class HnswIndexCustomizer : IFeatureSchema
 
     public void WritePermissions(Migrator rules, TextWriter writer) { }
 
-    public void WriteTemplate(Migrator _, TextWriter writer)
+    public static void WriteTemplate(Migrator _, TextWriter writer)
     {
         // We use the public schema explicitly to avoid any search_path issues in Marten
         writer.WriteLine(@"
