@@ -82,7 +82,7 @@ public static class AwsConfigurationExtensions
             {
                 // Map AWS path to .NET IOptions structure 
                 // e.g., "/automatic-envelopes/whatsapp/app-secret" -> "WhatsApp:AppSecret"
-                var keyName = param.Name.Split('/').Last();
+                var keyName = param.Name.Split('/')[^1];
                 var pascalCaseKey = string.Join("", keyName.Split('-').Select(p => char.ToUpper(p[0]) + p[1..]));
 
                 secureConfig[$"WhatsApp:{pascalCaseKey}"] = param.Value;

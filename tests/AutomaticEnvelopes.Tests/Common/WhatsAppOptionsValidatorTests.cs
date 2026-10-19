@@ -62,12 +62,19 @@ public class WhatsAppOptionsValidatorTests
         whatsApp.TryGetProperty("AccessToken", out _).Should().BeFalse();
         whatsApp.TryGetProperty("PhoneNumberId", out _).Should().BeFalse();
         whatsApp.GetProperty("BaseUrl").GetString().Should().NotBeNullOrWhiteSpace();
+        document.RootElement.TryGetProperty("ConnectionStrings", out _).Should().BeFalse();
 
         var developmentPath = Path.Combine(Path.GetDirectoryName(AdminAuthAppSettings.Path())!, "appsettings.Development.json");
         var development = File.ReadAllText(developmentPath);
         development.Should().Contain("dummy_verify_token");
         development.Should().Contain("dummy_secret");
         development.Should().Contain("dummy_token");
+
+        using var developmentDocument = JsonDocument.Parse(development);
+        var marten = developmentDocument.RootElement.GetProperty("ConnectionStrings").GetProperty("Marten").GetString();
+        marten.Should().Contain("Host=localhost");
+        marten.Should().Contain("Port=5433");
+        marten.Should().Contain("Database=automaticenvelopes");
     }
 
     [Fact]
