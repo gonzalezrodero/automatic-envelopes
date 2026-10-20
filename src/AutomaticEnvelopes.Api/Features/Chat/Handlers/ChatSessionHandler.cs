@@ -57,7 +57,9 @@ public static class ChatSessionHandler
 
         logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", command.TenantId);
         var context = await GetRelevantContextAsync(knowledgeBase, command.TenantId, command.CombinedText, ct);
-        var systemMessage = BuildSystemPrompt(tenant, context, IsFirstContact(chatHistory));
+
+        var firstContact = !chatHistory.Any(message => message.Role == ChatRole.Assistant);
+        var systemMessage = BuildSystemPrompt(tenant, firstContact, context);
 
         logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
 
@@ -143,23 +145,21 @@ public static class ChatSessionHandler
         return contextBuilder.ToString();
     }
 
-    private static bool IsFirstContact(IReadOnlyList<ChatMessage> history) =>
-        !history.Any(message => message.Role == ChatRole.Assistant);
-
-    private static string BuildSystemPrompt(TenantProfile tenant, string context, bool firstContact)
+    private static string BuildSystemPrompt(TenantProfile tenant, bool firstContact, string context)
     {
+        var notice = string.Empty;
+        if (firstContact)
+        {
+            var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
+            notice = BotPrompts.FirstContactInstruction(name, tenant.PrivacyPolicyUrl);
+        }
+
         var personaPrompt = !string.IsNullOrWhiteSpace(tenant.SystemPrompt)
             ? tenant.SystemPrompt
             : "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the retrieved document data inside <untrusted_document_context>.";
 
-        var prompt = BotPrompts.Compose(personaPrompt, DateTimeOffset.UtcNow.ToString("dd MMMM yyyy"), context);
-        if (!firstContact)
-        {
-            return prompt;
-        }
-
-        var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
-        return $"{prompt}\n{BotPrompts.FirstContactInstruction(name, tenant.PrivacyPolicyUrl)}";
+        var currentDate = DateTimeOffset.UtcNow.ToString("dd MMMM yyyy");
+        return BotPrompts.Compose(personaPrompt, notice, currentDate, context);
     }
 
     private static async Task SaveAndPublishReplyAsync(AnalyzeChatSession command, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)
