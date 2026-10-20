@@ -29,7 +29,7 @@ Coming from a QA background, I believe that **untested code is legacy code**.
 
 `dotnet run` uses the Development environment from `Properties/launchSettings.json`. The local Marten connection string (`Host=localhost;Port=5433;Database=automaticenvelopes`) is in `appsettings.Development.json`, which ASP.NET Core loads only for that environment. The base `appsettings.json` has no database password.
 
-Deployed Lambdas still take the database password from AWS Secrets Manager. `AddAwsSecureConfiguration` writes `ConnectionStrings:Marten` after the JSON files when `SECRET_ARN_MARTEN` and `DB_HOST` are both set, so that value is the one Marten uses. The dev Lambda's `ASPNETCORE_ENVIRONMENT` is `Development` and the prod Lambda's is `Production`. Tests set `ConnectionStrings__Marten` to the Testcontainers connection string, which overrides the JSON files.
+Deployed Lambdas still take the database password from AWS Secrets Manager. That secret is the `marten_app` login, not the RDS master user. Apply the Database workflow before the API workflow so the login exists. `AddAwsSecureConfiguration` writes `ConnectionStrings:Marten` after the JSON files when `SECRET_ARN_MARTEN` and `DB_HOST` are both set, so that value is the one Marten uses. The dev Lambda's `ASPNETCORE_ENVIRONMENT` is `Development` and the prod Lambda's is `Production`. Tests set `ConnectionStrings__Marten` to the Testcontainers connection string, which overrides the JSON files.
 
 ## 🏗️ Architecture: The Event Pipeline
 Automatic Envelopes operates on a reactor-like, tenant-aware event pipeline:

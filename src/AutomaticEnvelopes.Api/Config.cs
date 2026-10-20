@@ -245,25 +245,7 @@ public static class Config
     {
         using var conn = new NpgsqlConnection(connectionString);
         conn.Open();
-
-        using var cmd = conn.CreateCommand();
-
-        cmd.CommandText = @"
-            CREATE EXTENSION IF NOT EXISTS vector;
-
-            CREATE OR REPLACE FUNCTION public.extract_embedding(data jsonb) 
-            RETURNS vector IMMUTABLE PARALLEL SAFE AS $$
-            BEGIN
-                -- Ensure 'Embedding' matches your C# property name exactly
-                RETURN CAST(data ->> 'Embedding' AS vector(512));
-            EXCEPTION WHEN OTHERS THEN
-                -- Fallback to a zero vector to avoid crashing the index
-                RETURN array_fill(0, ARRAY[512])::vector;
-            END;
-            $$ LANGUAGE plpgsql;";
-
-        cmd.ExecuteNonQuery();
-
+        VectorSchema.Ensure(conn);
         return app;
     }
 }

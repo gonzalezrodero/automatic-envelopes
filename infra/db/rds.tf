@@ -42,6 +42,10 @@ resource "aws_db_instance" "postgres" {
 
   manage_master_user_password = true
 
+  enabled_cloudwatch_logs_exports = ["postgresql"]
+
+  depends_on = [aws_cloudwatch_log_group.postgresql]
+
   # Cost controls: omit retention/role when PI and Enhanced Monitoring are off.
   # AWS rejects monitoring_role_arn when monitoring_interval is 0, and rejects
   # performance_insights_retention_period when performance insights is disabled.

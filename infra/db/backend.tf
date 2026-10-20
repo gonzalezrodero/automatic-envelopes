@@ -1,5 +1,7 @@
 # backend.tf
 terraform {
+  required_version = ">= 1.11.0"
+
   backend "s3" {
     # All values are injected via -backend-config=config/dev/config.remote
   }
@@ -8,6 +10,14 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 6.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
+    }
+    postgresql = {
+      source  = "cyrilgdn/postgresql"
+      version = "~> 1.25"
     }
   }
 }

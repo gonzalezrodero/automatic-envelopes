@@ -46,6 +46,25 @@ jobs:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ inputs.working_dir }}
+      - name: Prepare database provider
+        if: inputs.working_dir == 'infra/db'
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        working-directory: ${{ inputs.working_dir }}
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "config/${TF_FOLDER}/config.tfvars")
+          arn=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
+          raw=$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text)
+          echo "::add-mask::$raw"
+          password=$(printf '%s' "$raw" | jq -r .password)
+          echo "::add-mask::$password"
+          {
+            echo "TF_VAR_db_master_password<<EOF"
+            echo "$password"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
       - name: Terraform Plan
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
@@ -106,6 +125,25 @@ jobs:
           TF_FOLDER: ${{ inputs.tf_folder }}
         run: terraform init -backend-config=config/$TF_FOLDER/config.remote
         working-directory: ${{ inputs.working_dir }}
+      - name: Prepare database provider
+        if: inputs.working_dir == 'infra/db'
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        working-directory: ${{ inputs.working_dir }}
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "config/${TF_FOLDER}/config.tfvars")
+          arn=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
+          raw=$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text)
+          echo "::add-mask::$raw"
+          password=$(printf '%s' "$raw" | jq -r .password)
+          echo "::add-mask::$password"
+          {
+            echo "TF_VAR_db_master_password<<EOF"
+            echo "$password"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
       - name: Terraform Apply
         run: terraform apply -auto-approve -no-color tfplan
         working-directory: ${{ inputs.working_dir }}

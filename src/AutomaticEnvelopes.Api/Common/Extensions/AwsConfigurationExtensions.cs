@@ -37,7 +37,8 @@ public static class AwsConfigurationExtensions
     {
         var secureConfig = new Dictionary<string, string?>();
 
-        // 1. Fetch raw RDS credentials from Secrets Manager
+        // 1. Fetch the Marten login from Secrets Manager. Deployed Lambdas use the
+        //    marten_app secret, not the RDS master user.
         var martenArn = Environment.GetEnvironmentVariable("SECRET_ARN_MARTEN");
         var dbEndpoint = Environment.GetEnvironmentVariable("DB_HOST");
 
