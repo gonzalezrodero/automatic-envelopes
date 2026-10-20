@@ -10,6 +10,7 @@ namespace AutomaticEnvelopes.Api.Features.Chat;
 public interface IChatService
 {
     Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, string tenantId, CancellationToken ct);
+    Task<string> TranslateNoticeAsync(string notice, string languageSample, CancellationToken ct);
     Task<string> SanitizeHistoryAsync(string rawHistory, CancellationToken ct);
 }
 
@@ -76,6 +77,33 @@ public class ChatService(
 
         // 5. Normal text response
         logger.LogInformation("Bedrock text response generated successfully without tool usage.");
+        return response.Output.Message.Content.First(c => c.Text != null).Text;
+    }
+
+    public async Task<string> TranslateNoticeAsync(string notice, string languageSample, CancellationToken ct)
+    {
+        logger.LogInformation("Invoking Bedrock to translate the first-contact notice.");
+
+        var request = new ConverseRequest
+        {
+            ModelId = settings.ModelId,
+            System = [new SystemContentBlock { Text = $"{BotPrompts.NoticeTranslationPrompt}\n\n{notice}" }],
+            Messages =
+            [
+                new Message
+                {
+                    Role = ConversationRole.User,
+                    Content = [new ContentBlock { Text = BotPrompts.DelimitLanguageSample(languageSample) }]
+                }
+            ],
+            InferenceConfig = new InferenceConfiguration
+            {
+                MaxTokens = 400,
+                Temperature = 0
+            }
+        };
+
+        var response = await client.ConverseAsync(request, ct);
         return response.Output.Message.Content.First(c => c.Text != null).Text;
     }
 

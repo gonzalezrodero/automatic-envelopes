@@ -54,17 +54,28 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         replyGenerated.BotPhoneNumberId.Should().Be(botPhone);
         replyGenerated.PhoneNumber.Should().Be(userPhone);
         replyGenerated.TenantId.Should().Be(tenantId);
+        replyGenerated.Text.Should().StartWith("¡Hola! 👋");
+        replyGenerated.Text.Should().Contain(PrivacyPolicyUrl);
+        replyGenerated.Text.Should().Contain("BORRAR DATOS");
+        replyGenerated.Text.Should().EndWith("\n\nThis is a mocked response.");
 
-        // Assert 2: Verify Bedrock call and Privacy Policy
-        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        // The answer call, then a separate translation call. The mock translation is not faithful, so the Spanish notice is used.
+        fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
 
-        var request = (ConverseRequest)fixture.BedrockClientMock.Invocations
-            .First(i => i.Method.Name == nameof(IAmazonBedrockRuntime.ConverseAsync))
-            .Arguments[0];
+        var requests = fixture.BedrockClientMock.Invocations
+            .Where(i => i.Method.Name == nameof(IAmazonBedrockRuntime.ConverseAsync))
+            .Select(i => (ConverseRequest)i.Arguments[0])
+            .ToList();
 
-        // Safely extract system prompt text guarding against nulls
-        var systemPrompt = request.System != null ? string.Join(" ", request.System.Select(s => s.Text)) : "";
-        systemPrompt.Should().Contain("POLITICA+DE+PRIVACIDAD.pdf", "A new user should receive the privacy policy injection.");
+        var answerPrompt = requests[0].System != null ? string.Join(" ", requests[0].System.Select(s => s.Text)) : "";
+        answerPrompt.Should().NotContain("POLITICA+DE+PRIVACIDAD.pdf");
+        answerPrompt.Should().NotContain("FIRST CONTACT");
+
+        var translationPrompt = requests[1].System != null ? string.Join(" ", requests[1].System.Select(s => s.Text)) : "";
+        translationPrompt.Should().Contain(PrivacyPolicyUrl);
+        var sample = requests[1].Messages != null ? string.Join(" ", requests[1].Messages.SelectMany(m => m.Content).Select(c => c.Text)) : "";
+        sample.Should().Contain("<language_sample>");
+        sample.Should().Contain("Quina és la contrasenya?");
     }
 
     [Fact]
