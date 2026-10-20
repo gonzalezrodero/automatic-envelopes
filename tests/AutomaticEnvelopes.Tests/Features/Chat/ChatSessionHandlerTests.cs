@@ -26,7 +26,7 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         var botPhone = "34111222333";
         var userPhone = "34888777666";
 
-        await fixture.SeedTenantAsync(tenantId, botPhone, privacyPolicyUrl: PrivacyPolicyUrl);
+        await fixture.SeedTenantAsync(tenantId, botPhone, privacyPolicyUrl: PrivacyPolicyUrl, name: "Club Samà");
 
         // FIX: Simular que el Webhook guardó el mensaje en BD antes de que el Handler de la IA se ejecute
         using var arrangeSession = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
@@ -47,24 +47,34 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
         var streamEvents = await session.Events.FetchStreamAsync(userPhone, token: TestContext.Current.CancellationToken);
 
-        var replyGenerated = streamEvents.FirstOrDefault(e => e.Data is ReplyGenerated)?.Data as ReplyGenerated;
+        var replies = streamEvents.Select(e => e.Data).OfType<ReplyGenerated>().ToList();
+        replies.Should().HaveCount(2, "The first contact sends the fixed notice, then the answer.");
 
-        replyGenerated.Should().NotBeNull("The handler should have appended a ReplyGenerated event to the stream.");
-        replyGenerated!.MessageId.Should().StartWith("wamid.grouped.");
-        replyGenerated.BotPhoneNumberId.Should().Be(botPhone);
-        replyGenerated.PhoneNumber.Should().Be(userPhone);
-        replyGenerated.TenantId.Should().Be(tenantId);
+        var notice = replies[0];
+        notice.Text.Should().Be(FirstContactMessage.Compose("Club Samà", PrivacyPolicyUrl));
+        notice.MessageId.Should().StartWith("wamid.grouped.");
+        notice.BotPhoneNumberId.Should().Be(botPhone);
+        notice.PhoneNumber.Should().Be(userPhone);
+        notice.TenantId.Should().Be(tenantId);
 
-        // Assert 2: Verify Bedrock call and Privacy Policy
+        var answer = replies[1];
+        answer.Text.Should().Be("This is a mocked response.");
+        answer.Text.Should().NotContain(BotPrompts.DeleteCommand);
+        answer.MessageId.Should().StartWith("wamid.grouped.");
+        answer.BotPhoneNumberId.Should().Be(botPhone);
+        answer.PhoneNumber.Should().Be(userPhone);
+        answer.TenantId.Should().Be(tenantId);
+
+        // Assert 2: The model answers once and is not asked to invent the notice.
         fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()), Times.Once);
 
         var request = (ConverseRequest)fixture.BedrockClientMock.Invocations
             .First(i => i.Method.Name == nameof(IAmazonBedrockRuntime.ConverseAsync))
             .Arguments[0];
 
-        // Safely extract system prompt text guarding against nulls
         var systemPrompt = request.System != null ? string.Join(" ", request.System.Select(s => s.Text)) : "";
-        systemPrompt.Should().Contain("POLITICA+DE+PRIVACIDAD.pdf", "A new user should receive the privacy policy injection.");
+        systemPrompt.Should().NotContain("POLITICA+DE+PRIVACIDAD.pdf");
+        systemPrompt.Should().NotContain("PRIVACY POLICY");
     }
 
     [Fact]

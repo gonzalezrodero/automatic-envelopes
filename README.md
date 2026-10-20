@@ -120,7 +120,7 @@ Portal JSON (camelCase). `createdAt` stays on the Marten document and is not ret
 }
 ```
 
-`Name`, `ShortName`, `City`, `Kind`, and `DisplayPhone` are portal labels stored on the Marten document. The bot never reads them. There is no catalog and no slug humanizing: a blank stored value is returned as `""`. The portal shows the id when `name` or `shortName` is blank.
+`Name`, `ShortName`, `City`, `Kind`, and `DisplayPhone` are portal labels stored on the Marten document. The first WhatsApp reply reads `Name`, or `ShortName` when the name is blank. City, kind, and display phone stay portal-only. There is no catalog and no slug humanizing: a blank stored value is returned as `""`. The portal shows the id when `name` or `shortName` is blank.
 
 | Stored field | JSON field | When the stored value is blank |
 | --- | --- | --- |

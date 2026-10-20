@@ -225,7 +225,8 @@ public class IntegrationAppFixture : IAsyncLifetime
         string tenantSlug,
         string botPhoneId,
         string systemPrompt = "You are a helpful test assistant.",
-        string privacyPolicyUrl = "https://example.com/privacy")
+        string privacyPolicyUrl = "https://example.com/privacy",
+        string name = "")
     {
         using var session = Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
 
@@ -234,7 +235,8 @@ public class IntegrationAppFixture : IAsyncLifetime
             Id = tenantSlug,
             BotPhoneNumberId = botPhoneId,
             SystemPrompt = systemPrompt,
-            PrivacyPolicyUrl = privacyPolicyUrl
+            PrivacyPolicyUrl = privacyPolicyUrl,
+            Name = name
         });
 
         await session.SaveChangesAsync();
