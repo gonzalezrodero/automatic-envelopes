@@ -59,7 +59,7 @@ public static class ChatSessionHandler
         var context = await GetRelevantContextAsync(knowledgeBase, command.TenantId, command.CombinedText, ct);
 
         var firstContact = !chatHistory.Any(message => message.Role == ChatRole.Assistant);
-        var systemMessage = BuildSystemPrompt(tenant, firstContact, context);
+        var systemMessage = BuildSystemPrompt(tenant, context);
 
         logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
 
@@ -79,8 +79,20 @@ public static class ChatSessionHandler
                 replyText = string.IsNullOrWhiteSpace(visible) ? UnknownReply.Fallback : visible;
             }
 
-            await SaveAndPublishReplyAsync(command, replyText, session, bus, logger, ct);
-            if (unknown)
+            if (firstContact)
+            {
+                replyText = await PrependNoticeAsync(tenant, command.CombinedText, replyText, chatService, logger, ct);
+            }
+
+            var saved = await SaveAndPublishReplyAsync(
+                command,
+                replyText,
+                session,
+                bus,
+                logger,
+                ct,
+                dropIfStreamDeleted: chatHistory.Count > 0);
+            if (unknown && saved)
             {
                 await bus.InvokeAsync(
                     new RecordUnansweredQuestion(
@@ -145,25 +157,65 @@ public static class ChatSessionHandler
         return contextBuilder.ToString();
     }
 
-    private static string BuildSystemPrompt(TenantProfile tenant, bool firstContact, string context)
+    private static string BuildSystemPrompt(TenantProfile tenant, string context)
     {
-        var notice = string.Empty;
-        if (firstContact)
-        {
-            var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
-            notice = BotPrompts.FirstContactInstruction(name, tenant.PrivacyPolicyUrl);
-        }
-
         var personaPrompt = !string.IsNullOrWhiteSpace(tenant.SystemPrompt)
             ? tenant.SystemPrompt
             : "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the retrieved document data inside <untrusted_document_context>.";
 
         var currentDate = DateTimeOffset.UtcNow.ToString("dd MMMM yyyy");
-        return BotPrompts.Compose(personaPrompt, notice, currentDate, context);
+        return BotPrompts.Compose(personaPrompt, string.Empty, currentDate, context);
     }
 
-    private static async Task SaveAndPublishReplyAsync(AnalyzeChatSession command, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)
+    private static async Task<string> PrependNoticeAsync(
+        TenantProfile tenant,
+        string userText,
+        string replyText,
+        IChatService chatService,
+        ILogger logger,
+        CancellationToken ct)
     {
+        var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
+        var notice = BotPrompts.FirstContactNotice(name, tenant.PrivacyPolicyUrl);
+        var url = BotPrompts.NoticePrivacyUrl(tenant.PrivacyPolicyUrl);
+
+        string? translated = null;
+        try
+        {
+            translated = await chatService.TranslateNoticeAsync(notice, userText, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "First-contact notice translation failed for TenantId: {TenantId}. Using the Spanish notice.", tenant.Id);
+        }
+
+        if (!BotPrompts.IsFaithfulTranslation(translated, url))
+            translated = notice;
+
+        return translated.Trim() + "\n\n" + replyText;
+    }
+
+    private static async Task<bool> SaveAndPublishReplyAsync(
+        AnalyzeChatSession command,
+        string replyText,
+        IDocumentSession session,
+        IMessageBus bus,
+        ILogger logger,
+        CancellationToken ct,
+        bool dropIfStreamDeleted)
+    {
+        if (dropIfStreamDeleted)
+        {
+            var current = await session.Events.FetchStreamAsync(command.PhoneNumber, token: ct);
+            if (current.Count == 0)
+            {
+                logger.LogInformation(
+                    "Dropping a reply for a chat stream that was deleted. Phone: {Phone}",
+                    LogMask.Phone(command.PhoneNumber));
+                return false;
+            }
+        }
+
         var syntheticMessageId = $"wamid.grouped.{Guid.NewGuid():N}";
 
         var replyEvent = new ReplyGenerated(
@@ -178,5 +230,6 @@ public static class ChatSessionHandler
 
         logger.LogInformation("Bot reply saved to event stream. Dispatching ReplyGenerated event to Wolverine.");
         await bus.InvokeAsync(replyEvent, ct);
+        return true;
     }
 }
