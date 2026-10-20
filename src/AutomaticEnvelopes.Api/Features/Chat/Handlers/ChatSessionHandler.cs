@@ -90,8 +90,8 @@ public static class ChatSessionHandler
                 session,
                 bus,
                 logger,
-                ct,
-                dropIfStreamDeleted: chatHistory.Count > 0);
+                chatHistory.Count > 0,
+                ct);
             if (unknown && saved)
             {
                 await bus.InvokeAsync(
@@ -201,8 +201,8 @@ public static class ChatSessionHandler
         IDocumentSession session,
         IMessageBus bus,
         ILogger logger,
-        CancellationToken ct,
-        bool dropIfStreamDeleted)
+        bool dropIfStreamDeleted,
+        CancellationToken ct)
     {
         if (dropIfStreamDeleted)
         {

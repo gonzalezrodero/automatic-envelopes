@@ -7,7 +7,8 @@ namespace AutomaticEnvelopes.Api.Features.Chat;
 /// </summary>
 public static class BotPrompts
 {
-    public const string FallbackPrivacyPolicyUrl = "https://www.core-webhook.eu/privacy.html";
+    public static readonly string FallbackPrivacyPolicyUrl =
+        new UriBuilder(Uri.UriSchemeHttps, "www.core-webhook.eu", -1, "privacy.html").Uri.AbsoluteUri;
     public const string DeleteCommand = "BORRAR DATOS";
     public const int MaxTranslatedNoticeLength = 800;
 
