@@ -54,14 +54,10 @@ public static class ChatSessionHandler
             CancellationToken ct)
     {
         var chatHistory = await ExtractChatHistory(command.PhoneNumber, session, ct);
-        if (IsFirstContact(chatHistory))
-        {
-            await SaveAndPublishReplyAsync(command, FirstContactMessage.For(tenant), session, bus, logger, ct);
-        }
 
         logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", command.TenantId);
         var context = await GetRelevantContextAsync(knowledgeBase, command.TenantId, command.CombinedText, ct);
-        var systemMessage = BuildSystemPrompt(tenant, context);
+        var systemMessage = BuildSystemPrompt(tenant, context, IsFirstContact(chatHistory));
 
         logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
 
@@ -150,14 +146,20 @@ public static class ChatSessionHandler
     private static bool IsFirstContact(IReadOnlyList<ChatMessage> history) =>
         !history.Any(message => message.Role == ChatRole.Assistant);
 
-    private static string BuildSystemPrompt(TenantProfile tenant, string context)
+    private static string BuildSystemPrompt(TenantProfile tenant, string context, bool firstContact)
     {
         var personaPrompt = !string.IsNullOrWhiteSpace(tenant.SystemPrompt)
             ? tenant.SystemPrompt
             : "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the retrieved document data inside <untrusted_document_context>.";
 
-        var currentDate = DateTimeOffset.UtcNow.ToString("dd MMMM yyyy");
-        return BotPrompts.Compose(personaPrompt, currentDate, context);
+        var prompt = BotPrompts.Compose(personaPrompt, DateTimeOffset.UtcNow.ToString("dd MMMM yyyy"), context);
+        if (!firstContact)
+        {
+            return prompt;
+        }
+
+        var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
+        return $"{prompt}\n{BotPrompts.FirstContactInstruction(name, tenant.PrivacyPolicyUrl)}";
     }
 
     private static async Task SaveAndPublishReplyAsync(AnalyzeChatSession command, string replyText, IDocumentSession session, IMessageBus bus, ILogger logger, CancellationToken ct)

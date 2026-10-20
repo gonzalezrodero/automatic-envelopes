@@ -16,78 +16,97 @@ using Wolverine;
 
 namespace AutomaticEnvelopes.Tests.Features.Chat;
 
+public class FirstContactInstructionTests
+{
+    [Fact]
+    public void Instruction_FillsTheSpanishReference()
+    {
+        var notice = BotPrompts.FirstContactInstruction("  Club {Samà}  ", "  https://club.example/p  ");
+
+        notice.Should().Contain("translated faithfully into the language the user wrote in");
+        notice.Should().Contain("AI assistant on behalf of Club {Samà}");
+        notice.Should().Contain("Club {Samà} is responsible for the data");
+        notice.Should().Contain("privacy URL unchanged");
+        notice.Should().Contain($"command {BotPrompts.DeleteCommand} exactly as written and untranslated");
+        notice.Should().Contain("Soy un asistente de inteligencia artificial y escribo en nombre de Club {Samà}.");
+        notice.Should().Contain("Club {Samà} es responsable de tus datos. Política de privacidad: https://club.example/p.");
+        notice.Should().Contain($"escribe {BotPrompts.DeleteCommand}.");
+        notice.Should().NotContain("  ");
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", " ")]
+    public void Instruction_UsesFallbacksWhenTheTenantHasNoNameOrUrl(string? name, string? url)
+    {
+        var notice = BotPrompts.FirstContactInstruction(name, url);
+
+        notice.Should().Contain("la organización");
+        notice.Should().Contain(BotPrompts.FallbackPrivacyPolicyUrl);
+    }
+}
+
 public class FirstContactDispatchTests
 {
     private const string Phone = "34600111222";
     private const string PrivacyUrl = "https://club.example/privacidad";
 
     [Fact]
-    public async Task GivenANewUser_WhenHandled_ThenTheNoticeGoesOutOnceAndTheAnswerFollows()
+    public async Task GivenANewUser_WhenHandled_ThenThePromptCarriesTheNoticeOnceAndTheAnswerFollows()
     {
-        var tenant = Tenant();
-        var harness = new Harness(tenant, "El campus cuesta 90 euros.", []);
+        var harness = new Harness(Tenant(), "El campus cuesta 90 euros.", []);
 
         await Handle(harness, "¿Cuánto cuesta el campus?");
 
-        harness.Replies.Should().HaveCount(2);
-        harness.Replies[0].Text.Should().Be(FirstContactMessage.For(tenant));
-        harness.Replies[1].Text.Should().Be("El campus cuesta 90 euros.");
-        harness.Prompt.Should().NotContain(PrivacyUrl);
-        harness.Prompt.Should().NotContain(BotPrompts.DeleteCommand);
-        harness.Prompt.Should().NotContain("PRIVACY POLICY");
-        harness.History.Should().NotContain(message => message.Text!.Contains(BotPrompts.DeleteCommand, StringComparison.Ordinal));
-        harness.Chat.Verify(
-            item => item.GetResponseAsync(It.IsAny<string>(), It.IsAny<List<ChatMessage>>(), tenant.Id, It.IsAny<CancellationToken>()),
-            Times.Once);
+        harness.Replies.Should().ContainSingle().Which.Text.Should().Be("El campus cuesta 90 euros.");
+        harness.Prompt.Should().Contain(BotPrompts.FirstContactInstruction("Club Samà", PrivacyUrl));
+        harness.Prompt.Split("FIRST CONTACT").Should().HaveCount(2);
     }
 
     [Fact]
-    public async Task GivenAPreviousReply_WhenHandled_ThenOnlyTheAnswerIsSent()
+    public async Task GivenAPreviousReply_WhenHandled_ThenTheNoticeIsLeftOut()
     {
-        var tenant = Tenant();
-        var previous = Event(new ReplyGenerated("old", "bot-phone", Phone, "Hola, soy el asistente.", tenant.Id));
-        var harness = new Harness(tenant, "Abre a las 9.", [previous]);
+        var previous = Event(new ReplyGenerated("old", "bot-phone", Phone, "Hola.", "club-sama"));
+        var harness = new Harness(Tenant(), "Abre a las 9.", [previous]);
 
         await Handle(harness, "¿A qué hora abre?");
 
         harness.Replies.Should().ContainSingle().Which.Text.Should().Be("Abre a las 9.");
-        harness.Replies[0].Text.Should().NotContain(BotPrompts.DeleteCommand);
+        harness.Prompt.Should().NotContain("FIRST CONTACT").And.NotContain(PrivacyUrl);
     }
 
     [Fact]
-    public async Task GivenSeveralOpeningMessages_WhenHandled_ThenTheNoticeIsStillSentOnce()
+    public async Task GivenSeveralOpeningMessages_WhenHandled_ThenTheNoticeIsStillIncludedOnce()
     {
-        var tenant = Tenant();
         var history = new[]
         {
-            Event(new MessageReceived("m1", Phone, "Hola", tenant.Id, "bot-phone", DateTimeOffset.UtcNow)),
-            Event(new MessageReceived("m2", Phone, "¿Hay plaza?", tenant.Id, "bot-phone", DateTimeOffset.UtcNow))
+            Event(new MessageReceived("m1", Phone, "Hola", "club-sama", "bot-phone", DateTimeOffset.UtcNow)),
+            Event(new MessageReceived("m2", Phone, "¿Hay plaza?", "club-sama", "bot-phone", DateTimeOffset.UtcNow))
         };
-        var harness = new Harness(tenant, "Sí, queda plaza.", history);
+        var harness = new Harness(Tenant(), "Sí, queda plaza.", history);
 
         await Handle(harness, "Hola\n¿Hay plaza?");
 
-        harness.Replies.Should().HaveCount(2);
-        harness.Replies[0].Text.Should().Be(FirstContactMessage.For(tenant));
-        harness.Replies[1].Text.Should().Be("Sí, queda plaza.");
+        harness.Replies.Should().ContainSingle().Which.Text.Should().Be("Sí, queda plaza.");
+        harness.Prompt.Split("FIRST CONTACT").Should().HaveCount(2);
     }
 
     [Fact]
-    public async Task GivenNoPrivacyUrl_WhenHandled_ThenTheNoticeUsesTheFallback()
+    public async Task GivenNoNameOrPrivacyUrl_WhenHandled_ThenTheNoticeUsesTheFallbacks()
     {
         var tenant = new TenantProfile
         {
             Id = "club-sama",
             BotPhoneNumberId = "bot-phone",
-            Name = "Club Samà",
+            Name = " ",
+            ShortName = "Samà",
             PrivacyPolicyUrl = " "
         };
         var harness = new Harness(tenant, "De acuerdo.", []);
 
         await Handle(harness, "Hola");
 
-        harness.Replies[0].Text.Should().Contain(FirstContactMessage.FallbackPrivacyPolicyUrl);
-        harness.Replies[0].Text.Should().Contain("Club Samà");
+        harness.Prompt.Should().Contain(BotPrompts.FirstContactInstruction("Samà", " "));
     }
 
     [Theory]
@@ -101,6 +120,7 @@ public class FirstContactDispatchTests
         await Handle(harness, command);
 
         harness.Replies.Should().BeEmpty();
+        harness.Prompt.Should().BeEmpty();
         harness.Chat.Verify(
             item => item.GetResponseAsync(It.IsAny<string>(), It.IsAny<List<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -141,7 +161,6 @@ public class FirstContactDispatchTests
         public TenantProfile Tenant { get; }
         public List<ReplyGenerated> Replies { get; } = [];
         public string Prompt { get; private set; } = string.Empty;
-        public List<ChatMessage> History { get; private set; } = [];
 
         public Harness(TenantProfile tenant, string answer, IReadOnlyList<IEvent> history)
         {
@@ -171,11 +190,7 @@ public class FirstContactDispatchTests
                     It.IsAny<List<ChatMessage>>(),
                     tenant.Id,
                     It.IsAny<CancellationToken>()))
-                .Callback<string, List<ChatMessage>, string, CancellationToken>((prompt, messages, _, _) =>
-                {
-                    Prompt = prompt;
-                    History = messages;
-                })
+                .Callback<string, List<ChatMessage>, string, CancellationToken>((prompt, _, _, _) => Prompt = prompt)
                 .ReturnsAsync(answer);
             Bus.Setup(item => item.InvokeAsync(It.IsAny<ReplyGenerated>(), It.IsAny<CancellationToken>(), null))
                 .Returns(Task.CompletedTask);

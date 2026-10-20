@@ -6,8 +6,21 @@
 public static class BotPrompts
 {
     public const string DeleteCommand = "BORRAR DATOS";
+    public const string FallbackPrivacyPolicyUrl = "https://www.core-webhook.eu/privacy.html";
 
     public static readonly string[] DeleteCommands = [DeleteCommand, "ESBORRAR DADES", "DELETE DATA"];
+
+    public static string FirstContactInstruction(string? tenantName, string? privacyPolicyUrl)
+    {
+        var name = string.IsNullOrWhiteSpace(tenantName) ? "la organización" : tenantName.Trim();
+        var url = string.IsNullOrWhiteSpace(privacyPolicyUrl) ? FallbackPrivacyPolicyUrl : privacyPolicyUrl.Trim();
+        return $"""
+            10. FIRST CONTACT: Start the reply with the notice below, translated faithfully into the language the user wrote in, then answer the question. Keep these points: you are an AI assistant on behalf of {name}, {name} is responsible for the data, the privacy URL unchanged, and the command {DeleteCommand} exactly as written and untranslated.
+            ¡Hola! 👋 Soy un asistente de inteligencia artificial y escribo en nombre de {name}.
+            Aquí estoy para ayudarte.
+            {name} es responsable de tus datos. Política de privacidad: {url}. Para borrarlos, escribe {DeleteCommand}.
+            """;
+    }
 
     public const string SystemPromptTemplate = """
         {0}

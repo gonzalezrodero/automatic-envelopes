@@ -108,10 +108,9 @@ public class FullPipelineE2ETests(IntegrationAppFixture fixture)
         received.Should().NotBeNull();
         received!.TenantId.Should().Be(tenant);
 
-        var replies = streamEvents.Select(e => e.Data).OfType<ReplyGenerated>().ToList();
-        replies.Should().HaveCount(2);
-        replies[0].Text.Should().Contain(BotPrompts.DeleteCommand);
-        replies[1].Text.Should().Contain("998877");
+        var reply = streamEvents.Select(e => e.Data).OfType<ReplyGenerated>().FirstOrDefault();
+        reply.Should().NotBeNull();
+        reply!.Text.Should().Contain("998877");
 
         if (File.Exists(tempPdfPath)) File.Delete(tempPdfPath);
     }
@@ -318,11 +317,10 @@ public class FullPipelineE2ETests(IntegrationAppFixture fixture)
 
         var replies = streamEvents.Select(e => e.Data).OfType<ReplyGenerated>().ToList();
 
-        // The burst is still one model call. The fixed notice goes out before that answer.
-        replies.Should().HaveCount(2, "The first contact sends the fixed notice, then one grouped answer.");
-        replies[0].Text.Should().Contain(BotPrompts.DeleteCommand);
+        // The ultimate proof: 3 inputs resulted in exactly 1 AI output
+        replies.Should().ContainSingle("The Saga should have grouped all 3 messages into a single AI invocation.");
 
-        var finalReply = replies[1];
+        var finalReply = replies.Single();
         finalReply.MessageId.Should().StartWith("wamid.grouped.", "The resulting message ID must be a grouped ID.");
         finalReply.PhoneNumber.Should().Be(testPhoneNumber);
     }

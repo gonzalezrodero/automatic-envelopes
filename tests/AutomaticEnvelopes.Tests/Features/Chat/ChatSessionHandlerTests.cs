@@ -47,25 +47,13 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
         var streamEvents = await session.Events.FetchStreamAsync(userPhone, token: TestContext.Current.CancellationToken);
 
-        var replies = streamEvents.Select(e => e.Data).OfType<ReplyGenerated>().ToList();
-        replies.Should().HaveCount(2, "The first contact sends the fixed notice, then the answer.");
+        var replyGenerated = streamEvents.Select(e => e.Data).OfType<ReplyGenerated>().Single();
+        replyGenerated.Text.Should().Be("This is a mocked response.");
+        replyGenerated.MessageId.Should().StartWith("wamid.grouped.");
+        replyGenerated.BotPhoneNumberId.Should().Be(botPhone);
+        replyGenerated.PhoneNumber.Should().Be(userPhone);
+        replyGenerated.TenantId.Should().Be(tenantId);
 
-        var notice = replies[0];
-        notice.Text.Should().Be(FirstContactMessage.Compose("Club Samà", PrivacyPolicyUrl));
-        notice.MessageId.Should().StartWith("wamid.grouped.");
-        notice.BotPhoneNumberId.Should().Be(botPhone);
-        notice.PhoneNumber.Should().Be(userPhone);
-        notice.TenantId.Should().Be(tenantId);
-
-        var answer = replies[1];
-        answer.Text.Should().Be("This is a mocked response.");
-        answer.Text.Should().NotContain(BotPrompts.DeleteCommand);
-        answer.MessageId.Should().StartWith("wamid.grouped.");
-        answer.BotPhoneNumberId.Should().Be(botPhone);
-        answer.PhoneNumber.Should().Be(userPhone);
-        answer.TenantId.Should().Be(tenantId);
-
-        // Assert 2: The model answers once and is not asked to invent the notice.
         fixture.BedrockClientMock.Verify(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()), Times.Once);
 
         var request = (ConverseRequest)fixture.BedrockClientMock.Invocations
@@ -73,8 +61,7 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
             .Arguments[0];
 
         var systemPrompt = request.System != null ? string.Join(" ", request.System.Select(s => s.Text)) : "";
-        systemPrompt.Should().NotContain("POLITICA+DE+PRIVACIDAD.pdf");
-        systemPrompt.Should().NotContain("PRIVACY POLICY");
+        systemPrompt.Should().Contain(BotPrompts.FirstContactInstruction("Club Samà", PrivacyPolicyUrl));
     }
 
     [Fact]
