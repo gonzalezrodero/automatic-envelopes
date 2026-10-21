@@ -208,6 +208,117 @@ public class TenantEndpointsTests
         settings.PrivacyPolicyUrl.Should().Be("http://localhost:5173/privacy");
     }
 
+    [Fact]
+    public async Task Update_OmitsEnabledTools_AndKeepsTheStoredList()
+    {
+        var stored = new TenantProfile
+        {
+            Id = "example-tenant",
+            BotPhoneNumberId = "phone-1",
+            SystemPrompt = "old",
+            PrivacyPolicyUrl = "https://old.example/p",
+            EnabledTools = ["price"]
+        };
+        TenantProfile? saved = null;
+        var session = new Mock<IDocumentSession>();
+        session.Setup(store => store.LoadAsync<TenantProfile>("example-tenant", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(stored);
+        session.Setup(store => store.Store(It.IsAny<TenantProfile[]>()))
+            .Callback<TenantProfile[]>(profiles => saved = profiles[0]);
+        session.Setup(store => store.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var result = await TenantEndpoints.Update(
+            "example-tenant",
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p" },
+            Admin(),
+            new DefaultHttpContext(),
+            session.Object,
+            CancellationToken.None);
+
+        Status(result).Should().Be(StatusCodes.Status200OK);
+        saved.Should().NotBeNull();
+        saved!.SystemPrompt.Should().Be("persona");
+        saved.EnabledTools.Should().Equal("price");
+        saved.BotPhoneNumberId.Should().Be("phone-1");
+    }
+
+    [Fact]
+    public async Task Update_ClubRole_CannotSetEnabledTools()
+    {
+        var session = new Mock<IDocumentSession>(MockBehavior.Strict);
+        var result = await TenantEndpoints.Update(
+            "example-tenant",
+            new UpdateTenantSettingsRequest
+            {
+                SystemPrompt = "persona",
+                PrivacyPolicyUrl = "https://example.com/p",
+                EnabledTools = ["price"]
+            },
+            TenantUser("example-tenant"),
+            new DefaultHttpContext(),
+            session.Object,
+            CancellationToken.None);
+
+        Status(result).Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Update_Admin_EmptyEnabledTools_ClearsTheStoredList()
+    {
+        var stored = new TenantProfile
+        {
+            Id = "example-tenant",
+            BotPhoneNumberId = "phone-1",
+            EnabledTools = ["price"]
+        };
+        TenantProfile? saved = null;
+        var session = new Mock<IDocumentSession>();
+        session.Setup(store => store.LoadAsync<TenantProfile>("example-tenant", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(stored);
+        session.Setup(store => store.Store(It.IsAny<TenantProfile[]>()))
+            .Callback<TenantProfile[]>(profiles => saved = profiles[0]);
+        session.Setup(store => store.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var result = await TenantEndpoints.Update(
+            "example-tenant",
+            new UpdateTenantSettingsRequest
+            {
+                SystemPrompt = "persona",
+                PrivacyPolicyUrl = "https://example.com/p",
+                EnabledTools = []
+            },
+            Admin(),
+            new DefaultHttpContext(),
+            session.Object,
+            CancellationToken.None);
+
+        Status(result).Should().Be(StatusCodes.Status200OK);
+        saved!.EnabledTools.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryReadEnabledTools_FailsClosedOnUnknownOrBlankNames()
+    {
+        var known = new[] { "price" };
+
+        TenantSettingsValidation.TryReadEnabledTools(null, known, out var omitted, out var omittedError).Should().BeTrue();
+        omitted.Should().BeNull();
+        omittedError.Should().BeEmpty();
+
+        TenantSettingsValidation.TryReadEnabledTools([], known, out var cleared, out _).Should().BeTrue();
+        cleared.Should().BeEmpty();
+
+        TenantSettingsValidation.TryReadEnabledTools(["nope"], known, out _, out var unknown).Should().BeFalse();
+        unknown.Should().Be(TenantSettingsValidation.ToolsUnknown);
+
+        TenantSettingsValidation.TryReadEnabledTools(
+            ["  price  ", "price"],
+            known,
+            out var deduped,
+            out _).Should().BeTrue();
+        deduped.Should().Equal("price");
+    }
+
     private static int? Status(IResult result) => (result as IStatusCodeHttpResult)?.StatusCode;
 
     private static ClaimsPrincipal Anonymous() => new(new ClaimsIdentity());

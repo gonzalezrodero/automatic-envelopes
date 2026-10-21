@@ -9,7 +9,12 @@ namespace AutomaticEnvelopes.Api.Features.Chat;
 
 public interface IChatService
 {
-    Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, string tenantId, CancellationToken ct);
+    Task<string> GetResponseAsync(
+        string systemPrompt,
+        List<ChatMessage> history,
+        string tenantId,
+        IReadOnlyCollection<string>? enabledTools,
+        CancellationToken ct);
     Task<string> TranslateNoticeAsync(string notice, string languageSample, CancellationToken ct);
     Task<string> SanitizeHistoryAsync(string rawHistory, CancellationToken ct);
 }
@@ -23,9 +28,15 @@ public class ChatService(
 {
     private readonly BedrockSettings settings = settings.Value;
 
-    public async Task<string> GetResponseAsync(string systemPrompt, List<ChatMessage> history, string tenantId, CancellationToken ct)
+    public async Task<string> GetResponseAsync(
+        string systemPrompt,
+        List<ChatMessage> history,
+        string tenantId,
+        IReadOnlyCollection<string>? enabledTools,
+        CancellationToken ct)
     {
-        var tenantTools = tools.Where(t => t.Tenant == tenantId).ToList();
+        // Missing or empty config attaches nothing. Tools are opt-in per tenant.
+        var tenantTools = TenantToolGate.Select(tools, enabledTools, TenantToolGate.KnownNames);
 
         // 1. Build the generic Converse Request
         var request = new ConverseRequest

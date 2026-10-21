@@ -4,7 +4,7 @@ namespace AutomaticEnvelopes.Api.Features.Chat.Tools;
 
 public interface IBedrockTool
 {
-    string Tenant { get; }
+    string Name { get; }
 
     ToolSpecification GetSpecification();
 

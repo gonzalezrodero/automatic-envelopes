@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
+using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -76,7 +77,23 @@ public class TenantEndpoints
             return rejected;
         }
 
+        if (request?.EnabledTools is not null && !TenantAccess.IsAdmin(user))
+        {
+            return Results.Json(
+                new { Error = "Only a platform admin can set enabledTools." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         if (!TenantSettingsValidation.TryValidate(request, out var settings, out var error))
+        {
+            return Results.BadRequest(new { Error = error });
+        }
+
+        if (!TenantSettingsValidation.TryReadEnabledTools(
+                request.EnabledTools,
+                TenantToolGate.KnownNames,
+                out var enabledTools,
+                out error))
         {
             return Results.BadRequest(new { Error = error });
         }
@@ -87,7 +104,7 @@ public class TenantEndpoints
             return Results.NotFound(new { Error = "Tenant was not found." });
         }
 
-        var updated = profile.WithSettings(settings.SystemPrompt, settings.PrivacyPolicyUrl);
+        var updated = profile.WithSettings(settings.SystemPrompt, settings.PrivacyPolicyUrl, enabledTools ?? profile.EnabledTools);
         session.Store(updated);
         await session.SaveChangesAsync(ct);
         return Results.Ok(TenantPortalProfile.From(updated));

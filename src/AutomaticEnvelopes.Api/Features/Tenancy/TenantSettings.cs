@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 namespace AutomaticEnvelopes.Api.Features.Tenancy;
@@ -9,6 +10,9 @@ public sealed class UpdateTenantSettingsRequest
 
     [JsonPropertyName("privacyPolicyUrl")]
     public string? PrivacyPolicyUrl { get; set; }
+
+    [JsonPropertyName("enabledTools")]
+    public string[]? EnabledTools { get; set; }
 }
 
 public readonly record struct ValidTenantSettings(string SystemPrompt, string PrivacyPolicyUrl);
@@ -20,9 +24,10 @@ public static class TenantSettingsValidation
     public const string PromptTooLong = "systemPrompt is too long.";
     public const string UrlRejected = "privacyPolicyUrl must be an https URL, or http on localhost.";
     public const string BodyRequired = "systemPrompt and privacyPolicyUrl are required.";
+    public const string ToolsUnknown = "enabledTools contains an unknown tool.";
 
     public static bool TryValidate(
-        UpdateTenantSettingsRequest? request,
+        [NotNullWhen(true)] UpdateTenantSettingsRequest? request,
         out ValidTenantSettings settings,
         out string error)
     {
@@ -53,6 +58,38 @@ public static class TenantSettingsValidation
         }
 
         settings = new ValidTenantSettings(prompt, privacyPolicyUrl);
+        error = string.Empty;
+        return true;
+    }
+
+    public static bool TryReadEnabledTools(
+        string[]? requested,
+        IEnumerable<string> knownToolNames,
+        out string[]? enabledTools,
+        out string error)
+    {
+        if (requested is null)
+        {
+            enabledTools = null;
+            error = string.Empty;
+            return true;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in requested)
+        {
+            var trimmed = name?.Trim();
+            if (string.IsNullOrEmpty(trimmed) || !knownToolNames.Contains(trimmed, StringComparer.Ordinal))
+            {
+                enabledTools = null;
+                error = ToolsUnknown;
+                return false;
+            }
+
+            seen.Add(trimmed);
+        }
+
+        enabledTools = seen.ToArray();
         error = string.Empty;
         return true;
     }

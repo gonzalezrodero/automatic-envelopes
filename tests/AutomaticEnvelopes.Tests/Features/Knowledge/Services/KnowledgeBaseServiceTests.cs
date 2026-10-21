@@ -63,10 +63,54 @@ public class KnowledgeBaseServiceTests
 
         mockSession.Verify(s =>
             s.QueryAsync<DocumentChunk>(
+                It.Is<string>(sql => sql.Contains("WHERE tenant_id = ?") && !sql.Contains(TestTenantId)),
+                It.IsAny<CancellationToken>(),
+                It.Is<object[]>(args => args.Length >= 1 && (string)args[0] == TestTenantId)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SearchAsync_QueriesOnlyTheRequestedTenant()
+    {
+        const string otherTenantId = "other-tenant";
+        var otherSession = new Mock<IDocumentSession>();
+        mocker.GetMock<IDocumentStore>()
+            .Setup(store => store.LightweightSession(otherTenantId))
+            .Returns(otherSession.Object);
+        mocker.GetMock<IEmbeddingService>()
+            .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([0.4f]);
+        otherSession
+            .Setup(s => s.QueryAsync<DocumentChunk>(
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>(),
-                It.IsAny<object[]>()),
+                It.IsAny<object[]>()))
+            .ReturnsAsync([]);
+
+        await sut.SearchAsync(otherTenantId, "horario", limit: 2, ct: TestContext.Current.CancellationToken);
+
+        mockSession.Verify(
+            s => s.QueryAsync<DocumentChunk>(It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<object[]>()),
+            Times.Never);
+        otherSession.Verify(s => s.QueryAsync<DocumentChunk>(
+            It.Is<string>(sql => sql.Contains("tenant_id = ?") && !sql.Contains(otherTenantId)),
+            It.IsAny<CancellationToken>(),
+            It.Is<object[]>(args => (string)args[0] == otherTenantId && (int)args[2] == 2)),
             Times.Once);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SearchAsync_BlankTenant_ReturnsEmptyWithoutQuerying(string tenantId)
+    {
+        var result = await sut.SearchAsync(tenantId, "query", ct: TestContext.Current.CancellationToken);
+
+        result.Should().BeEmpty();
+        mocker.GetMock<IEmbeddingService>().Verify(
+            service => service.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        mocker.GetMock<IDocumentStore>().Verify(store => store.LightweightSession(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

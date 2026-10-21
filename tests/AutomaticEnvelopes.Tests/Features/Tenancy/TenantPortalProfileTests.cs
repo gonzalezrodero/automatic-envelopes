@@ -66,6 +66,7 @@ public class TenantPortalProfileTests
         portal.DisplayPhone.Should().BeEmpty();
         portal.SystemPrompt.Should().BeEmpty();
         portal.PrivacyPolicyUrl.Should().BeEmpty();
+        portal.EnabledTools.Should().BeNull();
     }
 
     [Fact]
@@ -102,10 +103,11 @@ public class TenantPortalProfileTests
             SystemPrompt = "old",
             PrivacyPolicyUrl = "https://old.example/p",
             CreatedAt = created,
-            Name = "Kept"
+            Name = "Kept",
+            EnabledTools = ["price"]
         };
 
-        var updated = original.WithSettings("  new persona  ", "https://example.com/privacy");
+        var updated = original.WithSettings("  new persona  ", "https://example.com/privacy", original.EnabledTools);
 
         updated.Should().NotBeSameAs(original);
         updated.Id.Should().Be(original.Id);
@@ -114,6 +116,7 @@ public class TenantPortalProfileTests
         updated.Name.Should().Be("Kept");
         updated.SystemPrompt.Should().Be("  new persona  ");
         updated.PrivacyPolicyUrl.Should().Be("https://example.com/privacy");
+        updated.EnabledTools.Should().Equal("price");
         original.SystemPrompt.Should().Be("old");
     }
 

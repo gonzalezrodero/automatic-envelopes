@@ -35,6 +35,9 @@ public sealed class TenantPortalProfile
     [JsonPropertyName("privacyPolicyUrl")]
     public required string PrivacyPolicyUrl { get; init; }
 
+    [JsonPropertyName("enabledTools")]
+    public string[]? EnabledTools { get; init; }
+
     public static TenantPortalProfile From(TenantProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -48,7 +51,8 @@ public sealed class TenantPortalProfile
             BotPhoneNumberId = profile.BotPhoneNumberId ?? string.Empty,
             DisplayPhone = Stored(profile.DisplayPhone),
             SystemPrompt = profile.SystemPrompt ?? string.Empty,
-            PrivacyPolicyUrl = profile.PrivacyPolicyUrl ?? string.Empty
+            PrivacyPolicyUrl = profile.PrivacyPolicyUrl ?? string.Empty,
+            EnabledTools = profile.EnabledTools
         };
     }
 

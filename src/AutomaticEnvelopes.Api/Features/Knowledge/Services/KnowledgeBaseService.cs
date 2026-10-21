@@ -19,7 +19,10 @@ public class KnowledgeBaseService(
     : IKnowledgeBaseService
 {
     public async Task<IReadOnlyList<DocumentChunk>> SearchAsync(string tenantId, string query, int limit = 3, CancellationToken ct = default)
-    { 
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+            return [];
+
         using var session = store.LightweightSession(tenantId);
         var searchVector = await embeddingService.GenerateEmbeddingAsync(query, ct);
 

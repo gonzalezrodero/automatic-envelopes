@@ -269,8 +269,13 @@ public class UnknownReplyDispatchTests
             Store.Setup(item => item.LightweightSession("club-a", It.IsAny<IsolationLevel>())).Returns(session.Object);
             Knowledge.Setup(item => item.SearchAsync("club-a", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(Array.Empty<DocumentChunk>());
-            Chat.Setup(item => item.GetResponseAsync(It.IsAny<string>(), It.IsAny<List<Microsoft.Extensions.AI.ChatMessage>>(), "club-a", It.IsAny<CancellationToken>()))
-                .Callback<string, List<Microsoft.Extensions.AI.ChatMessage>, string, CancellationToken>((prompt, _, _, _) => SystemPrompt = prompt)
+            Chat.Setup(item => item.GetResponseAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<List<Microsoft.Extensions.AI.ChatMessage>>(),
+                    "club-a",
+                    It.IsAny<IReadOnlyCollection<string>?>(),
+                    It.IsAny<CancellationToken>()))
+                .Callback<string, List<Microsoft.Extensions.AI.ChatMessage>, string, IReadOnlyCollection<string>?, CancellationToken>((prompt, _, _, _, _) => SystemPrompt = prompt)
                 .ReturnsAsync(reply);
             if (firstContact)
             {
