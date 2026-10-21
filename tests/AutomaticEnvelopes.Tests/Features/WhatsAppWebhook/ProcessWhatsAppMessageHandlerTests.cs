@@ -1,11 +1,13 @@
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Tenancy;
+using AutomaticEnvelopes.Api.Features.Usage;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using AutomaticEnvelopes.Tests.Extensions;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace AutomaticEnvelopes.Tests.Features.WhatsAppWebhook;
 
@@ -124,6 +126,12 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
             MessageCount = 25,
             WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1)
         });
+        session.Store(new WhatsAppRateLimitTracker
+        {
+            Id = spammerPhone,
+            MessageCount = 3,
+            WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1)
+        });
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var spamCommand = new ProcessWhatsAppMessage(
@@ -151,5 +159,29 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
         tracker!.MessageCount.Should().Be(26, "The tracker must increment and save the blocked attempt.");
         var plain = await session.LoadAsync<WhatsAppRateLimitTracker>(spammerPhone, token: TestContext.Current.CancellationToken);
         plain.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task MissingHashKey_ThrowsSoTheMessageIsRetried()
+    {
+        var options = fixture.Host.Services.GetRequiredService<IOptions<UsageOptions>>();
+        var saved = options.Value.PhoneHashKey;
+        options.Value.PhoneHashKey = string.Empty;
+        try
+        {
+            var bot = "6" + Guid.NewGuid().ToString("N")[..12];
+            await fixture.SeedTenantAsync("hash-" + Guid.NewGuid().ToString("N")[..8], bot);
+            var act = () => fixture.Host.InvokeMessageAndWaitAsync(new ProcessWhatsAppMessage(
+                $"wamid.{Guid.NewGuid()}",
+                bot,
+                "34600111222",
+                "Hola",
+                DateTimeOffset.UtcNow));
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+        finally
+        {
+            options.Value.PhoneHashKey = saved;
+        }
     }
 }

@@ -70,7 +70,6 @@ public static class ChatSessionHandler
                 used,
                 limit,
                 session,
-                chatService,
                 usage,
                 bus,
                 logger,
@@ -150,7 +149,6 @@ public static class ChatSessionHandler
         int used,
         int limit,
         IDocumentSession session,
-        IChatService chatService,
         UsageMeter usage,
         IMessageBus bus,
         ILogger logger,
@@ -163,10 +161,11 @@ public static class ChatSessionHandler
             used,
             limit);
 
-        var replyText = UsageMessages.LimitReached(command.CombinedText);
+        var replyText = UsageMessages.Spanish;
         if (firstContact)
         {
-            replyText = await PrependNoticeAsync(tenant, command.CombinedText, replyText, chatService, logger, ct);
+            var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
+            replyText = BotPrompts.FirstContactNotice(name, tenant.PrivacyPolicyUrl).Trim() + "\n\n" + replyText;
         }
 
         await SaveAndPublishReplyAsync(command, replyText, session, bus, logger, hasHistory, ct);

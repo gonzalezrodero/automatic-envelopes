@@ -98,6 +98,24 @@ public class MonthlyUsageIntegrationTests(IntegrationAppFixture fixture)
         json.RootElement.GetProperty("tokens").GetProperty("input").GetInt64().Should().Be(23);
         json.RootElement.GetProperty("tokens").GetProperty("output").GetInt64().Should().Be(15);
         result.Context.Response.Headers.CacheControl.ToString().Should().Be("no-store");
+
+        await fixture.Host.Scenario(s =>
+        {
+            s.Patch.Json(new UpdateTenantSettingsRequest
+            {
+                SystemPrompt = "persona",
+                PrivacyPolicyUrl = "https://club.example/p",
+                MonthlyResponseLimit = 20
+            }).ToUrl($"/tenants/{tenantId}");
+            s.StatusCodeShouldBe(200);
+        });
+        await using (var session = store.LightweightSession(tenantId))
+        {
+            var usage = await session.LoadAsync<TenantMonthUsage>(month, TestContext.Current.CancellationToken);
+            usage!.Notified80.Should().BeFalse();
+            usage.Notified100.Should().BeFalse();
+            usage.Responses.Should().Be(5);
+        }
     }
 
     [Fact]
@@ -125,19 +143,27 @@ public class MonthlyUsageIntegrationTests(IntegrationAppFixture fixture)
             s.Get.Url($"/tenants/{tenantId}/usage");
             s.StatusCodeShouldBe(403);
         });
+    }
 
-        await fixture.Host.Scenario(s =>
-        {
-            AsTenant(s, tenantId);
-            s.Patch.Json(new UpdateTenantSettingsRequest
-            {
-                SystemPrompt = "persona",
-                PrivacyPolicyUrl = "https://club.example/p",
-                MonthlyResponseLimit = 10,
-                ContactEmail = "club@example.com"
-            }).ToUrl($"/tenants/{tenantId}");
-            s.StatusCodeShouldBe(403);
-        });
+    [Fact]
+    public async Task AtTheLimit_FirstContactUsesTheSpanishNoticeWithoutBedrock()
+    {
+        fixture.BedrockClientMock.Invocations.Clear();
+        var tenantId = "u" + Guid.NewGuid().ToString("N");
+        var bot = "7" + Guid.NewGuid().ToString("N")[..12];
+        var phone = "34620" + Random.Shared.Next(100000, 999999).ToString();
+        await fixture.SeedTenantAsync(tenantId, bot, name: "Club", monthlyResponseLimit: 0);
+
+        await fixture.Host.InvokeMessageAndWaitAsync(new AnalyzeChatSession(phone, tenantId, bot, "Hello"));
+
+        ConverseCount().Should().Be(0);
+        var store = fixture.Host.Services.GetRequiredService<IDocumentStore>();
+        await using var session = store.LightweightSession(tenantId);
+        var stream = await session.Events.FetchStreamAsync(phone, token: TestContext.Current.CancellationToken);
+        var text = stream.Select(item => item.Data).OfType<ReplyGenerated>().Single().Text;
+        text.Should().Contain("inteligencia artificial");
+        text.Should().Contain(UsageMessages.Spanish);
+        text.Should().Contain("BORRAR DATOS");
     }
 
     private List<Amazon.SimpleEmailV2.Model.SendEmailRequest> DrainEmails()

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Tenancy;
+using AutomaticEnvelopes.Api.Features.Usage;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
@@ -13,6 +14,8 @@ namespace AutomaticEnvelopes.Tests.Features.Tenancy;
 
 public class TenantEndpointsTests
 {
+    private static readonly UsageMeter UnusedUsage = new(new Mock<IDocumentStore>().Object);
+
     [Fact]
     public void ProtectedConstructor_KeepsTheEndpointTypeInstantiable()
     {
@@ -120,6 +123,7 @@ public class TenantEndpointsTests
             user,
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
         var publicHttp = await TenantEndpoints.Update(
             "example-tenant",
@@ -127,6 +131,7 @@ public class TenantEndpointsTests
             user,
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
         var missingBody = await TenantEndpoints.Update(
             "example-tenant",
@@ -134,6 +139,7 @@ public class TenantEndpointsTests
             user,
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(emptyPrompt).Should().Be(StatusCodes.Status400BadRequest);
@@ -154,6 +160,7 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             new Mock<IDocumentSession>(MockBehavior.Strict).Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status400BadRequest);
@@ -168,6 +175,7 @@ public class TenantEndpointsTests
             TenantUser("example-tenant"),
             new DefaultHttpContext(),
             new Mock<IDocumentSession>(MockBehavior.Strict).Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status403Forbidden);
@@ -186,6 +194,7 @@ public class TenantEndpointsTests
             TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status404NotFound);
@@ -234,6 +243,7 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status200OK);
@@ -258,6 +268,7 @@ public class TenantEndpointsTests
             TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status403Forbidden);
@@ -291,6 +302,7 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status200OK);
@@ -322,6 +334,7 @@ public class TenantEndpointsTests
             TenantUser("example-tenant"),
             new DefaultHttpContext(),
             new Mock<IDocumentSession>(MockBehavior.Strict).Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status403Forbidden);
@@ -358,6 +371,7 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(changed).Should().Be(StatusCodes.Status200OK);
@@ -371,6 +385,7 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(kept).Should().Be(StatusCodes.Status200OK);
@@ -393,6 +408,7 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
         var badEmail = await TenantEndpoints.Update(
             "example-tenant",
@@ -405,6 +421,7 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
+            UnusedUsage,
             CancellationToken.None);
 
         Status(negative).Should().Be(StatusCodes.Status400BadRequest);

@@ -44,13 +44,17 @@ public static class ProcessWhatsAppMessageHandler
         }
 
         // 3. Spam Shield (Rate Limiting). The tracker id is an HMAC of tenant + phone, never the phone itself.
-        if (!PhoneRateKey.TryHash(tenant.Id, command.PhoneNumber, usageOptions.Value.PhoneHashKey, out var trackerId))
+        var hashKey = usageOptions.Value.PhoneHashKey;
+        if (string.IsNullOrEmpty(hashKey) || hashKey.Length < PhoneRateKey.MinSecretLength)
+            throw new InvalidOperationException("Phone hash key is missing or too short.");
+
+        if (!PhoneRateKey.TryHash(tenant.Id, command.PhoneNumber, hashKey, out var trackerId))
         {
-            logger.LogError("Phone hash key is missing or too short. Dropping message for TenantId: {TenantId}.", tenant.Id);
+            logger.LogWarning("Skipping a message with no phone. TenantId: {TenantId}.", tenant.Id);
             return;
         }
 
-        if (!await IsRateLimitPassedAsync(session, trackerId, command.PhoneNumber, logger, ct))
+        if (!await IsRateLimitPassedAsync(session, tenant.Id, trackerId, command.PhoneNumber, logger, ct))
         {
             return;
         }
@@ -73,11 +77,17 @@ public static class ProcessWhatsAppMessageHandler
 
     private static async Task<bool> IsRateLimitPassedAsync(
         IDocumentSession session,
+        string tenantId,
         string trackerId,
         string phoneNumber,
         ILogger logger,
         CancellationToken ct)
     {
+        // Old tracker ids were the raw phone. The window is one minute, so drop anything that is not an HMAC hex.
+        session.QueueSqlCommand(
+            "delete from public.mt_doc_whatsappratelimittracker where tenant_id = ? and id !~ '^[0-9a-f]{64}$'",
+            tenantId);
+
         // Wolverine will automatically retry if multiple Lambdas hit this simultaneously and collide
         var tracker = await session.LoadAsync<WhatsAppRateLimitTracker>(trackerId, ct)
                       ?? new WhatsAppRateLimitTracker { Id = trackerId };

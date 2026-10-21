@@ -13,9 +13,9 @@ public static class AwsConfigurationExtensions
     {
         var martenArn = Environment.GetEnvironmentVariable("SECRET_ARN_MARTEN");
         var ssmPath = Environment.GetEnvironmentVariable("SSM_PATH_WHATSAPP");
-        var usagePath = Environment.GetEnvironmentVariable("SSM_PATH_USAGE");
+        var usageArn = Environment.GetEnvironmentVariable("SECRET_ARN_USAGE");
 
-        if (string.IsNullOrEmpty(martenArn) && string.IsNullOrEmpty(ssmPath) && string.IsNullOrEmpty(usagePath))
+        if (string.IsNullOrEmpty(martenArn) && string.IsNullOrEmpty(ssmPath) && string.IsNullOrEmpty(usageArn))
         {
             return;
         }
@@ -91,22 +91,14 @@ public static class AwsConfigurationExtensions
             }
         }
 
-        var usagePath = Environment.GetEnvironmentVariable("SSM_PATH_USAGE");
-        if (!string.IsNullOrEmpty(usagePath))
+        var usageArn = Environment.GetEnvironmentVariable("SECRET_ARN_USAGE");
+        if (!string.IsNullOrEmpty(usageArn))
         {
-            var response = ssmClient.GetParametersByPathAsync(new GetParametersByPathRequest
-            {
-                Path = usagePath,
-                WithDecryption = true
-            }).GetAwaiter().GetResult();
-
-            foreach (var param in response.Parameters)
-            {
-                if (param.Name.Split('/')[^1] == "phone-hash-key" && !string.IsNullOrEmpty(param.Value))
-                {
-                    secureConfig["Usage:PhoneHashKey"] = param.Value;
-                }
-            }
+            var response = secretsClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = usageArn })
+                .GetAwaiter()
+                .GetResult();
+            if (!string.IsNullOrEmpty(response.SecretString))
+                secureConfig["Usage:PhoneHashKey"] = response.SecretString;
         }
 
         // 3. Inject fetched secrets into .NET configuration

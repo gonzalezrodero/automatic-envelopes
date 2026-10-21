@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using AutomaticEnvelopes.Api.Features.Usage;
@@ -70,6 +71,7 @@ public class TenantEndpoints
         ClaimsPrincipal user,
         HttpContext httpContext,
         IDocumentSession session,
+        UsageMeter usage,
         CancellationToken ct)
     {
         TenantRequest.NoStore(httpContext);
@@ -115,6 +117,9 @@ public class TenantEndpoints
             enabledTools ?? profile.EnabledTools,
             limit ?? profile.MonthlyResponseLimit,
             email ?? profile.ContactEmail);
+        if (updated.EffectiveMonthlyResponseLimit > profile.EffectiveMonthlyResponseLimit)
+            await usage.ClearAlertsAsync(tenantId, ct);
+
         session.Store(updated);
         await session.SaveChangesAsync(ct);
         return Results.Ok(TenantPortalProfile.From(updated));
@@ -146,8 +151,22 @@ public class TenantEndpoints
         var month = UsageMonth.Current();
         await using var usageSession = store.LightweightSession(tenantId);
         var usage = await usageSession.LoadAsync<TenantMonthUsage>(month, ct);
-        return Results.Ok(TenantUsageResponse.Create(profile, usage, month));
+        return Results.Ok(new UsageBody(
+            month,
+            usage?.Responses ?? 0,
+            new UsageTokens(usage?.InputTokens ?? 0, usage?.OutputTokens ?? 0),
+            profile.EffectiveMonthlyResponseLimit));
     }
+
+    private sealed record UsageBody(
+        [property: JsonPropertyName("month")] string Month,
+        [property: JsonPropertyName("responses")] int Responses,
+        [property: JsonPropertyName("tokens")] UsageTokens Tokens,
+        [property: JsonPropertyName("limit")] int Limit);
+
+    private sealed record UsageTokens(
+        [property: JsonPropertyName("input")] long Input,
+        [property: JsonPropertyName("output")] long Output);
 
     private static IResult? RejectClubOnlyFields(UpdateTenantSettingsRequest? request, ClaimsPrincipal user)
     {

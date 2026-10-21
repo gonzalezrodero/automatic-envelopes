@@ -1,8 +1,9 @@
+using System.Text.Json;
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using AutomaticEnvelopes.Api.Features.Tenancy;
-using JasperFx;
 using Marten;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace AutomaticEnvelopes.Api.Features.Usage;
@@ -22,8 +23,13 @@ public sealed class UsageMeter(
     ILogger<UsageMeter> logger,
     IAmazonSimpleEmailServiceV2? email = null)
 {
-    private const int Attempts = 5;
+    private const string Table = "public.mt_doc_tenantmonthusage";
     private readonly UsageOptions options = options.Value;
+
+    public UsageMeter(IDocumentStore store)
+        : this(store, Options.Create(new UsageOptions()), NullLogger<UsageMeter>.Instance)
+    {
+    }
 
     public async Task<int> ResponseCountAsync(string tenantId, CancellationToken ct)
     {
@@ -34,68 +40,135 @@ public sealed class UsageMeter(
 
     public async Task RecordAsync(TenantProfile tenant, long inputTokens, long outputTokens, CancellationToken ct)
     {
-        var limit = tenant.EffectiveMonthlyResponseLimit;
-        var saved = await UpdateAsync(
-            tenant.Id,
-            doc => UsageMath.Record(doc, inputTokens, outputTokens, limit),
-            ct);
-        if (saved.Alert != UsageAlert.None)
+        try
         {
-            await SendAsync(tenant, saved.Alert, saved.Responses, limit, ct);
+            var limit = tenant.EffectiveMonthlyResponseLimit;
+            var doc = await IncrementAsync(tenant.Id, inputTokens, outputTokens, ct);
+            if (doc is null)
+            {
+                logger.LogError("Monthly usage row missing after increment. TenantId: {TenantId}.", tenant.Id);
+                return;
+            }
+
+            var alert = UsageMath.Pending(doc, limit);
+            if (alert != UsageAlert.None && await TrySendAsync(tenant, alert, doc.Responses, limit, ct))
+                await MarkAsync(tenant.Id, alert == UsageAlert.Reached, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Monthly usage update failed. TenantId: {TenantId}.", tenant.Id);
         }
     }
 
     public async Task NotifyBlockedAsync(TenantProfile tenant, CancellationToken ct)
     {
-        var limit = tenant.EffectiveMonthlyResponseLimit;
-        var saved = await UpdateAsync(tenant.Id, doc => UsageMath.MarkBlocked(doc, limit), ct);
-        if (saved.Alert == UsageAlert.Reached)
+        try
         {
-            await SendAsync(tenant, saved.Alert, saved.Responses, limit, ct);
+            var limit = tenant.EffectiveMonthlyResponseLimit;
+            await using var session = store.LightweightSession(tenant.Id);
+            var doc = await session.LoadAsync<TenantMonthUsage>(UsageMonth.Current(), ct) ?? new TenantMonthUsage();
+            if (doc.Notified100 || doc.Responses < limit)
+                return;
+
+            if (await TrySendAsync(tenant, UsageAlert.Reached, doc.Responses, limit, ct))
+                await MarkAsync(tenant.Id, reached: true, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Monthly usage block notice failed. TenantId: {TenantId}.", tenant.Id);
         }
     }
 
-    private async Task<UsageUpdate> UpdateAsync(
-        string tenantId,
-        Func<TenantMonthUsage, UsageUpdate> change,
-        CancellationToken ct)
+    public async Task ClearAlertsAsync(string tenantId, CancellationToken ct)
     {
-        var id = UsageMonth.Current();
-        for (var attempt = 1; attempt <= Attempts; attempt++)
-        {
-            await using var session = store.LightweightSession(tenantId);
-            var doc = await session.LoadAsync<TenantMonthUsage>(id, ct) ?? new TenantMonthUsage { Id = id };
-            var update = change(doc);
-            if (!update.Save)
-            {
-                return update;
-            }
-
-            session.Store(doc);
-            try
-            {
-                await session.SaveChangesAsync(ct);
-                return update;
-            }
-            catch (ConcurrencyException) when (attempt < Attempts)
-            {
-                logger.LogInformation("Retrying monthly usage update. TenantId: {TenantId}.", tenantId);
-            }
-        }
-
-        logger.LogError("Monthly usage update failed after retries. TenantId: {TenantId}.", tenantId);
-        return new UsageUpdate(false, UsageAlert.None, 0);
+        await using var session = store.LightweightSession(tenantId);
+        session.QueueSqlCommand(
+            $$"""
+            update {{Table}}
+            set data = jsonb_set(jsonb_set(data, '{Notified80}', 'false'::jsonb, true), '{Notified100}', 'false'::jsonb, true),
+                mt_version = md5(random()::text || clock_timestamp()::text)::uuid,
+                mt_last_modified = transaction_timestamp()
+            where tenant_id = ? and id = ?
+            """,
+            tenantId,
+            UsageMonth.Current());
+        await session.SaveChangesAsync(ct);
     }
 
-    private async Task SendAsync(TenantProfile tenant, UsageAlert alert, int responses, int limit, CancellationToken ct)
+    private async Task<TenantMonthUsage?> IncrementAsync(string tenantId, long inputTokens, long outputTokens, CancellationToken ct)
+    {
+        var month = UsageMonth.Current();
+        var created = JsonSerializer.Serialize(new TenantMonthUsage
+        {
+            Id = month,
+            Responses = 1,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens
+        });
+        await using var session = store.LightweightSession(tenantId);
+        session.QueueSqlCommand(
+            $$"""
+            insert into {{Table}} (tenant_id, id, data)
+            values (?, ?, cast(? as jsonb))
+            on conflict (tenant_id, id) do update set
+                data = jsonb_set(
+                    jsonb_set(
+                        jsonb_set({{Table}}.data, '{Responses}', to_jsonb(coalesce(({{Table}}.data->>'Responses')::int, 0) + 1)),
+                        '{InputTokens}', to_jsonb(coalesce(({{Table}}.data->>'InputTokens')::bigint, 0) + cast(? as bigint))),
+                    '{OutputTokens}', to_jsonb(coalesce(({{Table}}.data->>'OutputTokens')::bigint, 0) + cast(? as bigint))),
+                mt_version = md5(random()::text || clock_timestamp()::text)::uuid,
+                mt_last_modified = transaction_timestamp()
+            """,
+            tenantId,
+            month,
+            created,
+            inputTokens,
+            outputTokens);
+        await session.SaveChangesAsync(ct);
+        return await session.LoadAsync<TenantMonthUsage>(month, ct);
+    }
+
+    private async Task MarkAsync(string tenantId, bool reached, CancellationToken ct)
+    {
+        var month = UsageMonth.Current();
+        var created = JsonSerializer.Serialize(new TenantMonthUsage
+        {
+            Id = month,
+            Notified80 = true,
+            Notified100 = reached
+        });
+        await using var session = store.LightweightSession(tenantId);
+        session.QueueSqlCommand(
+            $$"""
+            insert into {{Table}} (tenant_id, id, data)
+            values (?, ?, cast(? as jsonb))
+            on conflict (tenant_id, id) do update set
+                data = jsonb_set(
+                    jsonb_set({{Table}}.data, '{Notified80}', 'true'::jsonb, true),
+                    '{Notified100}', case when ? then 'true'::jsonb else coalesce({{Table}}.data->'Notified100', 'false'::jsonb) end, true),
+                mt_version = md5(random()::text || clock_timestamp()::text)::uuid,
+                mt_last_modified = transaction_timestamp()
+            """,
+            tenantId,
+            month,
+            created,
+            reached);
+        await session.SaveChangesAsync(ct);
+    }
+
+    private async Task<bool> TrySendAsync(TenantProfile tenant, UsageAlert alert, int responses, int limit, CancellationToken ct)
     {
         var to = tenant.ContactEmail?.Trim() ?? string.Empty;
         if (email is null || string.IsNullOrWhiteSpace(options.FromAddress) || string.IsNullOrWhiteSpace(to))
         {
             logger.LogInformation("Usage alert not emailed. TenantId: {TenantId}. Alert: {Alert}.", tenant.Id, alert);
-            return;
+            return false;
         }
 
+        var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.Id : tenant.Name.Trim();
+        name = name.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+        var month = UsageMonth.Current();
+        var reached = alert == UsageAlert.Reached;
         try
         {
             await email.SendEmailAsync(new SendEmailRequest
@@ -106,12 +179,18 @@ public sealed class UsageMeter(
                 {
                     Simple = new Message
                     {
-                        Subject = new Content { Data = UsageMail.Subject(alert), Charset = "UTF-8" },
+                        Subject = new Content
+                        {
+                            Data = reached ? "Límite de respuestas alcanzado" : "Aviso de uso del asistente (80%)",
+                            Charset = "UTF-8"
+                        },
                         Body = new Body
                         {
                             Text = new Content
                             {
-                                Data = UsageMail.Body(DisplayName(tenant), UsageMonth.Current(), responses, limit, alert),
+                                Data = reached
+                                    ? $"{name} ha alcanzado el límite de {limit} respuestas de {month}. El asistente no responderá preguntas nuevas hasta el mes que viene. Para ampliar el límite, contacta con el administrador de la plataforma."
+                                    : $"{name} lleva {responses} de {limit} respuestas de {month}. Al llegar al límite el asistente dejará de responder hasta el mes que viene.",
                                 Charset = "UTF-8"
                             }
                         }
@@ -119,16 +198,12 @@ public sealed class UsageMeter(
                 }
             }, ct);
             logger.LogInformation("Usage alert emailed. TenantId: {TenantId}. Alert: {Alert}.", tenant.Id, alert);
+            return true;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Usage alert email failed. TenantId: {TenantId}. Alert: {Alert}.", tenant.Id, alert);
+            return false;
         }
-    }
-
-    private static string DisplayName(TenantProfile tenant)
-    {
-        var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.Id : tenant.Name.Trim();
-        return name.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
     }
 }

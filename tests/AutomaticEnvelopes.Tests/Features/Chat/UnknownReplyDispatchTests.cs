@@ -3,8 +3,8 @@ using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Handlers;
-using AutomaticEnvelopes.Tests;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
+using AutomaticEnvelopes.Api.Features.Usage;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Portal;
 using AutomaticEnvelopes.Api.Features.Tenancy;
@@ -30,7 +30,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -55,7 +55,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -75,7 +75,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -97,7 +97,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -120,7 +120,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -149,7 +149,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -169,7 +169,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -191,7 +191,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -214,7 +214,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
-            TestUsage.Meter(harness.Store.Object),
+            new UsageMeter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);

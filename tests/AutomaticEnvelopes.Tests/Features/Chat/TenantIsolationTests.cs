@@ -6,7 +6,7 @@ using AutomaticEnvelopes.Api.Features.Chat.Handlers;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
-using AutomaticEnvelopes.Tests;
+using AutomaticEnvelopes.Api.Features.Usage;
 using AwesomeAssertions;
 using JasperFx.Events;
 using Marten;
@@ -69,7 +69,7 @@ public class TenantIsolationTests
             store,
             knowledge.Object,
             chat.Object,
-            TestUsage.Meter(store),
+            new UsageMeter(store),
             bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -118,7 +118,7 @@ public class TenantIsolationTests
             store,
             knowledge.Object,
             chat.Object,
-            TestUsage.Meter(store),
+            new UsageMeter(store),
             bus.Object,
             NullLogger.Instance,
             CancellationToken.None);

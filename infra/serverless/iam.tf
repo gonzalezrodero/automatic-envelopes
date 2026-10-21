@@ -81,13 +81,8 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
     ]
   }
 
-  statement {
-    sid       = "AllowSesSendFromDomain"
-    effect    = "Allow"
-    actions   = ["ses:SendEmail"]
-    resources = [aws_sesv2_email_identity.sender.arn]
-  }
 }
+
 
 resource "aws_iam_role_policy" "lambda_custom" {
   name   = "${var.project_name}-lambda-custom-policy"
@@ -98,4 +93,49 @@ resource "aws_iam_role_policy" "lambda_custom" {
 resource "aws_iam_role_policy_attachment" "attach_bootstrap_bedrock_policy" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = data.terraform_remote_state.bootstrap.outputs.bedrock_policy_arn
+}
+
+# The public API lambda keeps lambda_exec. Only the worker sends mail and reads the phone HMAC key.
+resource "aws_iam_role" "worker" {
+  name               = "${var.project_name}-worker-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "worker_basic_sqs" {
+  role       = aws_iam_role.worker.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "worker_bedrock" {
+  role       = aws_iam_role.worker.name
+  policy_arn = data.terraform_remote_state.bootstrap.outputs.bedrock_policy_arn
+}
+
+data "aws_iam_policy_document" "worker_permissions" {
+  source_policy_documents = [data.aws_iam_policy_document.lambda_custom_permissions.json]
+
+  statement {
+    sid       = "AllowPhoneHashSecret"
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.phone_hash_key.arn]
+  }
+
+  statement {
+    sid       = "AllowSesSendFromNoreply"
+    effect    = "Allow"
+    actions   = ["ses:SendEmail"]
+    resources = [aws_sesv2_email_identity.sender.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "ses:FromAddress"
+      values   = ["noreply@core-webhook.eu"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "worker_custom" {
+  name   = "${var.project_name}-worker-custom-policy"
+  role   = aws_iam_role.worker.id
+  policy = data.aws_iam_policy_document.worker_permissions.json
 }
