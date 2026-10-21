@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json.Serialization;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using AutomaticEnvelopes.Api.Features.Usage;
@@ -71,8 +70,8 @@ public class TenantEndpoints
         ClaimsPrincipal user,
         HttpContext httpContext,
         IDocumentSession session,
-        UsageMeter usage,
-        CancellationToken ct)
+        CancellationToken ct,
+        UsageMeter? usage = null)
     {
         TenantRequest.NoStore(httpContext);
         if (TenantRequest.Reject(user, tenantId) is { } rejected)
@@ -111,14 +110,9 @@ public class TenantEndpoints
             return Results.NotFound(new { Error = "Tenant was not found." });
         }
 
-        var updated = profile.WithSettings(
-            settings.SystemPrompt,
-            settings.PrivacyPolicyUrl,
-            enabledTools ?? profile.EnabledTools,
-            limit ?? profile.MonthlyResponseLimit,
-            email ?? profile.ContactEmail);
+        var updated = profile.WithSettings(settings.SystemPrompt, settings.PrivacyPolicyUrl, enabledTools ?? profile.EnabledTools, limit ?? profile.MonthlyResponseLimit, email ?? profile.ContactEmail);
         if (updated.EffectiveMonthlyResponseLimit > profile.EffectiveMonthlyResponseLimit)
-            await usage.ClearAlertsAsync(tenantId, ct);
+            await usage!.ClearAlertsAsync(tenantId, ct);
 
         session.Store(updated);
         await session.SaveChangesAsync(ct);
@@ -129,12 +123,7 @@ public class TenantEndpoints
     [WolverineGet("/tenants/{tenantId}/usage")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
     public static async Task<IResult> Usage(
-        string tenantId,
-        ClaimsPrincipal user,
-        HttpContext httpContext,
-        IDocumentSession session,
-        IDocumentStore store,
-        CancellationToken ct)
+        string tenantId, ClaimsPrincipal user, HttpContext httpContext, IDocumentSession session, IDocumentStore store, CancellationToken ct)
     {
         TenantRequest.NoStore(httpContext);
         if (TenantRequest.Reject(user, tenantId) is { } rejected)
@@ -150,23 +139,15 @@ public class TenantEndpoints
 
         var month = UsageMonth.Current();
         await using var usageSession = store.LightweightSession(tenantId);
-        var usage = await usageSession.LoadAsync<TenantMonthUsage>(month, ct);
-        return Results.Ok(new UsageBody(
+        var row = await usageSession.LoadAsync<TenantMonthUsage>(month, ct);
+        return Results.Ok(new
+        {
             month,
-            usage?.Responses ?? 0,
-            new UsageTokens(usage?.InputTokens ?? 0, usage?.OutputTokens ?? 0),
-            profile.EffectiveMonthlyResponseLimit));
+            responses = row?.Responses ?? 0,
+            tokens = new { input = row?.InputTokens ?? 0, output = row?.OutputTokens ?? 0 },
+            limit = profile.EffectiveMonthlyResponseLimit
+        });
     }
-
-    private sealed record UsageBody(
-        [property: JsonPropertyName("month")] string Month,
-        [property: JsonPropertyName("responses")] int Responses,
-        [property: JsonPropertyName("tokens")] UsageTokens Tokens,
-        [property: JsonPropertyName("limit")] int Limit);
-
-    private sealed record UsageTokens(
-        [property: JsonPropertyName("input")] long Input,
-        [property: JsonPropertyName("output")] long Output);
 
     private static IResult? RejectClubOnlyFields(UpdateTenantSettingsRequest? request, ClaimsPrincipal user)
     {
@@ -174,22 +155,18 @@ public class TenantEndpoints
         {
             return null;
         }
-
         if (request.EnabledTools is not null)
         {
             return Forbidden("Only a platform admin can set enabledTools.");
         }
-
         if (request.MonthlyResponseLimit is not null)
         {
             return Forbidden("Only a platform admin can set monthlyResponseLimit.");
         }
-
         if (request.ContactEmail is not null)
         {
             return Forbidden("Only a platform admin can set contactEmail.");
         }
-
         return null;
     }
 

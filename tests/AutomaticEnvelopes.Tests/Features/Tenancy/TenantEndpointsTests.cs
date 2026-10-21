@@ -2,7 +2,6 @@ using System.Reflection;
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Tenancy;
-using AutomaticEnvelopes.Api.Features.Usage;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
@@ -14,8 +13,6 @@ namespace AutomaticEnvelopes.Tests.Features.Tenancy;
 
 public class TenantEndpointsTests
 {
-    private static readonly UsageMeter UnusedUsage = new(new Mock<IDocumentStore>().Object);
-
     [Fact]
     public void ProtectedConstructor_KeepsTheEndpointTypeInstantiable()
     {
@@ -123,7 +120,6 @@ public class TenantEndpointsTests
             user,
             new DefaultHttpContext(),
             session.Object,
-            UnusedUsage,
             CancellationToken.None);
         var publicHttp = await TenantEndpoints.Update(
             "example-tenant",
@@ -131,7 +127,6 @@ public class TenantEndpointsTests
             user,
             new DefaultHttpContext(),
             session.Object,
-            UnusedUsage,
             CancellationToken.None);
         var missingBody = await TenantEndpoints.Update(
             "example-tenant",
@@ -139,7 +134,6 @@ public class TenantEndpointsTests
             user,
             new DefaultHttpContext(),
             session.Object,
-            UnusedUsage,
             CancellationToken.None);
 
         Status(emptyPrompt).Should().Be(StatusCodes.Status400BadRequest);
@@ -160,7 +154,6 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             new Mock<IDocumentSession>(MockBehavior.Strict).Object,
-            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status400BadRequest);
@@ -175,7 +168,6 @@ public class TenantEndpointsTests
             TenantUser("example-tenant"),
             new DefaultHttpContext(),
             new Mock<IDocumentSession>(MockBehavior.Strict).Object,
-            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status403Forbidden);
@@ -194,7 +186,6 @@ public class TenantEndpointsTests
             TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
-            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status404NotFound);
@@ -243,7 +234,6 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
-            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status200OK);
@@ -268,7 +258,6 @@ public class TenantEndpointsTests
             TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
-            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status403Forbidden);
@@ -302,7 +291,6 @@ public class TenantEndpointsTests
             Admin(),
             new DefaultHttpContext(),
             session.Object,
-            UnusedUsage,
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status200OK);
@@ -314,29 +302,15 @@ public class TenantEndpointsTests
     [InlineData("email")]
     public async Task Update_ClubRole_CannotSetAdminOnlyUsageFields(string field)
     {
-        var request = new UpdateTenantSettingsRequest
-        {
-            SystemPrompt = "persona",
-            PrivacyPolicyUrl = "https://example.com/p"
-        };
+        var request = new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p" };
         if (field == "monthly")
-        {
             request.MonthlyResponseLimit = 10;
-        }
         else
-        {
             request.ContactEmail = "club@example.com";
-        }
 
         var result = await TenantEndpoints.Update(
-            "example-tenant",
-            request,
-            TenantUser("example-tenant"),
-            new DefaultHttpContext(),
-            new Mock<IDocumentSession>(MockBehavior.Strict).Object,
-            UnusedUsage,
-            CancellationToken.None);
-
+            "example-tenant", request, TenantUser("example-tenant"), new DefaultHttpContext(),
+            new Mock<IDocumentSession>(MockBehavior.Strict).Object, CancellationToken.None);
         Status(result).Should().Be(StatusCodes.Status403Forbidden);
     }
 
@@ -345,35 +319,19 @@ public class TenantEndpointsTests
     {
         var stored = new TenantProfile
         {
-            Id = "example-tenant",
-            BotPhoneNumberId = "phone-1",
-            MonthlyResponseLimit = 50,
-            ContactEmail = "old@example.com",
-            EnabledTools = ["price"]
+            Id = "example-tenant", BotPhoneNumberId = "phone-1", MonthlyResponseLimit = 50,
+            ContactEmail = "old@example.com", EnabledTools = ["price"]
         };
         TenantProfile? saved = null;
         var session = new Mock<IDocumentSession>();
-        session.Setup(store => store.LoadAsync<TenantProfile>("example-tenant", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(stored);
-        session.Setup(store => store.Store(It.IsAny<TenantProfile[]>()))
-            .Callback<TenantProfile[]>(profiles => saved = profiles[0]);
+        session.Setup(store => store.LoadAsync<TenantProfile>("example-tenant", It.IsAny<CancellationToken>())).ReturnsAsync(stored);
+        session.Setup(store => store.Store(It.IsAny<TenantProfile[]>())).Callback<TenantProfile[]>(profiles => saved = profiles[0]);
         session.Setup(store => store.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         var changed = await TenantEndpoints.Update(
             "example-tenant",
-            new UpdateTenantSettingsRequest
-            {
-                SystemPrompt = "persona",
-                PrivacyPolicyUrl = "https://example.com/p",
-                MonthlyResponseLimit = 0,
-                ContactEmail = "  club@example.com "
-            },
-            Admin(),
-            new DefaultHttpContext(),
-            session.Object,
-            UnusedUsage,
-            CancellationToken.None);
-
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p", MonthlyResponseLimit = 0, ContactEmail = "  club@example.com " },
+            Admin(), new DefaultHttpContext(), session.Object, CancellationToken.None);
         Status(changed).Should().Be(StatusCodes.Status200OK);
         saved!.MonthlyResponseLimit.Should().Be(0);
         saved.ContactEmail.Should().Be("club@example.com");
@@ -382,48 +340,19 @@ public class TenantEndpointsTests
         var kept = await TenantEndpoints.Update(
             "example-tenant",
             new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p" },
-            Admin(),
-            new DefaultHttpContext(),
-            session.Object,
-            UnusedUsage,
-            CancellationToken.None);
-
+            Admin(), new DefaultHttpContext(), session.Object, CancellationToken.None);
         Status(kept).Should().Be(StatusCodes.Status200OK);
         saved.MonthlyResponseLimit.Should().Be(50);
         saved.ContactEmail.Should().Be("old@example.com");
-    }
 
-    [Fact]
-    public async Task Update_Admin_RejectsANegativeLimit_AndABadEmail()
-    {
-        var session = new Mock<IDocumentSession>(MockBehavior.Strict);
         var negative = await TenantEndpoints.Update(
             "example-tenant",
-            new UpdateTenantSettingsRequest
-            {
-                SystemPrompt = "persona",
-                PrivacyPolicyUrl = "https://example.com/p",
-                MonthlyResponseLimit = -1
-            },
-            Admin(),
-            new DefaultHttpContext(),
-            session.Object,
-            UnusedUsage,
-            CancellationToken.None);
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p", MonthlyResponseLimit = -1 },
+            Admin(), new DefaultHttpContext(), new Mock<IDocumentSession>(MockBehavior.Strict).Object, CancellationToken.None);
         var badEmail = await TenantEndpoints.Update(
             "example-tenant",
-            new UpdateTenantSettingsRequest
-            {
-                SystemPrompt = "persona",
-                PrivacyPolicyUrl = "https://example.com/p",
-                ContactEmail = "not-an-email"
-            },
-            Admin(),
-            new DefaultHttpContext(),
-            session.Object,
-            UnusedUsage,
-            CancellationToken.None);
-
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p", ContactEmail = "not-an-email" },
+            Admin(), new DefaultHttpContext(), new Mock<IDocumentSession>(MockBehavior.Strict).Object, CancellationToken.None);
         Status(negative).Should().Be(StatusCodes.Status400BadRequest);
         Status(badEmail).Should().Be(StatusCodes.Status400BadRequest);
     }

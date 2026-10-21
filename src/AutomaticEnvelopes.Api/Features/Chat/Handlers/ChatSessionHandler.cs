@@ -62,18 +62,7 @@ public static class ChatSessionHandler
         var used = await usage.ResponseCountAsync(tenant.Id, ct);
         if (used >= limit)
         {
-            await ReplyAtLimitAsync(
-                command,
-                tenant,
-                firstContact,
-                chatHistory.Count > 0,
-                used,
-                limit,
-                session,
-                usage,
-                bus,
-                logger,
-                ct);
+            await ReplyAtLimitAsync(command, tenant, firstContact, chatHistory.Count > 0, used, limit, session, usage, bus, logger, ct);
             return;
         }
 
@@ -142,24 +131,12 @@ public static class ChatSessionHandler
     }
 
     private static async Task ReplyAtLimitAsync(
-        AnalyzeChatSession command,
-        TenantProfile tenant,
-        bool firstContact,
-        bool hasHistory,
-        int used,
-        int limit,
-        IDocumentSession session,
-        UsageMeter usage,
-        IMessageBus bus,
-        ILogger logger,
-        CancellationToken ct)
+        AnalyzeChatSession command, TenantProfile tenant, bool firstContact, bool hasHistory, int used, int limit,
+        IDocumentSession session, UsageMeter usage, IMessageBus bus, ILogger logger, CancellationToken ct)
     {
         logger.LogInformation(
-            "Monthly response limit reached. TenantId: {TenantId}. Month: {Month}. Responses: {Responses}. Limit: {Limit}.",
-            tenant.Id,
-            UsageMonth.Current(),
-            used,
-            limit);
+            "Monthly response limit reached. TenantId: {TenantId}. Responses: {Responses}. Limit: {Limit}.",
+            tenant.Id, used, limit);
 
         var replyText = UsageMessages.Spanish;
         if (firstContact)

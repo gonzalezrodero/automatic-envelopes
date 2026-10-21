@@ -157,11 +157,8 @@ public class ChatService(
     private static string ReadText(ConverseResponse response) =>
         response.Output.Message.Content.First(c => c.Text != null).Text;
 
-    private static (long Input, long Output) ReadUsage(ConverseResponse response)
-    {
-        var usage = response.Usage;
-        return (usage?.InputTokens ?? 0, usage?.OutputTokens ?? 0);
-    }
+    private static (long Input, long Output) ReadUsage(ConverseResponse response) =>
+        (response.Usage?.InputTokens ?? 0, response.Usage?.OutputTokens ?? 0);
 
     private static List<Message> FormatChatMessages(List<ChatMessage> history)
     {

@@ -126,12 +126,7 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
             MessageCount = 25,
             WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1)
         });
-        session.Store(new WhatsAppRateLimitTracker
-        {
-            Id = spammerPhone,
-            MessageCount = 3,
-            WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1)
-        });
+        session.Store(new WhatsAppRateLimitTracker { Id = spammerPhone, MessageCount = 3, WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1) });
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var spamCommand = new ProcessWhatsAppMessage(
@@ -171,12 +166,7 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
         {
             var bot = "6" + Guid.NewGuid().ToString("N")[..12];
             await fixture.SeedTenantAsync("hash-" + Guid.NewGuid().ToString("N")[..8], bot);
-            var act = () => fixture.Host.InvokeMessageAndWaitAsync(new ProcessWhatsAppMessage(
-                $"wamid.{Guid.NewGuid()}",
-                bot,
-                "34600111222",
-                "Hola",
-                DateTimeOffset.UtcNow));
+            var act = () => fixture.Host.InvokeMessageAndWaitAsync(new ProcessWhatsAppMessage($"wamid.{Guid.NewGuid()}", bot, "34600111222", "Hola", DateTimeOffset.UtcNow));
             await act.Should().ThrowAsync<InvalidOperationException>();
         }
         finally

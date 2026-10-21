@@ -10,10 +10,7 @@ public static class PhoneRateKey
     public static bool TryHash(string? tenantId, string? phone, string? secret, out string trackerId)
     {
         trackerId = string.Empty;
-        if (string.IsNullOrWhiteSpace(tenantId) ||
-            string.IsNullOrWhiteSpace(phone) ||
-            string.IsNullOrEmpty(secret) ||
-            secret.Length < MinSecretLength)
+        if (string.IsNullOrWhiteSpace(tenantId) || string.IsNullOrWhiteSpace(phone) || string.IsNullOrEmpty(secret) || secret.Length < MinSecretLength)
         {
             return false;
         }

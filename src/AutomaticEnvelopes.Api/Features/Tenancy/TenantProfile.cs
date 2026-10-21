@@ -23,9 +23,6 @@ public class TenantProfile
     /// </summary>
     public string[]? EnabledTools { get; init; }
 
-    /// <summary>
-    /// Null means <see cref="DefaultMonthlyResponseLimit"/>.
-    /// </summary>
     public int? MonthlyResponseLimit { get; init; }
 
     public string ContactEmail { get; init; } = string.Empty;
@@ -49,12 +46,7 @@ public class TenantProfile
     /// </summary>
     public string DisplayPhone { get; init; } = string.Empty;
 
-    public TenantProfile WithSettings(
-        string systemPrompt,
-        string privacyPolicyUrl,
-        string[]? enabledTools,
-        int? monthlyResponseLimit,
-        string contactEmail) => new()
+    public TenantProfile WithSettings(string systemPrompt, string privacyPolicyUrl, string[]? enabledTools, int? monthlyResponseLimit, string contactEmail) => new()
     {
         Id = Id,
         BotPhoneNumberId = BotPhoneNumberId,

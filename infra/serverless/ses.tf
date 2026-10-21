@@ -1,9 +1,4 @@
-# Domain identity for noreply@core-webhook.eu. Each account (dev and prod) has its own
-# identity. DKIM CNAMEs are written here only when this account owns the zone (dev).
-# Prod tokens are an output: the zone core-webhook.eu is in the development account.
-#
-# The phone HMAC key follows infra/db/marten_app.tf: an ephemeral password written once
-# into Secrets Manager. It is not stored in Terraform state. Bump the version to rotate.
+# noreply@core-webhook.eu. DKIM CNAMEs only where this account owns the zone (dev); prod copies ses_dkim_tokens. HMAC key is ephemeral and write-only; bump phone_hash_key_version to rotate.
 
 ephemeral "random_password" "phone_hash_key" {
   length  = 32

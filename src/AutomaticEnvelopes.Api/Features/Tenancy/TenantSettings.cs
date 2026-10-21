@@ -106,23 +106,16 @@ public static class TenantSettingsValidation
 
     public static bool TryReadMonthlyResponseLimit(int? requested, out int? limit, out string error)
     {
-        if (requested is null)
+        if (requested is null or >= 0 and <= MaxMonthlyResponseLimit)
         {
-            limit = null;
+            limit = requested;
             error = string.Empty;
             return true;
         }
 
-        if (requested.Value < 0 || requested.Value > MaxMonthlyResponseLimit)
-        {
-            limit = null;
-            error = LimitRejected;
-            return false;
-        }
-
-        limit = requested.Value;
-        error = string.Empty;
-        return true;
+        limit = null;
+        error = LimitRejected;
+        return false;
     }
 
     public static bool TryReadContactEmail(string? requested, out string? email, out string error)
@@ -142,12 +135,10 @@ public static class TenantSettingsValidation
             return true;
         }
 
-        if (trimmed.Length > 254 ||
-            trimmed.Contains('\r') ||
-            trimmed.Contains('\n') ||
-            !MailAddress.TryCreate(trimmed, out var parsed) ||
-            !string.Equals(parsed.Address, trimmed, StringComparison.OrdinalIgnoreCase) ||
-            !parsed.Host.Contains('.', StringComparison.Ordinal))
+        if (trimmed.Length > 254 || trimmed.Contains('\r') || trimmed.Contains('\n')
+            || !MailAddress.TryCreate(trimmed, out var parsed)
+            || !string.Equals(parsed.Address, trimmed, StringComparison.OrdinalIgnoreCase)
+            || !parsed.Host.Contains('.', StringComparison.Ordinal))
         {
             email = null;
             error = EmailRejected;

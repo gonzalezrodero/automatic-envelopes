@@ -83,7 +83,6 @@ public static class ProcessWhatsAppMessageHandler
         ILogger logger,
         CancellationToken ct)
     {
-        // Old tracker ids were the raw phone. The window is one minute, so drop anything that is not an HMAC hex.
         session.QueueSqlCommand(
             "delete from public.mt_doc_whatsappratelimittracker where tenant_id = ? and id !~ '^[0-9a-f]{64}$'",
             tenantId);

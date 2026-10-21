@@ -51,12 +51,7 @@ public class SqsLambdaHandler
         builder.Services.AddWolverine(builder.Configuration);
 
         var host = builder.Build();
-        using (var scope = host.Services.CreateScope())
-        {
-            var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-            store.Storage.ApplyAllConfiguredChangesToDatabaseAsync().GetAwaiter().GetResult();
-        }
-
+        host.Services.GetRequiredService<IDocumentStore>().Storage.ApplyAllConfiguredChangesToDatabaseAsync().GetAwaiter().GetResult();
         host.Start();
 
         var initLogger = host.Services.GetRequiredService<ILogger<SqsLambdaHandler>>();
