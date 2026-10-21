@@ -77,6 +77,13 @@ public class TenantEndpoints
             return rejected;
         }
 
+        if (request?.EnabledTools is not null && !TenantAccess.IsAdmin(user))
+        {
+            return Results.Json(
+                new { Error = "Only a platform admin can set enabledTools." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         if (!TenantSettingsValidation.TryValidate(request, out var settings, out var error))
         {
             return Results.BadRequest(new { Error = error });

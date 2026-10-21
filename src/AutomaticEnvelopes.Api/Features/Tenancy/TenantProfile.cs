@@ -5,7 +5,7 @@
 /// <see cref="BotPhoneNumberId"/>, <see cref="SystemPrompt"/>, <see cref="PrivacyPolicyUrl"/>,
 /// and <see cref="EnabledTools"/>. Name, short name, city, kind, and display phone are portal labels.
 /// Empty display values stay empty. There is no per-tenant default in code.
-/// A missing <see cref="EnabledTools"/> list enables no tools.
+/// Null <see cref="EnabledTools"/> was never stored. An empty array means no tools.
 /// </summary>
 public class TenantProfile
 {
@@ -36,9 +36,6 @@ public class TenantProfile
     /// Number shown in the portal. Not the Meta phone-number id and not used to route WhatsApp.
     /// </summary>
     public string DisplayPhone { get; init; } = string.Empty;
-
-    public TenantProfile WithSettings(string systemPrompt, string privacyPolicyUrl) =>
-        WithSettings(systemPrompt, privacyPolicyUrl, EnabledTools);
 
     public TenantProfile WithSettings(string systemPrompt, string privacyPolicyUrl, string[]? enabledTools) => new()
     {

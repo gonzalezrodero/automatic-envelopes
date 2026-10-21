@@ -90,7 +90,7 @@ Group `admin` may read and update every tenant. Any other group is a tenant id. 
 | --- | --- | --- | --- |
 | `GET` | `/tenants` | access cookie or Bearer | `TenantProfile[]` for the caller's groups. An allowed caller with no matching documents gets `[]`. |
 | `GET` | `/tenants/{tenantId}` | same | one `TenantProfile`. `403` when the group does not allow it (whether or not the document exists). `404` when it is allowed and missing. `400` when the id is not a valid path id. |
-| `PATCH` | `/tenants/{tenantId}` | same | `{ systemPrompt, privacyPolicyUrl, enabledTools? }` → updated profile. Same authz. `privacyPolicyUrl` must be `https`, or `http` on `localhost`, `127.0.0.1`, or `::1`, with no user info. `systemPrompt` is required. Omit `enabledTools` to leave the stored list unchanged. `[]` clears it. Each name must be a tool registered in the API. |
+| `PATCH` | `/tenants/{tenantId}` | same | `{ systemPrompt, privacyPolicyUrl, enabledTools? }` → updated profile. Same authz. `privacyPolicyUrl` must be `https`, or `http` on `localhost`, `127.0.0.1`, or `::1`, with no user info. `systemPrompt` is required. Only a platform admin may send `enabledTools`; a club role that sends it gets 403. Omit it to leave the stored list unchanged. `[]` clears it. A name that is not on the API allowlist is 400. |
 | `GET` | `/tenants/{tenantId}/dashboard` | same | Summary for the portal panel: counts, 14-day activity, recent threads. `404` when the tenant document is missing. |
 | `GET` | `/tenants/{tenantId}/conversations` | same | Threads for that tenant. Query: `q`, `language`, `from`, `to` (`yyyy-MM-dd`), `includeAnonymized` (`true` when omitted). |
 | `GET` | `/tenants/{tenantId}/conversations/{conversationId}` | same | One thread. Phone numbers are not used as the path id; the id is `[a-z0-9-]`. `language` is `null` because the bot does not classify it. `topic` is the opening user message. |
@@ -117,7 +117,7 @@ Portal JSON (camelCase). `createdAt` stays on the Marten document and is not ret
   "displayPhone": "",
   "systemPrompt": "...",
   "privacyPolicyUrl": "https://example.com/privacy",
-  "enabledTools": []
+  "enabledTools": null
 }
 ```
 
@@ -134,19 +134,9 @@ Portal JSON (camelCase). `createdAt` stays on the Marten document and is not ret
 | `DisplayPhone` | `displayPhone` | `""`. Portal label, not a WhatsApp route |
 | `SystemPrompt` | `systemPrompt` | used as stored, including empty. The bot keeps its own fallback |
 | `PrivacyPolicyUrl` | `privacyPolicyUrl` | used as stored. A legacy `http` URL is returned as text; only a new `PATCH` must pass the https / localhost check |
-| `EnabledTools` | `enabledTools` | `[]` when the document has no list. The bot then attaches no tools |
+| `EnabledTools` | `enabledTools` | `null` when the document has no list. The bot then attaches no tools. `[]` is an explicit clear |
 | `CreatedAt` | omitted | unchanged on `PATCH` |
 
-A stored display value is trimmed and returned as stored. `PATCH` writes `systemPrompt`, `privacyPolicyUrl`, and, only when the field is present, `enabledTools`. Display fields and the bot phone id stay as they are. Omitting `enabledTools` does not clear a list already stored.
+A stored display value is trimmed and returned as stored. `PATCH` writes `systemPrompt` and `privacyPolicyUrl`. It writes `enabledTools` only when a platform admin sends the field. Display fields and the bot phone id stay as they are. Omitting `enabledTools` does not clear a list already stored, and a prompt-only save does not turn a missing list into `[]`.
 
-The shared system prompt in code has no club-specific rules. Put those rules in that tenant's `systemPrompt`. Tool code stays in the API; a tenant can call a tool only when `enabledTools` names it. A document saved before this field existed has no list, so the bot enables no tools until a `PATCH` sets one. That is intentional: an unknown list must not turn tools on.
-
-### Club Bàsquet Samà after deploy
-
-No database migration and no infra change. The prod document `club-basquet-sama` already has its persona in `systemPrompt`. Two edits keep the previous behaviour:
-
-1. Before or after deploy, `GET /tenants/club-basquet-sama`, then `PATCH` the same `privacyPolicyUrl` and the same `systemPrompt` with this paragraph appended when it is not already there:
-
-    CAMPUS INSCRIPTIONS: When gathering data to calculate the September Campus price, ONLY ask for: 1. Number of days attending (maximum 10), 2. Dining service (menjador) needs, and 3. If they are club members (socis). NEVER ask about family discounts (siblings, large families, etc.) because they DO NOT apply for this campus.
-
-2. After this version is deployed, `PATCH` again with that prompt and `"enabledTools": ["calculate_family_campus_price"]`. Until this step, Samà still answers from its prompt and its own documents, and the campus calculator is off. Do not edit the document with SQL. The admin `PATCH` is the whole data step.
+The shared system prompt keeps the security rules first. The tenant `systemPrompt` is placed after them, inside a delimited block, and cannot override those rules. No tool is registered, so the allowlist is empty: any name is rejected, and the bot attaches nothing until a tool is added to that list. A missing or empty `enabledTools` also attaches nothing. Retrieval is not a tool.

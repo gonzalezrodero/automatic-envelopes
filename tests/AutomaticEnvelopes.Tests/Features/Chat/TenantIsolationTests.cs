@@ -6,7 +6,6 @@ using AutomaticEnvelopes.Api.Features.Chat.Handlers;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
-using AutomaticEnvelopes.Api.Features.Tenants.Sama.CampusPricing;
 using AwesomeAssertions;
 using JasperFx.Events;
 using Marten;
@@ -31,7 +30,7 @@ public class TenantIsolationTests
             Name = "Club A",
             SystemPrompt = persona,
             PrivacyPolicyUrl = "https://club-a.example/privacy",
-            EnabledTools = [CampusCalculatorTool.ToolName]
+            EnabledTools = ["price"]
         };
 
         var searched = new List<string>();
@@ -74,11 +73,12 @@ public class TenantIsolationTests
 
         searched.Should().Equal(tenantId);
         calledTenant.Should().Be(tenantId);
-        enabled.Should().Equal(CampusCalculatorTool.ToolName);
+        enabled.Should().Equal("price");
         prompt.Should().NotBeNull();
         prompt.Should().Contain(persona);
         prompt.Should().NotContain("CAMPUS INSCRIPTIONS");
-        prompt.Should().NotContain("PERSONA_DEL_CLUB_B");
+        prompt.IndexOf("CRITICAL SECURITY RULES", StringComparison.Ordinal)
+            .Should().BeLessThan(prompt.IndexOf(persona, StringComparison.Ordinal));
         prompt.Should().NotContain(BotPrompts.DeleteCommand);
     }
 

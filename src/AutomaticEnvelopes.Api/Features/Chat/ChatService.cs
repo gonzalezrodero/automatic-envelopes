@@ -36,7 +36,7 @@ public class ChatService(
         CancellationToken ct)
     {
         // Missing or empty config attaches nothing. Tools are opt-in per tenant.
-        var tenantTools = TenantToolGate.Select(tools, enabledTools);
+        var tenantTools = TenantToolGate.Select(tools, enabledTools, TenantToolGate.KnownNames);
 
         // 1. Build the generic Converse Request
         var request = new ConverseRequest

@@ -1,43 +1,34 @@
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Tools;
-using AutomaticEnvelopes.Api.Features.Tenants.Sama.CampusPricing;
 using AwesomeAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AutomaticEnvelopes.Tests.Features.Chat.Tools;
 
 public class TenantToolGateTests
 {
     [Fact]
-    public void Select_FailsClosed_WhenConfigIsMissing()
+    public void Select_FailsClosed_WhenConfigIsMissingOrBlank()
     {
-        var selected = TenantToolGate.Select([Calculator(), Other("foreign_tool")], null);
+        var registered = new IBedrockTool[] { new NamedTool("price") };
 
-        selected.Should().BeEmpty();
+        TenantToolGate.KnownNames.Should().BeEmpty();
+        TenantToolGate.Select(registered, null, TenantToolGate.KnownNames).Should().BeEmpty();
+        TenantToolGate.Select(registered, [], ["price"]).Should().BeEmpty();
+        TenantToolGate.Select(registered, [" ", ""], ["price"]).Should().BeEmpty();
+        TenantToolGate.Select(registered, ["price"], []).Should().BeEmpty();
     }
 
     [Fact]
-    public void Select_FailsClosed_WhenConfigIsEmptyOrBlank()
+    public void Select_ReturnsOnlyAllowlistedNames()
     {
-        var registered = new IBedrockTool[] { Calculator(), Other("foreign_tool") };
+        var price = new NamedTool("price");
+        var other = new NamedTool("other");
 
-        TenantToolGate.KnownNames.Should().Equal(CampusCalculatorTool.ToolName);
-        TenantToolGate.Select(registered, []).Should().BeEmpty();
-        TenantToolGate.Select(registered, [" ", ""]).Should().BeEmpty();
-        TenantToolGate.Select(registered, ["club-basquet-sama"]).Should().BeEmpty();
-    }
+        var selected = TenantToolGate.Select([price, other], [" price ", "price"], ["price"]);
+        var foreign = TenantToolGate.Select([price, other], ["other"], ["price"]);
 
-    [Fact]
-    public void Select_EnablesOnlyTheNamedTool()
-    {
-        var calculator = Calculator();
-        var foreign = Other("foreign_tool");
-
-        var forSama = TenantToolGate.Select([calculator, foreign], [CampusCalculatorTool.ToolName]);
-        var forOther = TenantToolGate.Select([calculator, foreign], ["foreign_tool"]);
-
-        forSama.Should().ContainSingle().Which.Name.Should().Be(CampusCalculatorTool.ToolName);
-        forOther.Should().ContainSingle().Which.Name.Should().Be("foreign_tool");
+        selected.Should().ContainSingle().Which.Should().BeSameAs(price);
+        foreign.Should().BeEmpty();
     }
 
     [Fact]
@@ -51,10 +42,6 @@ public class TenantToolGateTests
         BotPrompts.SystemPromptTemplate.Should().NotContain(BotPrompts.DeleteCommand);
         BotPrompts.DeleteCommands.Should().Contain(BotPrompts.DeleteCommand);
     }
-
-    private static CampusCalculatorTool Calculator() => new(NullLogger<CampusCalculatorTool>.Instance);
-
-    private static IBedrockTool Other(string name) => new NamedTool(name);
 
     private sealed class NamedTool(string name) : IBedrockTool
     {

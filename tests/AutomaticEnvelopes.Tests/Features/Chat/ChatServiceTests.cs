@@ -131,19 +131,18 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task GetResponseAsync_InjectsToolConfig_WhenTenantHasToolsRegistered()
+    public async Task GetResponseAsync_DoesNotInjectToolConfig_WhenTheNameIsNotAllowlisted()
     {
-        // Arrange
         var toolMock = new Mock<IBedrockTool>();
         toolMock.Setup(t => t.Name).Returns("test_tool");
         toolMock.Setup(t => t.GetSpecification()).Returns(new ToolSpecification { Name = "test_tool" });
-
-        // Re-initialize AutoMocker with the populated list, then create the SUT
         mocker.Use<IEnumerable<IBedrockTool>>([toolMock.Object]);
         var sutWithTools = mocker.CreateInstance<ChatService>();
 
-        var bedrockMock = mocker.GetMock<IAmazonBedrockRuntime>();
-        bedrockMock.Setup(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()))
+        ConverseRequest? sent = null;
+        mocker.GetMock<IAmazonBedrockRuntime>()
+            .Setup(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ConverseRequest, CancellationToken>((request, _) => sent = request)
             .ReturnsAsync(new ConverseResponse
             {
                 StopReason = StopReason.End_turn,
@@ -152,33 +151,19 @@ public class ChatServiceTests
 
         await sutWithTools.GetResponseAsync("System", [], "any-tenant", ["test_tool"], CancellationToken.None);
 
-        // Assert
-        // Use a simpler Verify and assert the captured argument using Moq's Callback/Capture pattern for stability
-        bedrockMock.Verify(c => c.ConverseAsync(It.Is<ConverseRequest>(r =>
-            r.ToolConfig != null &&
-            r.ToolConfig.Tools != null &&
-            r.ToolConfig.Tools.Count == 1 &&
-            r.ToolConfig.Tools[0].ToolSpec.Name == "test_tool" // Use array index instead of LINQ First()
-        ), It.IsAny<CancellationToken>()), Times.Once, "The ToolConfig should be mapped into the ConverseRequest.");
+        sent.Should().NotBeNull();
+        sent!.ToolConfig.Should().BeNull();
     }
 
     [Fact]
-    public async Task GetResponseAsync_WhenToolRequested_ExecutesToolAndReturnsFinalText()
+    public async Task GetResponseAsync_WhenToolUseIsReturned_PassesOnlyAllowlistedTools()
     {
-        // Arrange
         var toolMock = new Mock<IBedrockTool>();
         toolMock.Setup(t => t.Name).Returns("test_tool");
-        toolMock.Setup(t => t.GetSpecification()).Returns(new ToolSpecification { Name = "test_tool" });
-        var otherTool = new Mock<IBedrockTool>();
-        otherTool.Setup(t => t.Name).Returns("other_tenant_tool");
-
-        // Re-initialize AutoMocker with the populated list, then create the SUT
-        mocker.Use<IEnumerable<IBedrockTool>>([toolMock.Object, otherTool.Object]);
+        mocker.Use<IEnumerable<IBedrockTool>>([toolMock.Object]);
         var sutWithTools = mocker.CreateInstance<ChatService>();
 
         var toolExecutionServiceMock = mocker.GetMock<IToolExecutionService>();
-
-        // Simulate the Tool Execution Service returning a mocked tool result
         var mockFollowUpMessage = new Message { Role = ConversationRole.User, Content = [] };
         IReadOnlyList<IBedrockTool>? executedTools = null;
         toolExecutionServiceMock
@@ -186,17 +171,13 @@ public class ChatServiceTests
             .Callback<Message, IEnumerable<IBedrockTool>, CancellationToken>((_, available, _) => executedTools = available.ToList())
             .ReturnsAsync(mockFollowUpMessage);
 
-        var bedrockMock = mocker.GetMock<IAmazonBedrockRuntime>();
-
-        // Setup Sequence for the multi-turn loop
-        bedrockMock.SetupSequence(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()))
-            // 1st Call returns Tool Use
+        mocker.GetMock<IAmazonBedrockRuntime>()
+            .SetupSequence(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ConverseResponse
             {
                 StopReason = StopReason.Tool_use,
                 Output = new ConverseOutput { Message = new Message { Role = ConversationRole.Assistant, Content = [] } }
             })
-            // 2nd Call returns Final Answer
             .ReturnsAsync(new ConverseResponse
             {
                 StopReason = StopReason.End_turn,
@@ -212,15 +193,15 @@ public class ChatServiceTests
 
         result.Should().Be("Final Tool Answer");
         executedTools.Should().NotBeNull();
-        executedTools!.Select(tool => tool.Name).Should().Equal("test_tool");
+        executedTools.Should().BeEmpty();
     }
 
     [Fact]
     public async Task GetResponseAsync_AttachesNoTools_WhenEnabledToolsIsMissing()
     {
         var toolMock = new Mock<IBedrockTool>();
-        toolMock.Setup(t => t.Name).Returns("calculate_family_campus_price");
-        toolMock.Setup(t => t.GetSpecification()).Returns(new ToolSpecification { Name = "calculate_family_campus_price" });
+        toolMock.Setup(t => t.Name).Returns("test_tool");
+        toolMock.Setup(t => t.GetSpecification()).Returns(new ToolSpecification { Name = "test_tool" });
         mocker.Use<IEnumerable<IBedrockTool>>([toolMock.Object]);
         var sutWithTools = mocker.CreateInstance<ChatService>();
 
@@ -234,7 +215,7 @@ public class ChatServiceTests
                 Output = new ConverseOutput { Message = new Message { Role = ConversationRole.Assistant, Content = [new ContentBlock { Text = "ok" }] } }
             });
 
-        await sutWithTools.GetResponseAsync("System", [], "club-basquet-sama", null, CancellationToken.None);
+        await sutWithTools.GetResponseAsync("System", [], "any-tenant", null, CancellationToken.None);
 
         sent.Should().NotBeNull();
         sent!.ToolConfig.Should().BeNull();

@@ -164,9 +164,9 @@ public static class ChatSessionHandler
 
     private static string BuildSystemPrompt(TenantProfile tenant, string context)
     {
-        var personaPrompt = !string.IsNullOrWhiteSpace(tenant.SystemPrompt)
-            ? tenant.SystemPrompt
-            : "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the retrieved document data inside <untrusted_document_context>.";
+        var personaPrompt = tenant.SystemPrompt;
+        if (string.IsNullOrWhiteSpace(personaPrompt))
+            personaPrompt = "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the retrieved document data inside <untrusted_document_context>.";
 
         var currentDate = DateTimeOffset.UtcNow.ToString("dd MMMM yyyy");
         return BotPrompts.Compose(personaPrompt, string.Empty, currentDate, context);

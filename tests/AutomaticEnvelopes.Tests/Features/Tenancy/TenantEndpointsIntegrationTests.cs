@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AutomaticEnvelopes.Api.Features.Tenancy;
-using AutomaticEnvelopes.Api.Features.Tenants.Sama.CampusPricing;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +39,7 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
         match.GetProperty("name").GetString().Should().Be("Alpha Club");
         match.GetProperty("systemPrompt").GetString().Should().Be("Alpha Club prompt");
         match.GetProperty("privacyPolicyUrl").GetString().Should().Be("https://alpha.example/p");
-        match.GetProperty("enabledTools").GetArrayLength().Should().Be(0);
+        match.GetProperty("enabledTools").ValueKind.Should().Be(JsonValueKind.Null);
         match.GetProperty("botPhoneNumberId").GetString().Should().NotBeNullOrWhiteSpace();
         match.TryGetProperty("createdAt", out _).Should().BeFalse();
         match.TryGetProperty("Name", out _).Should().BeFalse();
@@ -241,14 +240,13 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
     }
 
     [Fact]
-    public async Task Patch_EnabledTools_RoundTrips_AndRejectsAnUnknownName()
+    public async Task Patch_EnabledTools_RejectsUnknownNames_AndOnlyAnAdminCanChangeTheList()
     {
         var tenantId = $"club-{Guid.NewGuid():N}";
         await SeedAsync(tenantId, "Tools", "https://tools.example/p");
 
         await fixture.Host.Scenario(s =>
         {
-            AsTenant(s, tenantId);
             s.Patch.Json(new UpdateTenantSettingsRequest
             {
                 SystemPrompt = "Tools prompt",
@@ -260,23 +258,37 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
 
         (await LoadAsync(tenantId)).EnabledTools.Should().BeNull();
 
-        var result = await fixture.Host.Scenario(s =>
+        var cleared = await fixture.Host.Scenario(s =>
         {
-            AsTenant(s, tenantId);
             s.Patch.Json(new UpdateTenantSettingsRequest
             {
                 SystemPrompt = "Tools prompt",
                 PrivacyPolicyUrl = "https://tools.example/p",
-                EnabledTools = [CampusCalculatorTool.ToolName]
+                EnabledTools = []
             }).ToUrl($"/tenants/{tenantId}");
             s.StatusCodeShouldBe(200);
         });
 
-        using (var json = JsonDocument.Parse(result.ReadAsText()))
+        using (var json = JsonDocument.Parse(cleared.ReadAsText()))
         {
-            json.RootElement.GetProperty("enabledTools").EnumerateArray().Select(item => item.GetString())
-                .Should().Equal(CampusCalculatorTool.ToolName);
+            json.RootElement.GetProperty("enabledTools").GetArrayLength().Should().Be(0);
         }
+
+        (await LoadAsync(tenantId)).EnabledTools.Should().BeEmpty();
+
+        await fixture.Host.Scenario(s =>
+        {
+            AsTenant(s, tenantId);
+            s.Patch.Json(new UpdateTenantSettingsRequest
+            {
+                SystemPrompt = "Stolen tools",
+                PrivacyPolicyUrl = "https://tools.example/p",
+                EnabledTools = ["price"]
+            }).ToUrl($"/tenants/{tenantId}");
+            s.StatusCodeShouldBe(403);
+        });
+
+        (await LoadAsync(tenantId)).EnabledTools.Should().BeEmpty();
 
         var kept = await fixture.Host.Scenario(s =>
         {
@@ -292,11 +304,11 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
         using (var json = JsonDocument.Parse(kept.ReadAsText()))
         {
             json.RootElement.GetProperty("systemPrompt").GetString().Should().Be("Tools prompt revised");
-            json.RootElement.GetProperty("enabledTools").EnumerateArray().Select(item => item.GetString())
-                .Should().Equal(CampusCalculatorTool.ToolName);
+            json.RootElement.GetProperty("enabledTools").GetArrayLength().Should().Be(0);
         }
 
-        (await LoadAsync(tenantId)).EnabledTools.Should().Equal(CampusCalculatorTool.ToolName);
+        (await LoadAsync(tenantId)).SystemPrompt.Should().Be("Tools prompt revised");
+        (await LoadAsync(tenantId)).EnabledTools.Should().BeEmpty();
     }
 
     [Fact]
@@ -328,7 +340,7 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
         legacy.SystemPrompt.Should().Be("Assistant prompt.");
         legacy.EnabledTools.Should().BeNull();
         var portal = TenantPortalProfile.From(legacy);
-        portal.EnabledTools.Should().BeEmpty();
+        portal.EnabledTools.Should().BeNull();
         portal.Name.Should().BeEmpty();
         portal.DisplayPhone.Should().BeEmpty();
         portal.BotPhoneNumberId.Should().Be("109283746510293");

@@ -2,7 +2,6 @@ using System.Reflection;
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Tenancy;
-using AutomaticEnvelopes.Api.Features.Tenants.Sama.CampusPricing;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
@@ -218,7 +217,7 @@ public class TenantEndpointsTests
             BotPhoneNumberId = "phone-1",
             SystemPrompt = "old",
             PrivacyPolicyUrl = "https://old.example/p",
-            EnabledTools = [CampusCalculatorTool.ToolName]
+            EnabledTools = ["price"]
         };
         TenantProfile? saved = null;
         var session = new Mock<IDocumentSession>();
@@ -239,12 +238,12 @@ public class TenantEndpointsTests
         Status(result).Should().Be(StatusCodes.Status200OK);
         saved.Should().NotBeNull();
         saved!.SystemPrompt.Should().Be("persona");
-        saved.EnabledTools.Should().Equal(CampusCalculatorTool.ToolName);
+        saved.EnabledTools.Should().Equal("price");
         saved.BotPhoneNumberId.Should().Be("phone-1");
     }
 
     [Fact]
-    public async Task Update_UnknownTool_Returns400_WithoutLoading()
+    public async Task Update_ClubRole_CannotSetEnabledTools()
     {
         var session = new Mock<IDocumentSession>(MockBehavior.Strict);
         var result = await TenantEndpoints.Update(
@@ -253,24 +252,24 @@ public class TenantEndpointsTests
             {
                 SystemPrompt = "persona",
                 PrivacyPolicyUrl = "https://example.com/p",
-                EnabledTools = ["other_tenant_tool"]
+                EnabledTools = ["price"]
             },
-            Admin(),
+            TenantUser("example-tenant"),
             new DefaultHttpContext(),
             session.Object,
             CancellationToken.None);
 
-        Status(result).Should().Be(StatusCodes.Status400BadRequest);
+        Status(result).Should().Be(StatusCodes.Status403Forbidden);
     }
 
     [Fact]
-    public async Task Update_SetsEnabledTools_ForThisTenantOnly()
+    public async Task Update_Admin_EmptyEnabledTools_ClearsTheStoredList()
     {
         var stored = new TenantProfile
         {
             Id = "example-tenant",
             BotPhoneNumberId = "phone-1",
-            EnabledTools = null
+            EnabledTools = ["price"]
         };
         TenantProfile? saved = null;
         var session = new Mock<IDocumentSession>();
@@ -286,7 +285,7 @@ public class TenantEndpointsTests
             {
                 SystemPrompt = "persona",
                 PrivacyPolicyUrl = "https://example.com/p",
-                EnabledTools = ["  " + CampusCalculatorTool.ToolName + "  ", CampusCalculatorTool.ToolName]
+                EnabledTools = []
             },
             Admin(),
             new DefaultHttpContext(),
@@ -294,13 +293,13 @@ public class TenantEndpointsTests
             CancellationToken.None);
 
         Status(result).Should().Be(StatusCodes.Status200OK);
-        saved!.EnabledTools.Should().Equal(CampusCalculatorTool.ToolName);
+        saved!.EnabledTools.Should().BeEmpty();
     }
 
     [Fact]
     public void TryReadEnabledTools_FailsClosedOnUnknownOrBlankNames()
     {
-        var known = new[] { CampusCalculatorTool.ToolName };
+        var known = new[] { "price" };
 
         TenantSettingsValidation.TryReadEnabledTools(null, known, out var omitted, out var omittedError).Should().BeTrue();
         omitted.Should().BeNull();
@@ -312,9 +311,12 @@ public class TenantEndpointsTests
         TenantSettingsValidation.TryReadEnabledTools(["nope"], known, out _, out var unknown).Should().BeFalse();
         unknown.Should().Be(TenantSettingsValidation.ToolsUnknown);
 
-        var tooMany = Enumerable.Repeat(CampusCalculatorTool.ToolName, TenantSettingsValidation.MaxEnabledTools + 1).ToArray();
-        TenantSettingsValidation.TryReadEnabledTools(tooMany, known, out _, out var tooManyError).Should().BeFalse();
-        tooManyError.Should().Be(TenantSettingsValidation.ToolsTooMany);
+        TenantSettingsValidation.TryReadEnabledTools(
+            ["  price  ", "price"],
+            known,
+            out var deduped,
+            out _).Should().BeTrue();
+        deduped.Should().Equal("price");
     }
 
     private static int? Status(IResult result) => (result as IStatusCodeHttpResult)?.StatusCode;
