@@ -3,6 +3,7 @@ using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Handlers;
+using AutomaticEnvelopes.Tests;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Portal;
@@ -29,6 +30,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -53,6 +55,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -72,6 +75,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -93,6 +97,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -115,6 +120,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -143,6 +149,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -162,6 +169,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -183,6 +191,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -205,6 +214,7 @@ public class UnknownReplyDispatchTests
             harness.Store.Object,
             harness.Knowledge.Object,
             harness.Chat.Object,
+            TestUsage.Meter(harness.Store.Object),
             harness.Bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -276,7 +286,7 @@ public class UnknownReplyDispatchTests
                     It.IsAny<IReadOnlyCollection<string>?>(),
                     It.IsAny<CancellationToken>()))
                 .Callback<string, List<Microsoft.Extensions.AI.ChatMessage>, string, IReadOnlyCollection<string>?, CancellationToken>((prompt, _, _, _, _) => SystemPrompt = prompt)
-                .ReturnsAsync(reply);
+                .ReturnsAsync(new ChatReply(reply, 0, 0));
             if (firstContact)
             {
                 var translationSetup = Chat.Setup(item => item.TranslateNoticeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()));

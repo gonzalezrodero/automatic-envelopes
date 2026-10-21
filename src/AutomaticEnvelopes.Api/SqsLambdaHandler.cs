@@ -4,6 +4,7 @@ using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Common.Extensions;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
+using Marten;
 using System.Text.Json;
 using Wolverine;
 using static Amazon.Lambda.SQSEvents.SQSBatchResponse;
@@ -50,6 +51,12 @@ public class SqsLambdaHandler
         builder.Services.AddWolverine(builder.Configuration);
 
         var host = builder.Build();
+        using (var scope = host.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
+            store.Storage.ApplyAllConfiguredChangesToDatabaseAsync().GetAwaiter().GetResult();
+        }
+
         host.Start();
 
         var initLogger = host.Services.GetRequiredService<ILogger<SqsLambdaHandler>>();

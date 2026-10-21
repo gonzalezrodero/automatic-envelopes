@@ -5,6 +5,7 @@ using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Portal;
 using AutomaticEnvelopes.Api.Features.Tenancy;
+using AutomaticEnvelopes.Api.Features.Usage;
 using Marten;
 using Microsoft.Extensions.AI;
 using System.Text;
@@ -19,6 +20,7 @@ public static class ChatSessionHandler
         IDocumentStore store,
         IKnowledgeBaseService knowledgeBase,
         IChatService chatService,
+        UsageMeter usage,
         IMessageBus bus,
         ILogger logger,
         CancellationToken ct)
@@ -40,7 +42,7 @@ public static class ChatSessionHandler
             return;
         }
 
-        await ProcessResponseAsync(command, tenant, session, knowledgeBase, chatService, bus, logger, ct);
+        await ProcessResponseAsync(command, tenant, session, knowledgeBase, chatService, usage, bus, logger, ct);
     }
 
     private static async Task ProcessResponseAsync(
@@ -49,28 +51,48 @@ public static class ChatSessionHandler
             IDocumentSession session,
             IKnowledgeBaseService knowledgeBase,
             IChatService chatService,
+            UsageMeter usage,
             IMessageBus bus,
             ILogger logger,
             CancellationToken ct)
     {
         var chatHistory = await ExtractChatHistory(command.PhoneNumber, session, ct);
+        var firstContact = !chatHistory.Any(message => message.Role == ChatRole.Assistant);
+        var limit = tenant.EffectiveMonthlyResponseLimit;
+        var used = await usage.ResponseCountAsync(tenant.Id, ct);
+        if (used >= limit)
+        {
+            await ReplyAtLimitAsync(
+                command,
+                tenant,
+                firstContact,
+                chatHistory.Count > 0,
+                used,
+                limit,
+                session,
+                chatService,
+                usage,
+                bus,
+                logger,
+                ct);
+            return;
+        }
 
         logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", command.TenantId);
         var context = await GetRelevantContextAsync(knowledgeBase, command.TenantId, command.CombinedText, ct);
-
-        var firstContact = !chatHistory.Any(message => message.Role == ChatRole.Assistant);
         var systemMessage = BuildSystemPrompt(tenant, context);
 
         logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
 
         try
         {
-            var replyText = await chatService.GetResponseAsync(
+            var reply = await chatService.GetResponseAsync(
                 systemMessage,
                 chatHistory,
                 command.TenantId,
                 tenant.EnabledTools,
                 ct);
+            var replyText = reply.Text;
 
             if (string.IsNullOrWhiteSpace(replyText))
             {
@@ -97,6 +119,11 @@ public static class ChatSessionHandler
                 logger,
                 chatHistory.Count > 0,
                 ct);
+            if (saved)
+            {
+                await usage.RecordAsync(tenant, reply.InputTokens, reply.OutputTokens, ct);
+            }
+
             if (unknown && saved)
             {
                 await bus.InvokeAsync(
@@ -113,6 +140,37 @@ public static class ChatSessionHandler
             logger.LogError(ex, "Fatal error invoking AI generation for TenantId: {TenantId}.", command.TenantId);
             throw;
         }
+    }
+
+    private static async Task ReplyAtLimitAsync(
+        AnalyzeChatSession command,
+        TenantProfile tenant,
+        bool firstContact,
+        bool hasHistory,
+        int used,
+        int limit,
+        IDocumentSession session,
+        IChatService chatService,
+        UsageMeter usage,
+        IMessageBus bus,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        logger.LogInformation(
+            "Monthly response limit reached. TenantId: {TenantId}. Month: {Month}. Responses: {Responses}. Limit: {Limit}.",
+            tenant.Id,
+            UsageMonth.Current(),
+            used,
+            limit);
+
+        var replyText = UsageMessages.LimitReached(command.CombinedText);
+        if (firstContact)
+        {
+            replyText = await PrependNoticeAsync(tenant, command.CombinedText, replyText, chatService, logger, ct);
+        }
+
+        await SaveAndPublishReplyAsync(command, replyText, session, bus, logger, hasHistory, ct);
+        await usage.NotifyBlockedAsync(tenant, ct);
     }
 
     private static async Task SendDeleteCommandAsync(AnalyzeChatSession command, IMessageBus bus, CancellationToken ct)

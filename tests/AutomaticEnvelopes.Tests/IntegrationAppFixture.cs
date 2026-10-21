@@ -1,7 +1,9 @@
 ﻿using Alba;
 using Alba.Security;
+using System.Collections.Concurrent;
 using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
+using Amazon.SimpleEmailV2;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using AutomaticEnvelopes.Api.Common.Configuration;
@@ -43,8 +45,13 @@ public class IntegrationAppFixture : IAsyncLifetime
 
     public IAlbaHost Host { get; private set; } = null!;
 
+    public const string PhoneHashKey = "integration-test-phone-hash-key";
+    public const string UsageFromAddress = "noreply@core-webhook.eu";
+
     public Mock<IAmazonBedrockRuntime> BedrockClientMock { get; } = new();
     public Mock<IWhatsAppClient> WhatsAppClientMock { get; } = new();
+    public Mock<IAmazonSimpleEmailServiceV2> EmailMock { get; } = new();
+    public ConcurrentQueue<Amazon.SimpleEmailV2.Model.SendEmailRequest> SentEmails { get; } = new();
 
     async ValueTask IAsyncLifetime.InitializeAsync()
     {
@@ -68,6 +75,8 @@ public class IntegrationAppFixture : IAsyncLifetime
 
         Environment.SetEnvironmentVariable("ConnectionStrings__Marten", _postgres.GetConnectionString());
         Environment.SetEnvironmentVariable("BedrockSettings__ModelId", "dummy-model");
+        Environment.SetEnvironmentVariable("Usage__PhoneHashKey", PhoneHashKey);
+        Environment.SetEnvironmentVariable("Usage__FromAddress", UsageFromAddress);
 
         Environment.SetEnvironmentVariable("EnableSqsListener", "true");
 
@@ -93,6 +102,7 @@ public class IntegrationAppFixture : IAsyncLifetime
 
                 services.Replace(ServiceDescriptor.Singleton(BedrockClientMock.Object));
                 services.Replace(ServiceDescriptor.Singleton(WhatsAppClientMock.Object));
+                services.Replace(ServiceDescriptor.Singleton(EmailMock.Object));
 
                 services.AddSingleton<IAssemblyGenerator, AssemblyGenerator>();
 
@@ -176,6 +186,11 @@ public class IntegrationAppFixture : IAsyncLifetime
                 };
             });
 
+        EmailMock
+            .Setup(client => client.SendEmailAsync(It.IsAny<Amazon.SimpleEmailV2.Model.SendEmailRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<Amazon.SimpleEmailV2.Model.SendEmailRequest, CancellationToken>((request, _) => SentEmails.Enqueue(request))
+            .ReturnsAsync(new Amazon.SimpleEmailV2.Model.SendEmailResponse());
+
         BedrockClientMock
             .Setup(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ConverseRequest request, CancellationToken ct) =>
@@ -200,6 +215,7 @@ public class IntegrationAppFixture : IAsyncLifetime
                 return new ConverseResponse
                 {
                     StopReason = StopReason.End_turn,
+                    Usage = new TokenUsage { InputTokens = 11, OutputTokens = 7 },
                     Output = new ConverseOutput
                     {
                         Message = new Message
@@ -225,7 +241,10 @@ public class IntegrationAppFixture : IAsyncLifetime
         string tenantSlug,
         string botPhoneId,
         string systemPrompt = "You are a helpful test assistant.",
-        string privacyPolicyUrl = "https://example.com/privacy")
+        string privacyPolicyUrl = "https://example.com/privacy",
+        string name = "",
+        int? monthlyResponseLimit = null,
+        string contactEmail = "")
     {
         using var session = Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
 
@@ -234,7 +253,10 @@ public class IntegrationAppFixture : IAsyncLifetime
             Id = tenantSlug,
             BotPhoneNumberId = botPhoneId,
             SystemPrompt = systemPrompt,
-            PrivacyPolicyUrl = privacyPolicyUrl
+            PrivacyPolicyUrl = privacyPolicyUrl,
+            Name = name,
+            MonthlyResponseLimit = monthlyResponseLimit,
+            ContactEmail = contactEmail
         });
 
         await session.SaveChangesAsync();

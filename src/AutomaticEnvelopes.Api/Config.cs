@@ -1,5 +1,6 @@
 ﻿using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
+using Amazon.SimpleEmailV2;
 using AutomaticEnvelopes.Api;
 using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
@@ -11,6 +12,7 @@ using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
+using AutomaticEnvelopes.Api.Features.Usage;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using JasperFx;
@@ -151,6 +153,7 @@ public static class Config
             opts.Schema.For<ProcessedMessage>().MultiTenanted();
             opts.Schema.For<DocumentChunk>().MultiTenanted();
             opts.Schema.For<WhatsAppRateLimitTracker>().MultiTenanted();
+            opts.Schema.For<TenantMonthUsage>().MultiTenanted();
             opts.Schema.For<KnowledgeFile>().MultiTenanted();
             opts.Schema.For<AnonymizedChat>().MultiTenanted();
             opts.Schema.For<UnansweredQuestion>().MultiTenanted();
@@ -165,8 +168,11 @@ public static class Config
     public static IServiceCollection AddAi(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<BedrockSettings>(configuration.GetSection("BedrockSettings"));
+        services.Configure<UsageOptions>(configuration.GetSection(UsageOptions.SectionName));
         services.AddDefaultAWSOptions(configuration.GetAWSOptions());
         services.AddAWSService<IAmazonBedrockRuntime>();
+        services.AddAWSService<IAmazonSimpleEmailServiceV2>();
+        services.AddSingleton<UsageMeter>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IEmbeddingService, EmbeddingService>();
         return services;

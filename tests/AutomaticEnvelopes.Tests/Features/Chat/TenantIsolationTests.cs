@@ -6,6 +6,7 @@ using AutomaticEnvelopes.Api.Features.Chat.Handlers;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
+using AutomaticEnvelopes.Tests;
 using AwesomeAssertions;
 using JasperFx.Events;
 using Marten;
@@ -56,17 +57,19 @@ public class TenantIsolationTests
                 calledTenant = tenant;
                 enabled = tools;
             })
-            .ReturnsAsync("La respuesta.");
+            .ReturnsAsync(new ChatReply("La respuesta.", 0, 0));
 
         var bus = new Mock<IMessageBus>();
         bus.Setup(item => item.InvokeAsync(It.IsAny<ReplyGenerated>(), It.IsAny<CancellationToken>(), null))
             .Returns(Task.CompletedTask);
 
+        var store = SessionFor(profile);
         await ChatSessionHandler.Handle(
             new AnalyzeChatSession("34600111222", tenantId, "bot-phone", "¿Horario?"),
-            SessionFor(profile),
+            store,
             knowledge.Object,
             chat.Object,
+            TestUsage.Meter(store),
             bus.Object,
             NullLogger.Instance,
             CancellationToken.None);
@@ -101,7 +104,7 @@ public class TenantIsolationTests
                 It.IsAny<IReadOnlyCollection<string>?>(),
                 It.IsAny<CancellationToken>()))
             .Callback<string, List<ChatMessage>, string, IReadOnlyCollection<string>?, CancellationToken>((_, _, _, tools, _) => enabled = tools)
-            .ReturnsAsync("Ok.");
+            .ReturnsAsync(new ChatReply("Ok.", 0, 0));
         var knowledge = new Mock<IKnowledgeBaseService>();
         knowledge.Setup(item => item.SearchAsync("club-b", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
@@ -109,11 +112,13 @@ public class TenantIsolationTests
         bus.Setup(item => item.InvokeAsync(It.IsAny<ReplyGenerated>(), It.IsAny<CancellationToken>(), null))
             .Returns(Task.CompletedTask);
 
+        var store = SessionFor(profile);
         await ChatSessionHandler.Handle(
             new AnalyzeChatSession("34600999888", "club-b", "bot-phone", "Hola"),
-            SessionFor(profile),
+            store,
             knowledge.Object,
             chat.Object,
+            TestUsage.Meter(store),
             bus.Object,
             NullLogger.Instance,
             CancellationToken.None);

@@ -84,6 +84,25 @@ public class AwsConfigurationExtensionsTests : IDisposable
     }
 
     [Fact]
+    public void AddAwsSecureConfigurationCore_WithUsagePath_InjectsThePhoneHashKey()
+    {
+        const string path = "/automatic-envelopes/usage/";
+        Environment.SetEnvironmentVariable("SSM_PATH_USAGE", path);
+        ssmMock
+            .Setup(x => x.GetParametersByPathAsync(
+                It.Is<GetParametersByPathRequest>(req => req.Path == path && req.WithDecryption == true),
+                default))
+            .ReturnsAsync(new GetParametersByPathResponse
+            {
+                Parameters = [new Parameter { Name = path + "phone-hash-key", Value = "0123456789abcdef" }]
+            });
+
+        builder.AddAwsSecureConfigurationCore(secretsMock.Object, ssmMock.Object);
+
+        builder.Configuration["Usage:PhoneHashKey"].Should().Be("0123456789abcdef");
+    }
+
+    [Fact]
     public void AddAwsSecureConfigurationCore_WithoutEnvironmentVariables_DoesNotCallAws()
     {
         // Arrange
@@ -110,6 +129,7 @@ public class AwsConfigurationExtensionsTests : IDisposable
     {
         Environment.SetEnvironmentVariable("SECRET_ARN_MARTEN", null);
         Environment.SetEnvironmentVariable("SSM_PATH_WHATSAPP", null);
+        Environment.SetEnvironmentVariable("SSM_PATH_USAGE", null);
         Environment.SetEnvironmentVariable("DB_HOST", null);
     }
 }

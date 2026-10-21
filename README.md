@@ -90,7 +90,8 @@ Group `admin` may read and update every tenant. Any other group is a tenant id. 
 | --- | --- | --- | --- |
 | `GET` | `/tenants` | access cookie or Bearer | `TenantProfile[]` for the caller's groups. An allowed caller with no matching documents gets `[]`. |
 | `GET` | `/tenants/{tenantId}` | same | one `TenantProfile`. `403` when the group does not allow it (whether or not the document exists). `404` when it is allowed and missing. `400` when the id is not a valid path id. |
-| `PATCH` | `/tenants/{tenantId}` | same | `{ systemPrompt, privacyPolicyUrl, enabledTools? }` → updated profile. Same authz. `privacyPolicyUrl` must be `https`, or `http` on `localhost`, `127.0.0.1`, or `::1`, with no user info. `systemPrompt` is required. Only a platform admin may send `enabledTools`; a club role that sends it gets 403. Omit it to leave the stored list unchanged. `[]` clears it. A name that is not on the API allowlist is 400. |
+| `PATCH` | `/tenants/{tenantId}` | same | `{ systemPrompt, privacyPolicyUrl, enabledTools?, monthlyResponseLimit?, contactEmail? }` → updated profile. Same authz. `privacyPolicyUrl` must be `https`, or `http` on `localhost`, `127.0.0.1`, or `::1`, with no user info. `systemPrompt` is required. Only a platform admin may send `enabledTools`, `monthlyResponseLimit`, or `contactEmail`; a club role that sends any of them gets 403. Omit a field to leave it unchanged. `enabledTools: []` clears the list. A name that is not on the API allowlist is 400. `monthlyResponseLimit` is an integer from 0 to 100000. A missing stored limit behaves as 1000. `contactEmail: ""` clears the address. |
+| `GET` | `/tenants/{tenantId}/usage` | same | `{ month, responses, tokens: { input, output }, limit }` for the current Europe/Madrid calendar month. `responses` is 0 when nothing was metered yet. `limit` is the stored cap, or 1000 when the document has none. `404` when the tenant document is missing. |
 | `GET` | `/tenants/{tenantId}/dashboard` | same | Summary for the portal panel: counts, 14-day activity, recent threads. `404` when the tenant document is missing. |
 | `GET` | `/tenants/{tenantId}/conversations` | same | Threads for that tenant. Query: `q`, `language`, `from`, `to` (`yyyy-MM-dd`), `includeAnonymized` (`true` when omitted). |
 | `GET` | `/tenants/{tenantId}/conversations/{conversationId}` | same | One thread. Phone numbers are not used as the path id; the id is `[a-z0-9-]`. `language` is `null` because the bot does not classify it. `topic` is the opening user message. |
@@ -117,7 +118,9 @@ Portal JSON (camelCase). `createdAt` stays on the Marten document and is not ret
   "displayPhone": "",
   "systemPrompt": "...",
   "privacyPolicyUrl": "https://example.com/privacy",
-  "enabledTools": null
+  "enabledTools": null,
+  "monthlyResponseLimit": 1000,
+  "contactEmail": ""
 }
 ```
 
@@ -135,8 +138,12 @@ Portal JSON (camelCase). `createdAt` stays on the Marten document and is not ret
 | `SystemPrompt` | `systemPrompt` | used as stored, including empty. The bot keeps its own fallback |
 | `PrivacyPolicyUrl` | `privacyPolicyUrl` | used as stored. A legacy `http` URL is returned as text; only a new `PATCH` must pass the https / localhost check |
 | `EnabledTools` | `enabledTools` | `null` when the document has no list. The bot then attaches no tools. `[]` is an explicit clear |
+| `MonthlyResponseLimit` | `monthlyResponseLimit` | `1000` when the document has no value. The JSON field is always that effective number |
+| `ContactEmail` | `contactEmail` | `""`. Platform admin sets it. Usage alerts go there |
 | `CreatedAt` | omitted | unchanged on `PATCH` |
 
-A stored display value is trimmed and returned as stored. `PATCH` writes `systemPrompt` and `privacyPolicyUrl`. It writes `enabledTools` only when a platform admin sends the field. Display fields and the bot phone id stay as they are. Omitting `enabledTools` does not clear a list already stored, and a prompt-only save does not turn a missing list into `[]`.
+A stored display value is trimmed and returned as stored. `PATCH` writes `systemPrompt` and `privacyPolicyUrl`. It writes `enabledTools`, `monthlyResponseLimit`, and `contactEmail` only when a platform admin sends the field. Display fields and the bot phone id stay as they are. Omitting `enabledTools` does not clear a list already stored, and a prompt-only save does not turn a missing list into `[]`. Omitting `monthlyResponseLimit` or `contactEmail` leaves the stored value in place.
+
+The bot counts one reply per answered WhatsApp turn, plus the Bedrock input and output tokens of that reply, in one Marten document per tenant and Europe/Madrid month. At the limit it does not call the model for the answer. `BORRAR DATOS` and the first-contact notice still run. The worker emails `contactEmail` from `noreply@core-webhook.eu` at 80% and at 100%, once each per month. The worker reads `Usage:PhoneHashKey` from SSM (`SSM_PATH_USAGE`) and `Usage__FromAddress` from its environment. The per-user spam shield key is an HMAC of the tenant id and the phone, not the phone.
 
 The shared system prompt keeps the security rules first. The tenant `systemPrompt` is placed after them, inside a delimited block, and cannot override those rules. No tool is registered, so the allowlist is empty: any name is rejected, and the bot attaches nothing until a tool is added to that list. A missing or empty `enabledTools` also attaches nothing. Retrieval is not a tool.

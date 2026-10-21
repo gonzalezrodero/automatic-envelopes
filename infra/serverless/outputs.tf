@@ -19,6 +19,11 @@ output "cognito_client_id" {
   value       = aws_cognito_user_pool_client.spa_client.id
 }
 
+output "ses_dkim_tokens" {
+  description = "Easy DKIM tokens for core-webhook.eu. Dev writes the CNAMEs into the zone. Prod must copy the same records into core-webhook.eu, which lives in the development account."
+  value       = try(aws_sesv2_email_identity.sender.dkim_signing_attributes[0].tokens, [])
+}
+
 output "cognito_hosted_ui_url" {
   description = "The URL to access the Cognito Hosted UI for login"
   value       = "https://${aws_cognito_user_pool_domain.admin_domain.domain}.auth.${var.aws_region}.amazoncognito.com/login?client_id=${aws_cognito_user_pool_client.spa_client.id}&response_type=code&scope=email+openid+profile&redirect_uri=${var.admin_ui_callback_urls[0]}"

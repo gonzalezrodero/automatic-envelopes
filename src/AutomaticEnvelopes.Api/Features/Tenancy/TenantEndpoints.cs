@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
 using AutomaticEnvelopes.Api.Features.Chat.Tools;
+using AutomaticEnvelopes.Api.Features.Usage;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -77,11 +78,9 @@ public class TenantEndpoints
             return rejected;
         }
 
-        if (request?.EnabledTools is not null && !TenantAccess.IsAdmin(user))
+        if (RejectClubOnlyFields(request, user) is { } forbidden)
         {
-            return Results.Json(
-                new { Error = "Only a platform admin can set enabledTools." },
-                statusCode: StatusCodes.Status403Forbidden);
+            return forbidden;
         }
 
         if (!TenantSettingsValidation.TryValidate(request, out var settings, out var error))
@@ -98,17 +97,85 @@ public class TenantEndpoints
             return Results.BadRequest(new { Error = error });
         }
 
+        if (!TenantSettingsValidation.TryReadMonthlyResponseLimit(request.MonthlyResponseLimit, out var limit, out error) ||
+            !TenantSettingsValidation.TryReadContactEmail(request.ContactEmail, out var email, out error))
+        {
+            return Results.BadRequest(new { Error = error });
+        }
+
         var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
         if (profile is null)
         {
             return Results.NotFound(new { Error = "Tenant was not found." });
         }
 
-        var updated = profile.WithSettings(settings.SystemPrompt, settings.PrivacyPolicyUrl, enabledTools ?? profile.EnabledTools);
+        var updated = profile.WithSettings(
+            settings.SystemPrompt,
+            settings.PrivacyPolicyUrl,
+            enabledTools ?? profile.EnabledTools,
+            limit ?? profile.MonthlyResponseLimit,
+            email ?? profile.ContactEmail);
         session.Store(updated);
         await session.SaveChangesAsync(ct);
         return Results.Ok(TenantPortalProfile.From(updated));
     }
+
+    [Authorize(Policy = "TenantAdmin")]
+    [WolverineGet("/tenants/{tenantId}/usage")]
+    [EnableRateLimiting(AdminAuthPolicies.Auth)]
+    public static async Task<IResult> Usage(
+        string tenantId,
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IDocumentSession session,
+        IDocumentStore store,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
+        if (profile is null)
+        {
+            return Results.NotFound(new { Error = "Tenant was not found." });
+        }
+
+        var month = UsageMonth.Current();
+        await using var usageSession = store.LightweightSession(tenantId);
+        var usage = await usageSession.LoadAsync<TenantMonthUsage>(month, ct);
+        return Results.Ok(TenantUsageResponse.Create(profile, usage, month));
+    }
+
+    private static IResult? RejectClubOnlyFields(UpdateTenantSettingsRequest? request, ClaimsPrincipal user)
+    {
+        if (TenantAccess.IsAdmin(user) || request is null)
+        {
+            return null;
+        }
+
+        if (request.EnabledTools is not null)
+        {
+            return Forbidden("Only a platform admin can set enabledTools.");
+        }
+
+        if (request.MonthlyResponseLimit is not null)
+        {
+            return Forbidden("Only a platform admin can set monthlyResponseLimit.");
+        }
+
+        if (request.ContactEmail is not null)
+        {
+            return Forbidden("Only a platform admin can set contactEmail.");
+        }
+
+        return null;
+    }
+
+    private static IResult Forbidden(string error) =>
+        Results.Json(new { Error = error }, statusCode: StatusCodes.Status403Forbidden);
 
     private static async Task<IReadOnlyList<TenantProfile>> LoadVisibleAsync(
         ClaimsPrincipal user,

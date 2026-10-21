@@ -7,9 +7,11 @@ using Microsoft.Extensions.Options;
 
 namespace AutomaticEnvelopes.Api.Features.Chat;
 
+public readonly record struct ChatReply(string Text, long InputTokens, long OutputTokens);
+
 public interface IChatService
 {
-    Task<string> GetResponseAsync(
+    Task<ChatReply> GetResponseAsync(
         string systemPrompt,
         List<ChatMessage> history,
         string tenantId,
@@ -28,7 +30,7 @@ public class ChatService(
 {
     private readonly BedrockSettings settings = settings.Value;
 
-    public async Task<string> GetResponseAsync(
+    public async Task<ChatReply> GetResponseAsync(
         string systemPrompt,
         List<ChatMessage> history,
         string tenantId,
@@ -64,6 +66,7 @@ public class ChatService(
         // 2. Initial generic call to Bedrock
         logger.LogInformation("Invoking AWS Bedrock Converse API. ModelId: {ModelId}, TenantId: {TenantId}", settings.ModelId, tenantId);
         var response = await client.ConverseAsync(request, ct);
+        var usage = ReadUsage(response);
 
         // 3. Handle Tool Interception via the Converse API's StopReason
         if (response.StopReason == StopReason.Tool_use)
@@ -80,15 +83,19 @@ public class ChatService(
                 // 4. Send it back to the model for the final human-readable answer
                 logger.LogInformation("Tool results appended to history. Re-invoking Bedrock for final response.");
                 var finalResponse = await client.ConverseAsync(request, ct);
+                var finalUsage = ReadUsage(finalResponse);
 
                 logger.LogInformation("Final Bedrock response received successfully.");
-                return finalResponse.Output.Message.Content.First(c => c.Text != null).Text;
+                return new ChatReply(
+                    ReadText(finalResponse),
+                    usage.Input + finalUsage.Input,
+                    usage.Output + finalUsage.Output);
             }
         }
 
         // 5. Normal text response
         logger.LogInformation("Bedrock text response generated successfully without tool usage.");
-        return response.Output.Message.Content.First(c => c.Text != null).Text;
+        return new ChatReply(ReadText(response), usage.Input, usage.Output);
     }
 
     public async Task<string> TranslateNoticeAsync(string notice, string languageSample, CancellationToken ct)
@@ -145,6 +152,15 @@ public class ChatService(
 
         logger.LogInformation("History sanitization completed successfully.");
         return response.Output.Message.Content.First(c => c.Text != null).Text;
+    }
+
+    private static string ReadText(ConverseResponse response) =>
+        response.Output.Message.Content.First(c => c.Text != null).Text;
+
+    private static (long Input, long Output) ReadUsage(ConverseResponse response)
+    {
+        var usage = response.Usage;
+        return (usage?.InputTokens ?? 0, usage?.OutputTokens ?? 0);
     }
 
     private static List<Message> FormatChatMessages(List<ChatMessage> history)

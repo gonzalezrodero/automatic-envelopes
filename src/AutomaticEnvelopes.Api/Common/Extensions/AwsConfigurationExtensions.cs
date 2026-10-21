@@ -13,8 +13,9 @@ public static class AwsConfigurationExtensions
     {
         var martenArn = Environment.GetEnvironmentVariable("SECRET_ARN_MARTEN");
         var ssmPath = Environment.GetEnvironmentVariable("SSM_PATH_WHATSAPP");
+        var usagePath = Environment.GetEnvironmentVariable("SSM_PATH_USAGE");
 
-        if (string.IsNullOrEmpty(martenArn) && string.IsNullOrEmpty(ssmPath))
+        if (string.IsNullOrEmpty(martenArn) && string.IsNullOrEmpty(ssmPath) && string.IsNullOrEmpty(usagePath))
         {
             return;
         }
@@ -87,6 +88,24 @@ public static class AwsConfigurationExtensions
                 var pascalCaseKey = string.Join("", keyName.Split('-').Select(p => char.ToUpper(p[0]) + p[1..]));
 
                 secureConfig[$"WhatsApp:{pascalCaseKey}"] = param.Value;
+            }
+        }
+
+        var usagePath = Environment.GetEnvironmentVariable("SSM_PATH_USAGE");
+        if (!string.IsNullOrEmpty(usagePath))
+        {
+            var response = ssmClient.GetParametersByPathAsync(new GetParametersByPathRequest
+            {
+                Path = usagePath,
+                WithDecryption = true
+            }).GetAwaiter().GetResult();
+
+            foreach (var param in response.Parameters)
+            {
+                if (param.Name.Split('/')[^1] == "phone-hash-key" && !string.IsNullOrEmpty(param.Value))
+                {
+                    secureConfig["Usage:PhoneHashKey"] = param.Value;
+                }
             }
         }
 

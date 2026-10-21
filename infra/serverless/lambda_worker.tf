@@ -17,6 +17,9 @@ resource "aws_lambda_function" "worker" {
       SECRET_ARN_MARTEN = data.terraform_remote_state.database.outputs.db_password_secret_arn
       DB_HOST           = data.terraform_remote_state.database.outputs.db_endpoint
       SSM_PATH_WHATSAPP = "/automatic-envelopes/whatsapp/"
+      SSM_PATH_USAGE    = "/automatic-envelopes/usage/"
+
+      Usage__FromAddress = "noreply@core-webhook.eu"
     }
   }
 
@@ -24,7 +27,7 @@ resource "aws_lambda_function" "worker" {
     command = ["AutomaticEnvelopes.Api::AutomaticEnvelopes.Api.SqsLambdaHandler::FunctionHandler"]
   }
 
-  depends_on = [aws_cloudwatch_log_group.worker]
+  depends_on = [aws_cloudwatch_log_group.worker, aws_ssm_parameter.phone_hash_key]
 }
 
 resource "aws_lambda_event_source_mapping" "sqs_trigger" {

@@ -80,6 +80,13 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
       "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0"
     ]
   }
+
+  statement {
+    sid       = "AllowSesSendFromDomain"
+    effect    = "Allow"
+    actions   = ["ses:SendEmail"]
+    resources = [aws_sesv2_email_identity.sender.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_custom" {
