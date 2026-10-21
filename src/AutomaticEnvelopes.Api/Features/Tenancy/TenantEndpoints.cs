@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AutomaticEnvelopes.Api.Features.AdminAuth;
+using AutomaticEnvelopes.Api.Features.Chat.Tools;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -81,13 +82,22 @@ public class TenantEndpoints
             return Results.BadRequest(new { Error = error });
         }
 
+        if (!TenantSettingsValidation.TryReadEnabledTools(
+                request.EnabledTools,
+                TenantToolGate.KnownNames,
+                out var enabledTools,
+                out error))
+        {
+            return Results.BadRequest(new { Error = error });
+        }
+
         var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
         if (profile is null)
         {
             return Results.NotFound(new { Error = "Tenant was not found." });
         }
 
-        var updated = profile.WithSettings(settings.SystemPrompt, settings.PrivacyPolicyUrl);
+        var updated = profile.WithSettings(settings.SystemPrompt, settings.PrivacyPolicyUrl, enabledTools ?? profile.EnabledTools);
         session.Store(updated);
         await session.SaveChangesAsync(ct);
         return Results.Ok(TenantPortalProfile.From(updated));

@@ -65,7 +65,12 @@ public static class ChatSessionHandler
 
         try
         {
-            var replyText = await chatService.GetResponseAsync(systemMessage, chatHistory, command.TenantId, ct);
+            var replyText = await chatService.GetResponseAsync(
+                systemMessage,
+                chatHistory,
+                command.TenantId,
+                tenant.EnabledTools,
+                ct);
 
             if (string.IsNullOrWhiteSpace(replyText))
             {

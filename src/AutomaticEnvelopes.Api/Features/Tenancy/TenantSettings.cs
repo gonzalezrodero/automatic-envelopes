@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 namespace AutomaticEnvelopes.Api.Features.Tenancy;
@@ -9,6 +10,12 @@ public sealed class UpdateTenantSettingsRequest
 
     [JsonPropertyName("privacyPolicyUrl")]
     public string? PrivacyPolicyUrl { get; set; }
+
+    /// <summary>
+    /// Null when the client omitted the field. An empty array clears every tool.
+    /// </summary>
+    [JsonPropertyName("enabledTools")]
+    public string[]? EnabledTools { get; set; }
 }
 
 public readonly record struct ValidTenantSettings(string SystemPrompt, string PrivacyPolicyUrl);
@@ -20,9 +27,12 @@ public static class TenantSettingsValidation
     public const string PromptTooLong = "systemPrompt is too long.";
     public const string UrlRejected = "privacyPolicyUrl must be an https URL, or http on localhost.";
     public const string BodyRequired = "systemPrompt and privacyPolicyUrl are required.";
+    public const int MaxEnabledTools = 16;
+    public const string ToolsUnknown = "enabledTools contains an unknown tool.";
+    public const string ToolsTooMany = "enabledTools has too many entries.";
 
     public static bool TryValidate(
-        UpdateTenantSettingsRequest? request,
+        [NotNullWhen(true)] UpdateTenantSettingsRequest? request,
         out ValidTenantSettings settings,
         out string error)
     {
@@ -53,6 +63,52 @@ public static class TenantSettingsValidation
         }
 
         settings = new ValidTenantSettings(prompt, privacyPolicyUrl);
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Null <paramref name="requested"/> means the field was omitted and the stored list stays.
+    /// An empty array clears the list. Names must match a registered tool.
+    /// </summary>
+    public static bool TryReadEnabledTools(
+        string[]? requested,
+        IEnumerable<string> knownToolNames,
+        out string[]? enabledTools,
+        out string error)
+    {
+        if (requested is null)
+        {
+            enabledTools = null;
+            error = string.Empty;
+            return true;
+        }
+
+        if (requested.Length > MaxEnabledTools)
+        {
+            enabledTools = null;
+            error = ToolsTooMany;
+            return false;
+        }
+
+        var known = new HashSet<string>(knownToolNames, StringComparer.Ordinal);
+        var normalized = new List<string>(requested.Length);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in requested)
+        {
+            var trimmed = name?.Trim();
+            if (string.IsNullOrEmpty(trimmed) || !known.Contains(trimmed))
+            {
+                enabledTools = null;
+                error = ToolsUnknown;
+                return false;
+            }
+
+            if (seen.Add(trimmed))
+                normalized.Add(trimmed);
+        }
+
+        enabledTools = normalized.ToArray();
         error = string.Empty;
         return true;
     }

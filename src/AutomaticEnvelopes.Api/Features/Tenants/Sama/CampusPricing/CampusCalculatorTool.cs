@@ -14,7 +14,9 @@ public partial class CampusToolJsonContext : JsonSerializerContext
 
 public class CampusCalculatorTool(ILogger<CampusCalculatorTool> logger) : IBedrockTool
 {
-    public string Tenant => "club-basquet-sama";
+    public const string ToolName = "calculate_family_campus_price";
+
+    public string Name => ToolName;
 
     public ToolSpecification GetSpecification()
     {
@@ -65,7 +67,7 @@ public class CampusCalculatorTool(ILogger<CampusCalculatorTool> logger) : IBedro
         using var jsonDoc = JsonDocument.Parse(schemaJson);
         return new ToolSpecification
         {
-            Name = "calculate_family_campus_price",
+            Name = ToolName,
             Description = "Calculates the total campus price (Summer or September) for an entire family.",
             InputSchema = new ToolInputSchema
             {
