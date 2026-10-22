@@ -1,6 +1,6 @@
 # backend.tf
 terraform {
-  required_version = ">= 1.11.0"
+  required_version = ">= 1.17.0"
 
   backend "s3" {
     # All values are injected via -backend-config=config/dev/config.remote

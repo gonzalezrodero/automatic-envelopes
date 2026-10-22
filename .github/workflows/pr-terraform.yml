@@ -22,7 +22,7 @@ permissions:
 
 env:
   AWS_REGION: eu-west-1
-  TF_VERSION: "1.11.4"
+  TF_VERSION: "1.17.0"
   ECR_REPOSITORY: automatic-envelopes-api
   # Pull requests plan only dev. There is no prod plan job.
   # The role is created by dev bootstrap; plans fail until that apply exists.
@@ -40,8 +40,8 @@ jobs:
       any: ${{ steps.matrix.outputs.any }}
       stacks: ${{ steps.matrix.outputs.stacks }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -102,9 +102,9 @@ jobs:
       matrix:
         stack: ${{ fromJson(needs.changes.outputs.stacks) }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -146,7 +146,7 @@ jobs:
 
       - name: Upload plan log
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-tfplan-${{ matrix.stack }}-${{ github.event.pull_request.number }}
           path: infra/${{ matrix.stack }}/plan-output.txt
@@ -155,7 +155,7 @@ jobs:
 
       - name: Comment plan on PR
         if: always()
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           STACK: ${{ matrix.stack }}
           WORKING_DIR: infra/${{ matrix.stack }}
