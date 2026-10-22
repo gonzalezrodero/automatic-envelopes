@@ -67,6 +67,8 @@ public class TenantPortalProfileTests
         portal.SystemPrompt.Should().BeEmpty();
         portal.PrivacyPolicyUrl.Should().BeEmpty();
         portal.EnabledTools.Should().BeNull();
+        portal.MonthlyResponseLimit.Should().Be(TenantProfile.DefaultMonthlyResponseLimit);
+        portal.ContactEmail.Should().BeEmpty();
     }
 
     [Fact]
@@ -107,7 +109,12 @@ public class TenantPortalProfileTests
             EnabledTools = ["price"]
         };
 
-        var updated = original.WithSettings("  new persona  ", "https://example.com/privacy", original.EnabledTools);
+        var updated = original.WithSettings(
+            "  new persona  ",
+            "https://example.com/privacy",
+            original.EnabledTools,
+            250,
+            "club@example.com");
 
         updated.Should().NotBeSameAs(original);
         updated.Id.Should().Be(original.Id);
@@ -117,6 +124,8 @@ public class TenantPortalProfileTests
         updated.SystemPrompt.Should().Be("  new persona  ");
         updated.PrivacyPolicyUrl.Should().Be("https://example.com/privacy");
         updated.EnabledTools.Should().Equal("price");
+        updated.MonthlyResponseLimit.Should().Be(250);
+        updated.ContactEmail.Should().Be("club@example.com");
         original.SystemPrompt.Should().Be("old");
     }
 

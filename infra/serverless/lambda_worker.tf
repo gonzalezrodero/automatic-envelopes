@@ -1,6 +1,6 @@
 resource "aws_lambda_function" "worker" {
   function_name = "${var.project_name}-worker"
-  role          = aws_iam_role.lambda_exec.arn
+  role          = aws_iam_role.worker.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.backend.repository_url}:${var.image_tag}"
 
@@ -17,6 +17,9 @@ resource "aws_lambda_function" "worker" {
       SECRET_ARN_MARTEN = data.terraform_remote_state.database.outputs.db_password_secret_arn
       DB_HOST           = data.terraform_remote_state.database.outputs.db_endpoint
       SSM_PATH_WHATSAPP = "/automatic-envelopes/whatsapp/"
+      SECRET_ARN_USAGE  = aws_secretsmanager_secret.phone_hash_key.arn
+
+      Usage__FromAddress = "noreply@core-webhook.eu"
     }
   }
 
@@ -24,7 +27,7 @@ resource "aws_lambda_function" "worker" {
     command = ["AutomaticEnvelopes.Api::AutomaticEnvelopes.Api.SqsLambdaHandler::FunctionHandler"]
   }
 
-  depends_on = [aws_cloudwatch_log_group.worker]
+  depends_on = [aws_cloudwatch_log_group.worker, aws_secretsmanager_secret_version.phone_hash_key]
 }
 
 resource "aws_lambda_event_source_mapping" "sqs_trigger" {

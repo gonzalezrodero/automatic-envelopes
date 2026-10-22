@@ -13,8 +13,9 @@ public static class AwsConfigurationExtensions
     {
         var martenArn = Environment.GetEnvironmentVariable("SECRET_ARN_MARTEN");
         var ssmPath = Environment.GetEnvironmentVariable("SSM_PATH_WHATSAPP");
+        var usageArn = Environment.GetEnvironmentVariable("SECRET_ARN_USAGE");
 
-        if (string.IsNullOrEmpty(martenArn) && string.IsNullOrEmpty(ssmPath))
+        if (string.IsNullOrEmpty(martenArn) && string.IsNullOrEmpty(ssmPath) && string.IsNullOrEmpty(usageArn))
         {
             return;
         }
@@ -88,6 +89,16 @@ public static class AwsConfigurationExtensions
 
                 secureConfig[$"WhatsApp:{pascalCaseKey}"] = param.Value;
             }
+        }
+
+        var usageArn = Environment.GetEnvironmentVariable("SECRET_ARN_USAGE");
+        if (!string.IsNullOrEmpty(usageArn))
+        {
+            var response = secretsClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = usageArn })
+                .GetAwaiter()
+                .GetResult();
+            if (!string.IsNullOrEmpty(response.SecretString))
+                secureConfig["Usage:PhoneHashKey"] = response.SecretString;
         }
 
         // 3. Inject fetched secrets into .NET configuration

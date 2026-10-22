@@ -1,8 +1,10 @@
 using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Tenancy;
+using AutomaticEnvelopes.Api.Features.Usage;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using Marten;
+using Microsoft.Extensions.Options;
 using Wolverine;
 
 namespace AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
@@ -15,6 +17,7 @@ public static class ProcessWhatsAppMessageHandler
     public static async Task Handle(
         ProcessWhatsAppMessage command,
         IDocumentStore store,
+        IOptions<UsageOptions> usageOptions,
         IMessageBus bus,
         ILogger logger,
         CancellationToken ct)
@@ -40,8 +43,18 @@ public static class ProcessWhatsAppMessageHandler
             return;
         }
 
-        // 3. Spam Shield (Rate Limiting)
-        if (!await IsRateLimitPassedAsync(session, command.PhoneNumber, logger, ct))
+        // 3. Spam Shield (Rate Limiting). The tracker id is an HMAC of tenant + phone, never the phone itself.
+        var hashKey = usageOptions.Value.PhoneHashKey;
+        if (string.IsNullOrEmpty(hashKey) || hashKey.Length < PhoneRateKey.MinSecretLength)
+            throw new InvalidOperationException("Phone hash key is missing or too short.");
+
+        if (!PhoneRateKey.TryHash(tenant.Id, command.PhoneNumber, hashKey, out var trackerId))
+        {
+            logger.LogWarning("Skipping a message with no phone. TenantId: {TenantId}.", tenant.Id);
+            return;
+        }
+
+        if (!await IsRateLimitPassedAsync(session, tenant.Id, trackerId, command.PhoneNumber, logger, ct))
         {
             return;
         }
@@ -62,11 +75,21 @@ public static class ProcessWhatsAppMessageHandler
         return session.Query<ProcessedMessage>().AnyAsync(x => x.Id == messageId, ct);
     }
 
-    private static async Task<bool> IsRateLimitPassedAsync(IDocumentSession session, string phoneNumber, ILogger logger, CancellationToken ct)
+    private static async Task<bool> IsRateLimitPassedAsync(
+        IDocumentSession session,
+        string tenantId,
+        string trackerId,
+        string phoneNumber,
+        ILogger logger,
+        CancellationToken ct)
     {
+        session.QueueSqlCommand(
+            "delete from public.mt_doc_whatsappratelimittracker where tenant_id = ? and id !~ '^[0-9a-f]{64}$'",
+            tenantId);
+
         // Wolverine will automatically retry if multiple Lambdas hit this simultaneously and collide
-        var tracker = await session.LoadAsync<WhatsAppRateLimitTracker>(phoneNumber, ct)
-                      ?? new WhatsAppRateLimitTracker { Id = phoneNumber };
+        var tracker = await session.LoadAsync<WhatsAppRateLimitTracker>(trackerId, ct)
+                      ?? new WhatsAppRateLimitTracker { Id = trackerId };
 
         var now = DateTimeOffset.UtcNow;
 

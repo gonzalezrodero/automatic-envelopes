@@ -30,6 +30,7 @@ public class TenantEndpointsTests
     [InlineData(nameof(TenantEndpoints.List))]
     [InlineData(nameof(TenantEndpoints.Get))]
     [InlineData(nameof(TenantEndpoints.Update))]
+    [InlineData(nameof(TenantEndpoints.Usage))]
     public void PortalRoutes_RequireAnAuthenticatedSession_AndUseAuthPolicy(string methodName)
     {
         var method = typeof(TenantEndpoints).GetMethod(methodName);
@@ -294,6 +295,66 @@ public class TenantEndpointsTests
 
         Status(result).Should().Be(StatusCodes.Status200OK);
         saved!.EnabledTools.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("monthly")]
+    [InlineData("email")]
+    public async Task Update_ClubRole_CannotSetAdminOnlyUsageFields(string field)
+    {
+        var request = new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p" };
+        if (field == "monthly")
+            request.MonthlyResponseLimit = 10;
+        else
+            request.ContactEmail = "club@example.com";
+
+        var result = await TenantEndpoints.Update(
+            "example-tenant", request, TenantUser("example-tenant"), new DefaultHttpContext(),
+            new Mock<IDocumentSession>(MockBehavior.Strict).Object, CancellationToken.None);
+        Status(result).Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task Update_Admin_SetsLimitAndEmail_AndOmittedFieldsStay()
+    {
+        var stored = new TenantProfile
+        {
+            Id = "example-tenant", BotPhoneNumberId = "phone-1", MonthlyResponseLimit = 50,
+            ContactEmail = "old@example.com", EnabledTools = ["price"]
+        };
+        TenantProfile? saved = null;
+        var session = new Mock<IDocumentSession>();
+        session.Setup(store => store.LoadAsync<TenantProfile>("example-tenant", It.IsAny<CancellationToken>())).ReturnsAsync(stored);
+        session.Setup(store => store.Store(It.IsAny<TenantProfile[]>())).Callback<TenantProfile[]>(profiles => saved = profiles[0]);
+        session.Setup(store => store.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var changed = await TenantEndpoints.Update(
+            "example-tenant",
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p", MonthlyResponseLimit = 0, ContactEmail = "  club@example.com " },
+            Admin(), new DefaultHttpContext(), session.Object, CancellationToken.None);
+        Status(changed).Should().Be(StatusCodes.Status200OK);
+        saved!.MonthlyResponseLimit.Should().Be(0);
+        saved.ContactEmail.Should().Be("club@example.com");
+        saved.EnabledTools.Should().Equal("price");
+
+        var kept = await TenantEndpoints.Update(
+            "example-tenant",
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p" },
+            Admin(), new DefaultHttpContext(), session.Object, CancellationToken.None);
+        Status(kept).Should().Be(StatusCodes.Status200OK);
+        saved.MonthlyResponseLimit.Should().Be(50);
+        saved.ContactEmail.Should().Be("old@example.com");
+
+        var negative = await TenantEndpoints.Update(
+            "example-tenant",
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p", MonthlyResponseLimit = -1 },
+            Admin(), new DefaultHttpContext(), new Mock<IDocumentSession>(MockBehavior.Strict).Object, CancellationToken.None);
+        var badEmail = await TenantEndpoints.Update(
+            "example-tenant",
+            new UpdateTenantSettingsRequest { SystemPrompt = "persona", PrivacyPolicyUrl = "https://example.com/p", ContactEmail = "not-an-email" },
+            Admin(), new DefaultHttpContext(), new Mock<IDocumentSession>(MockBehavior.Strict).Object, CancellationToken.None);
+        Status(negative).Should().Be(StatusCodes.Status400BadRequest);
+        Status(badEmail).Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [Fact]

@@ -17,3 +17,9 @@ variable "name_servers" {
   type        = list(string)
   description = "Name servers of the production zone. The API workflow passes these from that zone's output."
 }
+
+variable "ses_dkim_tokens" {
+  type        = list(string)
+  description = "Easy DKIM tokens from the production serverless output. Empty until that apply has produced three."
+  default     = []
+}
