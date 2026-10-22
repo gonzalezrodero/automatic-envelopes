@@ -40,6 +40,8 @@ public class TenantEndpointsIntegrationTests(IntegrationAppFixture fixture)
         match.GetProperty("systemPrompt").GetString().Should().Be("Alpha Club prompt");
         match.GetProperty("privacyPolicyUrl").GetString().Should().Be("https://alpha.example/p");
         match.GetProperty("enabledTools").ValueKind.Should().Be(JsonValueKind.Null);
+        match.GetProperty("monthlyResponseLimit").GetInt32().Should().Be(TenantProfile.DefaultMonthlyResponseLimit);
+        match.GetProperty("contactEmail").GetString().Should().BeEmpty();
         match.GetProperty("botPhoneNumberId").GetString().Should().NotBeNullOrWhiteSpace();
         match.TryGetProperty("createdAt", out _).Should().BeFalse();
         match.TryGetProperty("Name", out _).Should().BeFalse();

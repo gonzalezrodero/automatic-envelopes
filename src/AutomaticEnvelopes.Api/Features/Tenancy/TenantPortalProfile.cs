@@ -38,6 +38,12 @@ public sealed class TenantPortalProfile
     [JsonPropertyName("enabledTools")]
     public string[]? EnabledTools { get; init; }
 
+    [JsonPropertyName("monthlyResponseLimit")]
+    public required int MonthlyResponseLimit { get; init; }
+
+    [JsonPropertyName("contactEmail")]
+    public required string ContactEmail { get; init; }
+
     public static TenantPortalProfile From(TenantProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -52,7 +58,9 @@ public sealed class TenantPortalProfile
             DisplayPhone = Stored(profile.DisplayPhone),
             SystemPrompt = profile.SystemPrompt ?? string.Empty,
             PrivacyPolicyUrl = profile.PrivacyPolicyUrl ?? string.Empty,
-            EnabledTools = profile.EnabledTools
+            EnabledTools = profile.EnabledTools,
+            MonthlyResponseLimit = profile.EffectiveMonthlyResponseLimit,
+            ContactEmail = Stored(profile.ContactEmail)
         };
     }
 

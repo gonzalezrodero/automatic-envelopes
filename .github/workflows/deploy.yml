@@ -62,6 +62,7 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
+  # After production serverless, so api-delegation can read that apply's DKIM tokens.
   deploy-api-domain:
     name: production API domain
     needs: deploy-prod

@@ -66,7 +66,9 @@ public class ChatServiceTests
         var result = await sut.GetResponseAsync(systemPrompt, history, "TestTenant", null, CancellationToken.None);
 
         // Assert
-        result.Should().Be(expectedResponseText, "El servicio debería extraer correctamente el texto de la respuesta estructurada de Converse API.");
+        result.Text.Should().Be(expectedResponseText, "El servicio debería extraer correctamente el texto de la respuesta estructurada de Converse API.");
+        result.InputTokens.Should().Be(0);
+        result.OutputTokens.Should().Be(0);
     }
 
     [Fact]
@@ -176,11 +178,13 @@ public class ChatServiceTests
             .ReturnsAsync(new ConverseResponse
             {
                 StopReason = StopReason.Tool_use,
+                Usage = new TokenUsage { InputTokens = 4, OutputTokens = 1 },
                 Output = new ConverseOutput { Message = new Message { Role = ConversationRole.Assistant, Content = [] } }
             })
             .ReturnsAsync(new ConverseResponse
             {
                 StopReason = StopReason.End_turn,
+                Usage = new TokenUsage { InputTokens = 8, OutputTokens = 8 },
                 Output = new ConverseOutput { Message = new Message { Role = ConversationRole.Assistant, Content = [new ContentBlock { Text = "Final Tool Answer" }] } }
             });
 
@@ -191,7 +195,9 @@ public class ChatServiceTests
             ["test_tool"],
             CancellationToken.None);
 
-        result.Should().Be("Final Tool Answer");
+        result.Text.Should().Be("Final Tool Answer");
+        result.InputTokens.Should().Be(12);
+        result.OutputTokens.Should().Be(9);
         executedTools.Should().NotBeNull();
         executedTools.Should().BeEmpty();
     }

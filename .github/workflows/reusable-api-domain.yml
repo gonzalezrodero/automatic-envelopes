@@ -58,6 +58,7 @@ jobs:
       contents: read
     outputs:
       name_servers: ${{ steps.servers.outputs.name_servers }}
+      ses_dkim_tokens: ${{ steps.dkim.outputs.ses_dkim_tokens }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -89,6 +90,28 @@ jobs:
         run: echo "name_servers=$(terraform output -json name_servers | jq -c .)" >> "$GITHUB_OUTPUT"
         working-directory: infra/api-dns
 
+      # Same production role. A missing output or a list that is not three tokens
+      # becomes [] so delegation writes no CNAMEs and still publishes the NS records.
+      - id: dkim
+        name: Read production DKIM tokens
+        run: |
+          set -euo pipefail
+          tokens='[]'
+          if terraform init -backend-config=config/prod/config.remote -input=false; then
+            if raw=$(terraform output -json ses_dkim_tokens 2>/dev/null); then
+              parsed=$(printf '%s' "$raw" | jq -c 'if type == "array" then . else [] end' || true)
+              if [ -n "$parsed" ]; then
+                tokens=$parsed
+              fi
+            else
+              echo "Production DKIM output is not available yet; publishing no CNAMEs."
+            fi
+          else
+            echo "Production serverless state is not readable yet; publishing no DKIM CNAMEs."
+          fi
+          echo "ses_dkim_tokens=$tokens" >> "$GITHUB_OUTPUT"
+        working-directory: infra/serverless
+
   delegate:
     name: Delegate
     needs: apply-zone
@@ -117,6 +140,7 @@ jobs:
       - name: Terraform Apply delegation
         env:
           TF_VAR_name_servers: ${{ needs.apply-zone.outputs.name_servers }}
+          TF_VAR_ses_dkim_tokens: ${{ needs.apply-zone.outputs.ses_dkim_tokens }}
         run: terraform apply -auto-approve -no-color -input=false -var-file=config/dev/config.tfvars
         working-directory: infra/api-delegation
 

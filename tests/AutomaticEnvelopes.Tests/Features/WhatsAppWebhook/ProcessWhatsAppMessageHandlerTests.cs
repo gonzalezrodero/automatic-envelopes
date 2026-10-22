@@ -1,10 +1,13 @@
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Tenancy;
+using AutomaticEnvelopes.Api.Features.Usage;
+using AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
 using AutomaticEnvelopes.Api.Features.WhatsAppWebhook.Models;
 using AutomaticEnvelopes.Tests.Extensions;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace AutomaticEnvelopes.Tests.Features.WhatsAppWebhook;
 
@@ -115,14 +118,15 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
         using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
         session.Store(new TenantProfile { Id = tenantId, BotPhoneNumberId = botPhone });
 
-        // We manually seed the rate limit tracker right at the limit (25 messages)
-        // with a reset window 1 minute in the future to simulate an ongoing spam wave.
+        // The tracker id is an HMAC of tenant + phone. A document stored under the raw phone must not match.
+        PhoneRateKey.TryHash(tenantId, spammerPhone, IntegrationAppFixture.PhoneHashKey, out var trackerId).Should().BeTrue();
         session.Store(new WhatsAppRateLimitTracker
         {
-            Id = spammerPhone,
+            Id = trackerId,
             MessageCount = 25,
             WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1)
         });
+        session.Store(new WhatsAppRateLimitTracker { Id = spammerPhone, MessageCount = 3, WindowResetTime = DateTimeOffset.UtcNow.AddMinutes(1) });
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var spamCommand = new ProcessWhatsAppMessage(
@@ -145,8 +149,29 @@ public class ProcessWhatsAppMessageHandlerTests(IntegrationAppFixture fixture)
         dispatchedEvents.Should().BeEmpty("No events should be published when the spam shield is triggered.");
 
         // Assert 3: Ensure the tracker incremented to 26 and was saved (locking the spammer out)
-        var tracker = await session.LoadAsync<WhatsAppRateLimitTracker>(spammerPhone, token: TestContext.Current.CancellationToken);
+        var tracker = await session.LoadAsync<WhatsAppRateLimitTracker>(trackerId, token: TestContext.Current.CancellationToken);
         tracker.Should().NotBeNull();
         tracker!.MessageCount.Should().Be(26, "The tracker must increment and save the blocked attempt.");
+        var plain = await session.LoadAsync<WhatsAppRateLimitTracker>(spammerPhone, token: TestContext.Current.CancellationToken);
+        plain.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task MissingHashKey_ThrowsSoTheMessageIsRetried()
+    {
+        var options = fixture.Host.Services.GetRequiredService<IOptions<UsageOptions>>();
+        var saved = options.Value.PhoneHashKey;
+        options.Value.PhoneHashKey = string.Empty;
+        try
+        {
+            var bot = "6" + Guid.NewGuid().ToString("N")[..12];
+            await fixture.SeedTenantAsync("hash-" + Guid.NewGuid().ToString("N")[..8], bot);
+            var act = () => fixture.Host.InvokeMessageAndWaitAsync(new ProcessWhatsAppMessage($"wamid.{Guid.NewGuid()}", bot, "34600111222", "Hola", DateTimeOffset.UtcNow));
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+        finally
+        {
+            options.Value.PhoneHashKey = saved;
+        }
     }
 }
