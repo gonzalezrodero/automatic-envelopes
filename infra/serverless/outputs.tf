@@ -20,7 +20,7 @@ output "cognito_client_id" {
 }
 
 output "ses_dkim_tokens" {
-  description = "Easy DKIM tokens for core-webhook.eu. Dev writes the CNAMEs into the zone. Prod must copy the same records into core-webhook.eu, which lives in the development account."
+  description = "Easy DKIM tokens for this account's core-webhook.eu identity. The API workflow passes the production list to api-delegation."
   value       = try(aws_sesv2_email_identity.sender.dkim_signing_attributes[0].tokens, [])
 }
 

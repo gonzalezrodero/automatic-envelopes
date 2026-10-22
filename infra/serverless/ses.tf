@@ -1,4 +1,5 @@
-# noreply@core-webhook.eu. DKIM CNAMEs only where this account owns the zone (dev); prod copies ses_dkim_tokens. HMAC key is ephemeral and write-only; bump phone_hash_key_version to rotate.
+# noreply@core-webhook.eu. This account writes DKIM CNAMEs only when it owns the zone (dev).
+# Production tokens are published by infra/api-delegation after this stack applies. HMAC key is ephemeral and write-only; bump phone_hash_key_version to rotate.
 
 ephemeral "random_password" "phone_hash_key" {
   length  = 32
