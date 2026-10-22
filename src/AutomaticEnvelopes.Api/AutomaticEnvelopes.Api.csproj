@@ -9,29 +9,29 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Amazon.Lambda.AspNetCoreServer.Hosting" Version="2.2.0" />
-    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="3.0.0" />
-    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="2.2.0" />
-    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="3.0.0" />
-    <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.101" />
-    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.100.7" />
-    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.100.7" />
-    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.103.2" />
+    <PackageReference Include="Amazon.Lambda.AspNetCoreServer.Hosting" Version="2.2.1" />
+    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="3.0.1" />
+    <PackageReference Include="Amazon.Lambda.RuntimeSupport" Version="2.3.0" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="3.0.1" />
+    <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.101.13" />
+    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.102.6" />
+    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.100.21" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.104.6" />
     <PackageReference Include="JasperFx.RuntimeCompiler" Version="5.0.0" />
-    <PackageReference Include="Marten" Version="9.22.5" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" />
-    <PackageReference Include="Microsoft.OpenApi" Version="2.10.0" />
+    <PackageReference Include="Marten" Version="9.51.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="2.13.0" />
     <PackageReference Include="Npgsql.DependencyInjection" Version="10.0.3" />
-    <PackageReference Include="PdfPig" Version="0.1.15" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="Pgvector" Version="0.3.2" />
-    <PackageReference Include="Refit" Version="11.0.1" />
-    <PackageReference Include="Refit.HttpClientFactory" Version="11.0.1" />
-    <PackageReference Include="WolverineFx" Version="6.25.3" />
-    <PackageReference Include="WolverineFx.AmazonSqs" Version="6.25.3" />
-    <PackageReference Include="WolverineFx.Http" Version="6.25.3" />
-    <PackageReference Include="WolverineFx.Marten" Version="6.25.3" />
+    <PackageReference Include="Refit" Version="16.4.0" />
+    <PackageReference Include="Refit.HttpClientFactory" Version="16.4.0" />
+    <PackageReference Include="WolverineFx" Version="6.51.2" />
+    <PackageReference Include="WolverineFx.AmazonSqs" Version="6.51.2" />
+    <PackageReference Include="WolverineFx.Http" Version="6.51.2" />
+    <PackageReference Include="WolverineFx.Marten" Version="6.51.2" />
   </ItemGroup>
 
   <ItemGroup>
