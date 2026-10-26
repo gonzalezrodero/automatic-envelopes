@@ -19,13 +19,40 @@ public static class UsageMonth
 {
     public const string TimeZoneId = "Europe/Madrid";
     private static readonly TimeZoneInfo Zone = TimeZoneInfo.FindSystemTimeZoneById(TimeZoneId);
+    private static readonly string[] MonthNames =
+    [
+        "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+    ];
 
     public static string Key(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, Zone).ToString("yyyy-MM");
 
     public static string Current() => Key(DateTimeOffset.UtcNow);
+
+    public static string Spoken(DateTimeOffset utc)
+    {
+        var local = TimeZoneInfo.ConvertTime(utc, Zone);
+        return $"{MonthNames[local.Month - 1]} de {local.Year}";
+    }
 }
 
 public static class UsageMessages
 {
-    public const string Spanish = "Este servicio no está disponible este mes. Contacta con el club.";
+    public const string Spanish = "Este mes ya no puedo contestarte. Si lo necesitas, contacta con el club.";
+    public const string OrganizationFallback = "Tu organización";
+
+    public static string EmailName(string? name, string? shortName)
+    {
+        var raw = OrganizationFallback;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            raw = name;
+        }
+        else if (!string.IsNullOrWhiteSpace(shortName))
+        {
+            raw = shortName;
+        }
+
+        return raw.Trim().Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+    }
 }

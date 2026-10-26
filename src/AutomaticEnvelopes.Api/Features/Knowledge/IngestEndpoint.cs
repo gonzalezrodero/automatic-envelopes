@@ -26,7 +26,7 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
     {
         if (file == null || file.Length == 0)
         {
-            return Results.BadRequest(new { Error = "No file uploaded." });
+            return Results.BadRequest(new { Error = IngestLimits.EmptyFile });
         }
 
         if (IngestLimits.RejectFile(file) is { } tooLarge)
@@ -42,7 +42,7 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
         var tenant = await session.LoadAsync<TenantProfile>(tenantId, ct);
         if (tenant == null)
         {
-            return Results.BadRequest(new { Error = $"Tenant '{tenantId}' is not registered." });
+            return Results.BadRequest(new { Error = TenantRequest.OrganizationNotFound });
         }
 
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
@@ -50,7 +50,7 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
 
         if (extractor == null)
         {
-            return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
+            return Results.BadRequest(new { Error = IngestLimits.UnsupportedType });
         }
 
         var readingPdf = false;
@@ -68,7 +68,7 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
 
             if (string.IsNullOrWhiteSpace(extractedText))
             {
-                return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
+                return Results.BadRequest(new { Error = IngestLimits.NoReadableText });
             }
 
             if (IngestLimits.RejectText(extractedText) is { } tooLong)
@@ -80,21 +80,21 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
             var mime = KnowledgeIngestionService.MimeFor(fileName);
             if (mime is null)
             {
-                return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
+                return Results.BadRequest(new { Error = IngestLimits.UnsupportedType });
             }
 
             await ingestionService.IngestDocumentAsync(tenantId, extractedText, fileName, file.Length, mime, ct);
 
-            return Results.Ok(new { Message = $"Successfully ingested {file.FileName} into the vector database." });
+            return Results.Ok(new { Message = "Ya hemos guardado el documento. El asistente ya puede usarlo." });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (readingPdf && ex is not OperationCanceledException)
+            if (readingPdf)
             {
                 return IngestLimits.RejectPdfRead(ex, logger, tenantId);
             }
 
-            return Results.Problem(detail: ex.Message, title: "Ingestion failed");
+            return IngestLimits.IngestionFailed(ex, logger, tenantId);
         }
     }
 }

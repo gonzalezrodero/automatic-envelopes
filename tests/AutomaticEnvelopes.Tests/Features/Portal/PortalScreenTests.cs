@@ -8,6 +8,9 @@ using AutomaticEnvelopes.Api.Features.Tenancy;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using UglyToad.PdfPig.Content;
@@ -179,7 +182,12 @@ public class PortalScreenTests
 
         var broken = Extractor(".txt", "hola");
         broken.Setup(item => item.ExtractTextAsync(It.IsAny<Stream>())).ThrowsAsync(new InvalidOperationException("boom"));
-        Status(await Upload(File("notes.txt", 12), [broken.Object], Ingestion())).Should().Be(500);
+        var failed = await Upload(File("notes.txt", 12), [broken.Object], Ingestion());
+        Status(failed).Should().Be(500);
+        var problem = failed.Should().BeAssignableTo<IValueHttpResult<ProblemDetails>>().Subject.Value;
+        problem!.Detail.Should().Be(IngestLimits.IngestionFailedDetail);
+        problem.Detail.Should().NotContain("boom");
+        problem.Title.Should().NotContain("boom");
     }
 
     [Fact]
@@ -192,7 +200,7 @@ public class PortalScreenTests
         tooBig.Should().BeAssignableTo<IValueHttpResult>()
             .Which.Value.Should().BeEquivalentTo(new
             {
-                Error = $"The file is larger than 4 MiB ({IngestLimits.MaxUploadBytes} bytes)."
+                Error = IngestLimits.FileTooLarge
             });
 
         var builder = new PdfDocumentBuilder();
@@ -233,7 +241,7 @@ public class PortalScreenTests
         var result = await Upload(File(fileName, 20), [new PdfDocumentExtractor()], service.Object);
 
         Status(result).Should().Be(400);
-        ErrorOf(result).Should().Be($"The file name '{AnsweredKnowledge.FileName}' is reserved.");
+        ErrorOf(result).Should().Be(IngestLimits.ReservedName);
         service.Verify(
             item => item.IngestDocumentAsync(
                 It.IsAny<string>(),
@@ -321,7 +329,7 @@ public class PortalScreenTests
             "revise" => await PortalEndpoints.ReviseUnanswered(tenantId, Guid.NewGuid().ToString("D"), new AnswerUnansweredRequest { Answer = "A las 9." }, http, session, Inbox(), CancellationToken.None),
             "withdraw" => await PortalEndpoints.WithdrawUnanswered(tenantId, Guid.NewGuid().ToString("D"), http, session, Inbox(), CancellationToken.None),
             "discard" => await PortalEndpoints.DiscardUnanswered(tenantId, Guid.NewGuid().ToString("D"), http, session, Inbox(), CancellationToken.None),
-            "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), http, session, [], Ingestion(), NullLoggerFactory.Instance, CancellationToken.None),
+            "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), Context(user, [], Ingestion()), session, CancellationToken.None),
             "delete" => await PortalEndpoints.DeleteDocument(tenantId, Guid.NewGuid().ToString("D"), http, session, catalog, knowledge, CancellationToken.None),
             _ => throw new ArgumentOutOfRangeException(nameof(route))
         };
@@ -333,11 +341,8 @@ public class PortalScreenTests
         return await PortalEndpoints.Upload(
             "club-a",
             file,
-            Context(User("club-a")),
+            Context(User("club-a"), extractors, ingestion),
             Session(Profile("club-a")),
-            extractors,
-            ingestion,
-            NullLoggerFactory.Instance,
             CancellationToken.None);
     }
 
@@ -372,7 +377,29 @@ public class PortalScreenTests
 
     private static TenantProfile Profile(string id) => new() { Id = id, BotPhoneNumberId = "1" };
 
-    private static DefaultHttpContext Context(ClaimsPrincipal user) => new() { User = user };
+    private static DefaultHttpContext Context(
+        ClaimsPrincipal user,
+        IEnumerable<IDocumentExtractor>? extractors = null,
+        IKnowledgeIngestionService? ingestion = null)
+    {
+        var services = new ServiceCollection();
+        foreach (var extractor in extractors ?? [])
+        {
+            services.AddSingleton(extractor);
+        }
+
+        if (ingestion is not null)
+        {
+            services.AddSingleton(ingestion);
+        }
+
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        return new DefaultHttpContext
+        {
+            User = user,
+            RequestServices = services.BuildServiceProvider()
+        };
+    }
 
     private static ClaimsPrincipal User(string role)
     {

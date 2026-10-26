@@ -15,7 +15,7 @@ namespace AutomaticEnvelopes.Api.Features.Portal;
 
 public static class PortalEndpoints
 {
-    private const string QuestionNotFound = "Question was not found.";
+    private const string QuestionNotFound = "No encontramos esa pregunta. Actualiza la página.";
     [Authorize(Policy = "TenantAdmin")]
     [WolverineGet("/tenants/{tenantId}/dashboard")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
@@ -94,7 +94,7 @@ public static class PortalEndpoints
 
         if (!TenantIds.IsValid(conversationId))
         {
-            return Results.BadRequest(new { Error = "conversationId is not valid." });
+            return Results.BadRequest(new { Error = "No podemos abrir esa conversación. Vuelve al listado." });
         }
 
         if (await MissingTenant(session, tenantId, ct) is { } missing)
@@ -105,7 +105,7 @@ public static class PortalEndpoints
         var conversations = await PortalConversations.ReadAsync(store, tenantId, ct);
         var match = PortalConversations.Find(conversations, conversationId);
         return match is null
-            ? Results.NotFound(new { Error = "Conversation was not found." })
+            ? Results.NotFound(new { Error = "No encontramos esa conversación. Puede que ya no esté. Vuelve al listado." })
             : Results.Ok(match);
     }
 
@@ -283,90 +283,27 @@ public static class PortalEndpoints
         IFormFile file,
         HttpContext httpContext,
         IDocumentSession session,
-        IEnumerable<IDocumentExtractor> extractors,
-        IKnowledgeIngestionService ingestionService,
-        ILoggerFactory loggers,
         CancellationToken ct)
     {
-        TenantRequest.NoStore(httpContext);
-        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        if (await RejectUpload(tenantId, file, httpContext, session, ct) is { } rejected)
         {
             return rejected;
         }
 
-        if (await MissingTenant(session, tenantId, ct) is { } missing)
-        {
-            return missing;
-        }
-
-        if (file == null || file.Length == 0)
-        {
-            return Results.BadRequest(new { Error = "No file uploaded." });
-        }
-
-        if (IngestLimits.RejectFile(file) is { } tooLarge)
-        {
-            return tooLarge;
-        }
-
-        if (IngestLimits.RejectReservedName(file.FileName) is { } reserved)
-        {
-            return reserved;
-        }
-
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var extractor = extractors.FirstOrDefault(item => item.SupportedExtensions.Contains(extension));
-        if (extractor == null)
+        var extractor = MatchingExtractor(httpContext, extension);
+        if (extractor is null)
         {
-            return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
+            return Results.BadRequest(new { Error = IngestLimits.UnsupportedType });
         }
 
-        var readingPdf = false;
-        try
-        {
-            await using var stream = file.OpenReadStream();
-            readingPdf = extractor is PdfDocumentExtractor;
-            if (IngestLimits.RejectPdf(stream, extractor) is { } tooManyPages)
-            {
-                return tooManyPages;
-            }
-
-            var extractedText = await extractor.ExtractTextAsync(stream);
-            readingPdf = false;
-            if (string.IsNullOrWhiteSpace(extractedText))
-            {
-                return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
-            }
-
-            if (IngestLimits.RejectText(extractedText) is { } tooLong)
-            {
-                return tooLong;
-            }
-
-            var fileName = Path.GetFileName(file.FileName);
-            var mime = KnowledgeIngestionService.MimeFor(fileName);
-            if (mime is null)
-            {
-                return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
-            }
-
-            var saved = await ingestionService.IngestDocumentAsync(tenantId, extractedText, fileName, file.Length, mime, ct);
-            if (saved is null)
-            {
-                return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
-            }
-
-            return Results.Created($"/tenants/{tenantId}/documents/{saved.Id:D}", PortalKnowledgeDocument.From(tenantId, saved));
-        }
-        catch (Exception ex)
-        {
-            if (readingPdf && ex is not OperationCanceledException)
-            {
-                return IngestLimits.RejectPdfRead(ex, loggers.CreateLogger(nameof(PortalEndpoints)), tenantId);
-            }
-
-            return Results.Problem(detail: ex.Message, title: "Ingestion failed");
-        }
+        return await ReadAndIngest(
+            tenantId,
+            file,
+            extractor,
+            httpContext.RequestServices.GetRequiredService<IKnowledgeIngestionService>(),
+            httpContext,
+            ct);
     }
 
     [Authorize(Policy = "TenantAdmin")]
@@ -389,7 +326,7 @@ public static class PortalEndpoints
 
         if (!Guid.TryParse(documentId, out var id))
         {
-            return Results.BadRequest(new { Error = "documentId is not valid." });
+            return Results.BadRequest(new { Error = "No podemos abrir ese documento. Vuelve al listado." });
         }
 
         if (await MissingTenant(session, tenantId, ct) is { } missing)
@@ -400,7 +337,7 @@ public static class PortalEndpoints
         var file = await catalog.FindAsync(tenantId, id, ct);
         if (file is null)
         {
-            return Results.NotFound(new { Error = "Document was not found." });
+            return Results.NotFound(new { Error = "No encontramos ese documento. Puede que ya no esté. Vuelve al listado." });
         }
 
         await knowledge.DeleteChunksForDocumentAsync(tenantId, id, ct);
@@ -442,7 +379,7 @@ public static class PortalEndpoints
 
         if (!Guid.TryParse(questionId, out var id))
         {
-            return new AdmittedQuestion(Guid.Empty, Results.BadRequest(new { Error = "questionId is not valid." }));
+            return new AdmittedQuestion(Guid.Empty, Results.BadRequest(new { Error = "No podemos abrir esa pregunta. Vuelve al listado." }));
         }
 
         if (await MissingTenant(session, tenantId, ct) is { } missing)
@@ -470,7 +407,7 @@ public static class PortalEndpoints
 
         if (!Guid.TryParse(questionId, out var id))
         {
-            return new AdmittedAnswer(Guid.Empty, string.Empty, Results.BadRequest(new { Error = "questionId is not valid." }));
+            return new AdmittedAnswer(Guid.Empty, string.Empty, Results.BadRequest(new { Error = "No podemos abrir esa pregunta. Vuelve al listado." }));
         }
 
         if (!UnansweredInboxRules.TryNormalizeAnswer(body?.Answer, out var answer, out var error))
@@ -497,7 +434,109 @@ public static class PortalEndpoints
     {
         var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
         return profile is null
-            ? Results.NotFound(new { Error = "Tenant was not found." })
+            ? Results.NotFound(new { Error = TenantRequest.OrganizationNotFound })
             : null;
     }
+
+    private static async Task<IResult?> RejectUpload(
+        string tenantId,
+        IFormFile file,
+        HttpContext httpContext,
+        IDocumentSession session,
+        CancellationToken ct)
+    {
+        TenantRequest.NoStore(httpContext);
+        if (TenantRequest.Reject(httpContext.User, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
+        if (await MissingTenant(session, tenantId, ct) is { } missing)
+        {
+            return missing;
+        }
+
+        if (file == null || file.Length == 0)
+        {
+            return Results.BadRequest(new { Error = IngestLimits.EmptyFile });
+        }
+
+        if (IngestLimits.RejectFile(file) is { } tooLarge)
+        {
+            return tooLarge;
+        }
+
+        if (IngestLimits.RejectReservedName(file.FileName) is { } reserved)
+        {
+            return reserved;
+        }
+
+        return null;
+    }
+
+    private static IDocumentExtractor? MatchingExtractor(HttpContext httpContext, string extension)
+    {
+        return httpContext.RequestServices
+            .GetRequiredService<IEnumerable<IDocumentExtractor>>()
+            .FirstOrDefault(item => item.SupportedExtensions.Contains(extension));
+    }
+
+    private static async Task<IResult> ReadAndIngest(
+        string tenantId,
+        IFormFile file,
+        IDocumentExtractor extractor,
+        IKnowledgeIngestionService ingestionService,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        var readingPdf = false;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            readingPdf = extractor is PdfDocumentExtractor;
+            if (IngestLimits.RejectPdf(stream, extractor) is { } tooManyPages)
+            {
+                return tooManyPages;
+            }
+
+            var extractedText = await extractor.ExtractTextAsync(stream);
+            readingPdf = false;
+            if (string.IsNullOrWhiteSpace(extractedText))
+            {
+                return Results.BadRequest(new { Error = IngestLimits.NoReadableText });
+            }
+
+            if (IngestLimits.RejectText(extractedText) is { } tooLong)
+            {
+                return tooLong;
+            }
+
+            var fileName = Path.GetFileName(file.FileName);
+            var mime = KnowledgeIngestionService.MimeFor(fileName);
+            if (mime is null)
+            {
+                return Results.BadRequest(new { Error = IngestLimits.UnsupportedType });
+            }
+
+            var saved = await ingestionService.IngestDocumentAsync(tenantId, extractedText, fileName, file.Length, mime, ct);
+            if (saved is null)
+            {
+                return Results.BadRequest(new { Error = IngestLimits.NoReadableText });
+            }
+
+            return Results.Created($"/tenants/{tenantId}/documents/{saved.Id:D}", PortalKnowledgeDocument.From(tenantId, saved));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (readingPdf)
+            {
+                return IngestLimits.RejectPdfRead(ex, UploadLogger(httpContext), tenantId);
+            }
+
+            return IngestLimits.IngestionFailed(ex, UploadLogger(httpContext), tenantId);
+        }
+    }
+
+    private static ILogger UploadLogger(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<ILoggerFactory>()!.CreateLogger(nameof(PortalEndpoints));
 }

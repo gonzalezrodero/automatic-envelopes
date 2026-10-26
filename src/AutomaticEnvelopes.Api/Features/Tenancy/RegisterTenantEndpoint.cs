@@ -46,12 +46,12 @@ public static class RegisterTenantEndpoint
     {
         if (!TenantIds.IsValid(tenantId))
         {
-            return Results.BadRequest(new { Error = "tenantId is not valid." });
+            return Results.BadRequest(new { Error = TenantRequest.OrganizationInvalid });
         }
 
         if (request is null || string.IsNullOrWhiteSpace(request.BotPhoneNumberId))
         {
-            return Results.BadRequest(new { Error = "botPhoneNumberId is required." });
+            return Results.BadRequest(new { Error = "Falta el número de WhatsApp. Escríbelo y vuelve a intentarlo." });
         }
 
         var botPhoneNumberId = request.BotPhoneNumberId.Trim();
@@ -60,7 +60,7 @@ public static class RegisterTenantEndpoint
 
         if (existing)
         {
-            return Results.BadRequest(new { Error = "Tenant or BotPhoneNumberId already registered." });
+            return Results.BadRequest(new { Error = "Esa organización o ese número ya están registrados. Entra en la que ya existe o usa otros datos." });
         }
 
         var profile = new TenantProfile

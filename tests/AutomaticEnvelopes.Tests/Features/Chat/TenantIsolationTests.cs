@@ -64,15 +64,13 @@ public class TenantIsolationTests
             .Returns(Task.CompletedTask);
 
         var store = SessionFor(profile);
-        await ChatSessionHandler.Handle(
+        await Handle(
             new AnalyzeChatSession("34600111222", tenantId, "bot-phone", "¿Horario?"),
             store,
             knowledge.Object,
             chat.Object,
             new UsageMeter(store),
-            bus.Object,
-            NullLogger.Instance,
-            CancellationToken.None);
+            bus.Object);
 
         searched.Should().Equal(tenantId);
         calledTenant.Should().Be(tenantId);
@@ -113,21 +111,36 @@ public class TenantIsolationTests
             .Returns(Task.CompletedTask);
 
         var store = SessionFor(profile);
-        await ChatSessionHandler.Handle(
+        await Handle(
             new AnalyzeChatSession("34600999888", "club-b", "bot-phone", "Hola"),
             store,
             knowledge.Object,
             chat.Object,
             new UsageMeter(store),
-            bus.Object,
-            NullLogger.Instance,
-            CancellationToken.None);
+            bus.Object);
 
         enabled.Should().BeNull();
         knowledge.Verify(
             item => item.SearchAsync("club-a", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    private static Task Handle(
+        AnalyzeChatSession command,
+        IDocumentStore store,
+        IKnowledgeBaseService knowledge,
+        IChatService chat,
+        UsageMeter usage,
+        IMessageBus bus) =>
+        ChatSessionHandler.Handle(
+            command,
+            store,
+            knowledge,
+            chat,
+            usage,
+            bus,
+            NullLogger.Instance,
+            CancellationToken.None);
 
     private static IDocumentStore SessionFor(TenantProfile profile)
     {

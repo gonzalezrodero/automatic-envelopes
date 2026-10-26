@@ -52,9 +52,13 @@ public class MonthlyUsageIntegrationTests(IntegrationAppFixture fixture)
         emails.Should().HaveCount(2);
         emails[0].FromEmailAddress.Should().Be(IntegrationAppFixture.UsageFromAddress);
         emails[0].Destination.ToAddresses.Should().Equal("club@example.com");
-        emails[0].Content.Simple.Subject.Data.Should().Contain("80%");
+        emails[0].Content.Simple.Subject.Data.Should().Be("El asistente está cerca del límite de respuestas");
         emails[0].Content.Simple.Body.Text.Data.Should().Contain("Club Prova");
-        emails[1].Content.Simple.Subject.Data.Should().Contain("Límite");
+        emails[0].Content.Simple.Body.Text.Data.Should().Contain(UsageMonth.Spoken(DateTimeOffset.UtcNow));
+        emails[0].Content.Simple.Body.Text.Data.Should().NotContain(month);
+        emails[0].Content.Simple.Body.Text.Data.Should().NotContain(tenantId);
+        emails[1].Content.Simple.Subject.Data.Should().Be("El asistente ya no responderá hasta el mes que viene");
+        emails[1].Content.Simple.Body.Text.Data.Should().NotContain(tenantId);
 
         var before = ConverseCount();
         await fixture.Host.InvokeMessageAndWaitAsync(ask);

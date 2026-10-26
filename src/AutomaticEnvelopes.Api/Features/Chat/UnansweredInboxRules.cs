@@ -6,8 +6,8 @@ public static partial class UnansweredInboxRules
 {
     public const int MaxAnswerLength = 2_000;
     public const int MaxQuestionLength = 4_000;
-    public const string AnswerRequired = "answer is required.";
-    public const string AnswerTooLong = "answer is too long.";
+    public const string AnswerRequired = "Escribe la respuesta antes de enviarla.";
+    public const string AnswerTooLong = "La respuesta es demasiado larga. Acórtala y vuelve a enviarla.";
 
     public static bool TryNormalizeAnswer(string? answer, out string normalized, out string error)
     {

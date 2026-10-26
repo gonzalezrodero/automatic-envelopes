@@ -6,6 +6,7 @@ using AutomaticEnvelopes.Api.Features.Tenancy;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Moq.AutoMock;
 using UglyToad.PdfPig.Content;
@@ -133,7 +134,7 @@ public class IngestEndpointTests
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(400);
-        ErrorOf(result).Should().Be($"The file name '{AnsweredKnowledge.FileName}' is reserved.");
+        ErrorOf(result).Should().Be(IngestLimits.ReservedName);
         service.Verify(
             s => s.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -297,6 +298,10 @@ public class IngestEndpointTests
         // Assert
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
               .Which.StatusCode.Should().Be(500);
+        var problem = result.Should().BeAssignableTo<IValueHttpResult<ProblemDetails>>().Subject.Value;
+        problem!.Detail.Should().Be(IngestLimits.IngestionFailedDetail);
+        problem.Detail.Should().NotContain("Random failure in DB");
+        problem.Title.Should().NotContain("Random failure");
     }
 
     [Fact]
