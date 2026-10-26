@@ -9,7 +9,9 @@ public static class Config
         var baseUrl = config["WhatsApp:BaseUrl"]
                       ?? throw new InvalidOperationException("WhatsApp:BaseUrl is missing.");
 
-        services.AddRefitClient<IWhatsAppClient>()
+        // Refit 16 builds this client at compile time. AddRefitClient still asks for the
+        // reflection request builder, which the deployed Lambda does not ship.
+        services.AddRefitGeneratedClient<IWhatsAppClient>()
             .ConfigureHttpClient(c =>
             {
                 c.BaseAddress = new Uri(baseUrl);
