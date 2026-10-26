@@ -8,6 +8,7 @@
 -- columns, replaces mt_quick_append_events (same signature, CREATE OR REPLACE),
 -- and adds the Wolverine 6.51.2 envelope indexes. Existing rows are kept.
 -- The column changes and index builds take a short ACCESS EXCLUSIVE lock.
+-- Runs after 20261026_002, which moves marten_app-owned objects to the master.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
