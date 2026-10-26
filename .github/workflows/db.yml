@@ -5,7 +5,10 @@ on:
       - main
     paths:
       - 'infra/db/**'
+      - 'db/migrations/**'
+      - '.github/scripts/db-migrate.sh'
       - '.github/workflows/db.yml'
+      - '.github/workflows/reusable-db-migrate.yml'
       - '.github/workflows/reusable-terraform.yml'
   workflow_dispatch:
 
@@ -28,13 +31,39 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
+  migrate-dev:
+    name: migrate development
+    needs: deploy-dev
+    uses: ./.github/workflows/reusable-db-migrate.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      env_name: development
+      tf_folder: dev
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
   deploy-prod:
     name: production
-    needs: deploy-dev
+    needs: migrate-dev
     uses: ./.github/workflows/reusable-terraform.yml
     with:
       env_name: production
       tf_folder: prod
       working_dir: infra/db
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
+  migrate-prod:
+    name: migrate production
+    needs: deploy-prod
+    uses: ./.github/workflows/reusable-db-migrate.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      env_name: production
+      tf_folder: prod
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}

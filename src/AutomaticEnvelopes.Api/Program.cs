@@ -33,11 +33,13 @@ var app = builder.Build();
 
 if (!args.Contains("codegen"))
 {
-    using (var scope = app.Services.CreateScope())
+    if (DatabaseSchemaStartup.AppliesAtStartup())
     {
+        using var scope = app.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
         await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
     }
+
     app.EnsureVectorExtensionExists(connectionString);
 }
 
