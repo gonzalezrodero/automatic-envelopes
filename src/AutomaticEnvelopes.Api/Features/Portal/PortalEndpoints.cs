@@ -7,7 +7,6 @@ using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Wolverine.Http;
@@ -477,13 +476,8 @@ public static class PortalEndpoints
 
     private static IDocumentExtractor? MatchingExtractor(HttpContext httpContext, string extension)
     {
-        var services = httpContext.RequestServices;
-        if (services is null)
-        {
-            return null;
-        }
-
-        return services.GetServices<IDocumentExtractor>()
+        return httpContext.RequestServices
+            .GetRequiredService<IEnumerable<IDocumentExtractor>>()
             .FirstOrDefault(item => item.SupportedExtensions.Contains(extension));
     }
 
@@ -532,9 +526,9 @@ public static class PortalEndpoints
 
             return Results.Created($"/tenants/{tenantId}/documents/{saved.Id:D}", PortalKnowledgeDocument.From(tenantId, saved));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (readingPdf && ex is not OperationCanceledException)
+            if (readingPdf)
             {
                 return IngestLimits.RejectPdfRead(ex, UploadLogger(httpContext), tenantId);
             }
@@ -544,6 +538,5 @@ public static class PortalEndpoints
     }
 
     private static ILogger UploadLogger(HttpContext httpContext) =>
-        httpContext.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger(nameof(PortalEndpoints))
-        ?? NullLogger.Instance;
+        httpContext.RequestServices.GetService<ILoggerFactory>()!.CreateLogger(nameof(PortalEndpoints));
 }

@@ -10,7 +10,6 @@ using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
-using AutomaticEnvelopes.Api.Features.Usage;
 using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
@@ -203,11 +202,7 @@ public class IntegrationAppFixture : IAsyncLifetime
                 // Dynamically determine the response text
                 string responseText = "This is a mocked response.";
 
-                if (allRequestText.Contains("Translate the Spanish notice", StringComparison.Ordinal))
-                {
-                    responseText = SpanishSentence(allRequestText);
-                }
-                else if (allRequestText.Contains("998877"))
+                if (allRequestText.Contains("998877"))
                 {
                     responseText = "Here is what I found in the knowledge base: 998877.";
                 }
@@ -240,26 +235,6 @@ public class IntegrationAppFixture : IAsyncLifetime
         await _sqsContainer.DisposeAsync();
 
         GC.SuppressFinalize(this);
-    }
-
-    private static string SpanishSentence(string text)
-    {
-        if (text.Contains(UsageMessages.Spanish, StringComparison.Ordinal))
-        {
-            return UsageMessages.Spanish;
-        }
-
-        if (text.Contains(UserMessages.Unavailable, StringComparison.Ordinal))
-        {
-            return UserMessages.Unavailable;
-        }
-
-        if (text.Contains(UnknownReply.Fallback, StringComparison.Ordinal))
-        {
-            return UnknownReply.Fallback;
-        }
-
-        return "This is a mocked response.";
     }
 
     public async Task SeedTenantAsync(

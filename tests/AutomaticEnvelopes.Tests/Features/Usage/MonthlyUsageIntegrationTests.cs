@@ -62,7 +62,7 @@ public class MonthlyUsageIntegrationTests(IntegrationAppFixture fixture)
 
         var before = ConverseCount();
         await fixture.Host.InvokeMessageAndWaitAsync(ask);
-        ConverseCount().Should().Be(before + 1);
+        ConverseCount().Should().Be(before);
         await using (var session = store.LightweightSession(tenantId))
         {
             var stream = await session.Events.FetchStreamAsync(phone, token: ct);

@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Common;
+﻿using Amazon.BedrockRuntime.Model;
+using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Chat.Models;
@@ -6,6 +7,7 @@ using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Portal;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.Usage;
+using JasperFx;
 using Marten;
 using Microsoft.Extensions.AI;
 using System.Text;
@@ -64,15 +66,19 @@ public sealed class ChatSessionHandler(
             return;
         }
 
-        // Before a reply is stored, one fixed message is enough: returning would let SQS run
-        // the handler again and send a second WhatsApp. After it is stored, the exception
-        // continues so a failed dispatch can be retried instead of being replaced.
+        // Ordinary generation failures get one fixed Spanish reply. Throttling, concurrency
+        // conflicts, and cancellation keep their exception so they can be retried. If the
+        // reply is already stored and WhatsApp dispatch fails, that exception also continues,
+        // the same as a successful answer, so SQS does not treat the message as done.
         var gate = new SaveGate();
         try
         {
             await PublishGeneratedReplyAsync(work, chatHistory, gate, ct);
         }
-        catch (Exception ex) when (!gate.Stored && ex is not OperationCanceledException)
+        catch (Exception ex) when (!gate.Stored
+            && ex is not OperationCanceledException
+            && ex is not ThrottlingException
+            && ex is not ConcurrencyException)
         {
             await DeliverFallbackAsync(ex, work, ct);
         }
@@ -96,7 +102,7 @@ public sealed class ChatSessionHandler(
             command.TenantId,
             work.Tenant.EnabledTools,
             ct);
-        var (replyText, unknown) = await VisibleReplyAsync(reply.Text, command, ct);
+        var (replyText, unknown) = VisibleReply(reply.Text, command);
 
         if (work.FirstContact)
         {
@@ -115,16 +121,12 @@ public sealed class ChatSessionHandler(
         }
     }
 
-    private async Task<(string Text, bool Unknown)> VisibleReplyAsync(
-        string replyText,
-        AnalyzeChatSession command,
-        CancellationToken ct)
+    private (string Text, bool Unknown) VisibleReply(string replyText, AnalyzeChatSession command)
     {
         if (string.IsNullOrWhiteSpace(replyText))
         {
             logger.LogWarning("Bedrock returned an empty or null response. Applying fallback message for TenantId: {TenantId}.", command.TenantId);
-            var fallback = await TranslateForUserAsync(UserMessages.Unavailable, command.CombinedText, command.TenantId, ct);
-            return (fallback, false);
+            return (UserMessages.Unavailable, false);
         }
 
         if (!UnknownReply.TryStrip(replyText, out var visible))
@@ -137,8 +139,7 @@ public sealed class ChatSessionHandler(
             return (visible, true);
         }
 
-        var translated = await TranslateForUserAsync(UnknownReply.Fallback, command.CombinedText, command.TenantId, ct);
-        return (translated, true);
+        return (UnknownReply.Fallback, true);
     }
 
     private async Task DeliverFallbackAsync(Exception failure, ReplyWork work, CancellationToken ct)
@@ -146,12 +147,13 @@ public sealed class ChatSessionHandler(
         var gate = new SaveGate();
         try
         {
-            var replyText = await TranslateForUserAsync(UserMessages.Unavailable, work.Command.CombinedText, work.Tenant.Id, ct);
+            var replyText = UserMessages.Unavailable;
             if (work.FirstContact)
             {
-                replyText = await PrependNoticeAsync(work.Tenant, work.Command.CombinedText, replyText, ct);
+                replyText = SpanishNotice(work.Tenant) + "\n\n" + replyText;
             }
 
+            logger.LogError(failure, "Chat generation failed. Sending a fixed fallback. TenantId: {TenantId}.", work.Tenant.Id);
             var saved = await SaveAndPublishReplyAsync(
                 work.Command,
                 replyText,
@@ -159,21 +161,12 @@ public sealed class ChatSessionHandler(
                 work.HasHistory,
                 gate,
                 ct);
-            if (saved)
+            if (!saved)
             {
-                logger.LogError(failure, "Chat generation failed. Sent a fixed fallback. TenantId: {TenantId}.", work.Tenant.Id);
-                return;
+                logger.LogInformation(
+                    "The fixed fallback was dropped because the chat was deleted. TenantId: {TenantId}.",
+                    work.Tenant.Id);
             }
-
-            logger.LogError(failure, "Chat generation failed and the fallback was dropped because the chat was deleted. TenantId: {TenantId}.", work.Tenant.Id);
-        }
-        catch (Exception delivery) when (gate.Stored && delivery is not OperationCanceledException)
-        {
-            logger.LogError(
-                delivery,
-                "Chat generation failed and the stored fallback could not be dispatched. Not retrying, to avoid a duplicate WhatsApp message. TenantId: {TenantId}. Generation failure: {GenerationFailure}",
-                work.Tenant.Id,
-                failure);
         }
         catch (Exception delivery) when (!gate.Stored && delivery is not OperationCanceledException)
         {
@@ -207,51 +200,20 @@ public sealed class ChatSessionHandler(
             "Monthly response limit reached. TenantId: {TenantId}. Responses: {Responses}. Limit: {Limit}.",
             work.Tenant.Id, used, limit);
 
-        var replyText = await TranslateForUserAsync(UsageMessages.Spanish, work.Command.CombinedText, work.Tenant.Id, ct);
+        var replyText = UsageMessages.Spanish;
         if (work.FirstContact)
         {
-            replyText = await PrependNoticeAsync(work.Tenant, work.Command.CombinedText, replyText, ct);
+            replyText = SpanishNotice(work.Tenant) + "\n\n" + replyText;
         }
 
         await SaveAndPublishReplyAsync(work.Command, replyText, work.Session, work.HasHistory, new SaveGate(), ct);
         await usage.NotifyBlockedAsync(work.Tenant, ct);
     }
 
-    private async Task<string> TranslateForUserAsync(string spanish, string userText, string tenantId, CancellationToken ct)
+    private static string SpanishNotice(TenantProfile tenant)
     {
-        string? translated = null;
-        try
-        {
-            translated = await chatService.TranslateNoticeAsync(spanish, userText, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "User-facing text translation failed for TenantId: {TenantId}. Using the Spanish text.", tenantId);
-        }
-
-        if (!IsUsableTranslation(translated))
-        {
-            return spanish;
-        }
-
-        return translated!.Trim();
-    }
-
-    private static bool IsUsableTranslation(string? translated)
-    {
-        if (string.IsNullOrWhiteSpace(translated))
-        {
-            return false;
-        }
-
-        var text = translated.Trim();
-        if (text.Length > BotPrompts.MaxTranslatedNoticeLength)
-        {
-            return false;
-        }
-
-        return !text.Contains("<language_sample>", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("</language_sample>", StringComparison.OrdinalIgnoreCase);
+        var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
+        return BotPrompts.FirstContactNotice(name, tenant.PrivacyPolicyUrl).Trim();
     }
 
     private async Task SendDeleteCommandAsync(AnalyzeChatSession command, CancellationToken ct)
@@ -326,7 +288,7 @@ public sealed class ChatSessionHandler(
         {
             translated = await chatService.TranslateNoticeAsync(notice, userText, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "First-contact notice translation failed for TenantId: {TenantId}. Using the Spanish notice.", tenant.Id);
         }

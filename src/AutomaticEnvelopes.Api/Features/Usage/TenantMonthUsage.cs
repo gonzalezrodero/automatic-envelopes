@@ -41,9 +41,18 @@ public static class UsageMessages
     public const string Spanish = "Este mes ya no puedo contestarte. Si lo necesitas, contacta con el club.";
     public const string OrganizationFallback = "Tu organización";
 
-    public static string EmailName(string? name)
+    public static string EmailName(string? name, string? shortName)
     {
-        var raw = string.IsNullOrWhiteSpace(name) ? OrganizationFallback : name.Trim();
-        return raw.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+        var raw = OrganizationFallback;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            raw = name;
+        }
+        else if (!string.IsNullOrWhiteSpace(shortName))
+        {
+            raw = shortName;
+        }
+
+        return raw.Trim().Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
     }
 }

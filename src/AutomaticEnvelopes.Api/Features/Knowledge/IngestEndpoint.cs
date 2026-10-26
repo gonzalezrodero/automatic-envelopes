@@ -87,9 +87,9 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
 
             return Results.Ok(new { Message = "Ya hemos guardado el documento. El asistente ya puede usarlo." });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (readingPdf && ex is not OperationCanceledException)
+            if (readingPdf)
             {
                 return IngestLimits.RejectPdfRead(ex, logger, tenantId);
             }

@@ -1,4 +1,5 @@
 using System.Data;
+using Amazon.BedrockRuntime.Model;
 using AutomaticEnvelopes.Api.Core.Entities;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
@@ -9,6 +10,7 @@ using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Portal;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AwesomeAssertions;
+using JasperFx;
 using JasperFx.Events;
 using Marten;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -156,56 +158,30 @@ public class UnknownReplyDispatchTests
     }
 
     [Fact]
-    public async Task GivenAnEmptyReply_WhenTranslationSucceeds_ThenWhatsAppGetsThatLanguage()
+    public async Task GivenAnEmptyReply_WhenHandled_ThenWhatsAppGetsTheSpanishTextWithoutAnotherModelCall()
     {
         var phone = "34600111222";
-        const string catalan = "Ara mateix no puc respondre. Escriu-me una altra vegada d'aquí a un moment.";
-        var harness = new HandlerHarness(phone, "   ", shortTranslation: catalan);
+        var harness = new HandlerHarness(phone, "   ");
 
         await harness.Run("Hola");
 
-        harness.Appended!.Text.Should().Be(catalan);
+        harness.Appended!.Text.Should().Be(UserMessages.Unavailable);
         harness.Appended.Text.Should().NotContain("I'm sorry");
-        harness.Chat.Verify(item => item.TranslateNoticeAsync(
-            UserMessages.Unavailable,
-            "Hola",
-            It.IsAny<CancellationToken>()), Times.Once);
+        harness.Chat.Verify(
+            item => item.TranslateNoticeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task GivenAnEmptyReply_WhenTranslationFails_ThenWhatsAppGetsTheSpanishText()
+    public async Task GivenTheMonthlyLimitOnFirstContact_WhenHandled_ThenTheSpanishNoticeIsSentWithoutBedrock()
     {
         var phone = "34600111222";
-        var harness = new HandlerHarness(phone, "   ", translationFails: true);
+        var harness = new HandlerHarness(phone, "unused", firstContact: true, atLimit: true);
 
         await harness.Run("Hello");
 
-        harness.Appended!.Text.Should().Be(UserMessages.Unavailable);
-    }
-
-    [Fact]
-    public async Task GivenOnlyTheMarker_WhenTranslationSucceeds_ThenTheFallbackIsInThatLanguage()
-    {
-        var phone = "34600111222";
-        const string catalan = "No tinc aquesta dada. Contacta amb l'organització.";
-        var harness = new HandlerHarness(phone, UnknownReply.Marker, shortTranslation: catalan);
-
-        await harness.Run("Quan obre?");
-
-        harness.Appended!.Text.Should().Be(catalan);
-        harness.Appended.Text.Should().NotContain("I am sorry");
-    }
-
-    [Fact]
-    public async Task GivenTheMonthlyLimit_WhenTranslationSucceeds_ThenWhatsAppGetsThatLanguage()
-    {
-        var phone = "34600111222";
-        const string catalan = "Aquest servei no està disponible aquest mes. Contacta amb el club.";
-        var harness = new HandlerHarness(phone, "unused", shortTranslation: catalan, atLimit: true);
-
-        await harness.Run("Quan obre?");
-
-        harness.Appended!.Text.Should().Be(catalan);
+        harness.Appended!.Text.Should().StartWith("¡Hola!");
+        harness.Appended.Text.Should().EndWith("\n\n" + UsageMessages.Spanish);
         harness.Appended.Text.Should().NotContain("club-a");
         harness.Chat.Verify(item => item.GetResponseAsync(
             It.IsAny<string>(),
@@ -213,30 +189,24 @@ public class UnknownReplyDispatchTests
             It.IsAny<string>(),
             It.IsAny<IReadOnlyCollection<string>?>(),
             It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task GivenTheMonthlyLimit_WhenTranslationFails_ThenWhatsAppGetsTheSpanishText()
-    {
-        var phone = "34600111222";
-        var harness = new HandlerHarness(phone, "unused", translationFails: true, atLimit: true);
-
-        await harness.Run("Hello");
-
-        harness.Appended!.Text.Should().Be(UsageMessages.Spanish);
+        harness.Chat.Verify(
+            item => item.TranslateNoticeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
     public async Task GivenBedrockFails_WhenTheFallbackCanBeSaved_ThenWhatsAppGetsItAndTheHandlerReturns()
     {
         var phone = "34600111222";
-        const string catalan = "Ara mateix no puc respondre.";
-        var harness = new HandlerHarness(phone, "unused", shortTranslation: catalan, replyThrows: true);
+        var harness = new HandlerHarness(phone, "unused", replyThrows: true);
 
         await harness.Run("Hola");
 
-        harness.Appended!.Text.Should().Be(catalan);
+        harness.Appended!.Text.Should().Be(UserMessages.Unavailable);
         harness.Appended.Text.Should().NotContain("bedrock down");
+        harness.Chat.Verify(
+            item => item.TranslateNoticeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -268,6 +238,38 @@ public class UnknownReplyDispatchTests
         harness.Appended.Text.Should().NotContain(UserMessages.Unavailable);
     }
 
+    [Fact]
+    public async Task GivenBedrockFails_WhenTheFixedReplyIsSavedButWhatsAppFails_ThenTheHandlerFailsForRetry()
+    {
+        var phone = "34600111222";
+        var harness = new HandlerHarness(phone, "unused", replyThrows: true, dispatchThrows: true);
+
+        var act = () => harness.Run("Hola");
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Be("meta down");
+        harness.Appended!.Text.Should().Be(UserMessages.Unavailable);
+        harness.Appended.Text.Should().NotContain("bedrock down");
+    }
+
+    [Fact]
+    public async Task GivenARetryableGenerationFailure_WhenHandled_ThenTheFixedTextIsNotSent()
+    {
+        await AssertRetryable(new ThrottlingException("slow"));
+        await AssertRetryable(new ConcurrencyException("busy"));
+
+        static async Task AssertRetryable(Exception failure)
+        {
+            var harness = new HandlerHarness("34600111222", "unused", generationFailure: failure);
+            var act = () => harness.Run("Hola");
+
+            (await act.Should().ThrowAsync<Exception>()).Which.Should().BeSameAs(failure);
+            harness.Appended.Should().BeNull();
+            harness.Bus.Verify(
+                item => item.InvokeAsync(It.IsAny<ReplyGenerated>(), It.IsAny<CancellationToken>(), null),
+                Times.Never);
+        }
+    }
+
     private static string FaithfulNotice() =>
         $"""
         Hi! I am an AI assistant on behalf of la organización.
@@ -292,11 +294,11 @@ public class UnknownReplyDispatchTests
             string? translation = null,
             bool translationFails = false,
             bool streamDeletedBeforeSave = false,
-            string? shortTranslation = null,
             bool replyThrows = false,
             bool saveThrows = false,
             bool dispatchThrows = false,
-            bool atLimit = false)
+            bool atLimit = false,
+            Exception? generationFailure = null)
         {
             this.phone = phone;
             IReadOnlyList<IEvent> existing = firstContact
@@ -347,7 +349,11 @@ public class UnknownReplyDispatchTests
                     "club-a",
                     It.IsAny<IReadOnlyCollection<string>?>(),
                     It.IsAny<CancellationToken>()));
-            if (replyThrows)
+            if (generationFailure is not null)
+            {
+                response.ThrowsAsync(generationFailure);
+            }
+            else if (replyThrows)
             {
                 response.ThrowsAsync(new InvalidOperationException("bedrock down"));
             }
@@ -366,7 +372,7 @@ public class UnknownReplyDispatchTests
             else
             {
                 translationSetup.ReturnsAsync((string notice, string _, CancellationToken _) =>
-                    notice.Contains('¡') ? translation ?? "not a notice" : shortTranslation ?? notice);
+                    notice.Contains('¡') ? translation ?? "not a notice" : notice);
             }
 
             var dispatch = Bus.Setup(item => item.InvokeAsync(It.IsAny<ReplyGenerated>(), It.IsAny<CancellationToken>(), null));

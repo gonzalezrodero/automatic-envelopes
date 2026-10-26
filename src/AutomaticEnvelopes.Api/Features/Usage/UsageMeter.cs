@@ -129,7 +129,7 @@ public sealed class UsageMeter(
             return false;
         }
 
-        var name = UsageMessages.EmailName(tenant.Name);
+        var name = UsageMessages.EmailName(tenant.Name, tenant.ShortName);
         var month = UsageMonth.Spoken(DateTimeOffset.UtcNow);
         var subject = reached
             ? "El asistente ya no responderá hasta el mes que viene"

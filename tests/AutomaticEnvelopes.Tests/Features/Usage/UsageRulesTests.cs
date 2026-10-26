@@ -35,8 +35,11 @@ public class UsageRulesTests
     [Fact]
     public void EmailName_UsesAFriendlyLabelWhenTheOrganizationHasNoName()
     {
-        UsageMessages.EmailName(null).Should().Be("Tu organización");
-        UsageMessages.EmailName("  ").Should().Be(UsageMessages.OrganizationFallback);
-        UsageMessages.EmailName("Club\r\nProva").Should().Be("Club  Prova");
+        UsageMessages.EmailName(null, null).Should().Be("Tu organización");
+        UsageMessages.EmailName("  ", "  ").Should().Be(UsageMessages.OrganizationFallback);
+        UsageMessages.EmailName(null, "Corto").Should().Be("Corto");
+        UsageMessages.EmailName("  ", "Corto").Should().Be("Corto");
+        UsageMessages.EmailName("Club", "Corto").Should().Be("Club");
+        UsageMessages.EmailName("Club\r\nProva", null).Should().Be("Club  Prova");
     }
 }
