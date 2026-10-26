@@ -132,8 +132,15 @@ public class TenantIsolationTests
         IChatService chat,
         UsageMeter usage,
         IMessageBus bus) =>
-        new ChatSessionHandler(store, knowledge, chat, usage, bus, NullLogger<ChatSessionHandler>.Instance)
-            .Handle(command, CancellationToken.None);
+        ChatSessionHandler.Handle(
+            command,
+            store,
+            knowledge,
+            chat,
+            usage,
+            bus,
+            NullLogger.Instance,
+            CancellationToken.None);
 
     private static IDocumentStore SessionFor(TenantProfile profile)
     {

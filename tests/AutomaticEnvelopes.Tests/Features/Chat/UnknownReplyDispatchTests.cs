@@ -390,14 +390,14 @@ public class UnknownReplyDispatchTests
         }
 
         public Task Run(string userText) =>
-            new ChatSessionHandler(
+            ChatSessionHandler.Handle(
+                new AnalyzeChatSession(phone, "club-a", "bot-phone", userText),
                 Store.Object,
                 Knowledge.Object,
                 Chat.Object,
                 new UsageMeter(Store.Object),
                 Bus.Object,
-                NullLogger<ChatSessionHandler>.Instance).Handle(
-                new AnalyzeChatSession(phone, "club-a", "bot-phone", userText),
+                NullLogger.Instance,
                 CancellationToken.None);
     }
 }
