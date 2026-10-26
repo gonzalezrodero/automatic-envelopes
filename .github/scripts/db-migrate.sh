@@ -48,19 +48,30 @@ object_exists() {
 }
 
 # Extension members (pgvector) are excluded: the migrations do not alter them.
-# App objects such as extract_embedding and mt_quick_append_events are included.
-assert_public_owned_by_master() {
-  local offenders current
-  offenders="$(psql_at -tA <<'SQL'
-SELECT format('%s %s (dueño %s)', kind, name, owner)
+# marten_app-owned objects are listed for the ownership migration. Any other owner aborts.
+report_public_owners() {
+  local transfer_pending="$1"
+  local current rows marker detail
+  local -a app_lines=() other_lines=()
+  current="$(psql_scalar "SELECT current_user")"
+  rows="$(psql_at -tA -F $'\t' <<'SQL'
+SELECT marker, format('%s %s (dueño %s)', kind, name, owner)
 FROM (
-    SELECT CASE c.relkind WHEN 'S' THEN 'secuencia' ELSE 'tabla' END AS kind,
+    SELECT CASE WHEN pg_get_userbyid(c.relowner) = 'marten_app' THEN 'app' ELSE 'other' END AS marker,
+           CASE c.relkind
+               WHEN 'S' THEN 'secuencia'
+               WHEN 'v' THEN 'vista'
+               WHEN 'm' THEN 'vista materializada'
+               WHEN 'i' THEN 'indice'
+               WHEN 'I' THEN 'indice'
+               ELSE 'tabla'
+           END AS kind,
            format('%I.%I', n.nspname, c.relname) AS name,
            pg_get_userbyid(c.relowner) AS owner
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public'
-      AND c.relkind IN ('r', 'p', 'S')
+      AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f', 'i', 'I')
       AND pg_get_userbyid(c.relowner) <> current_user
       AND NOT EXISTS (
           SELECT 1 FROM pg_depend d
@@ -69,7 +80,8 @@ FROM (
             AND d.deptype = 'e'
       )
     UNION ALL
-    SELECT 'funcion',
+    SELECT CASE WHEN pg_get_userbyid(p.proowner) = 'marten_app' THEN 'app' ELSE 'other' END,
+           'funcion',
            format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)),
            pg_get_userbyid(p.proowner)
     FROM pg_proc p
@@ -83,17 +95,48 @@ FROM (
             AND d.deptype = 'e'
       )
 ) found
-ORDER BY 1;
+ORDER BY 1, 2;
 SQL
 )"
-  if [[ -n "${offenders//[[:space:]]/}" ]]; then
-    current="$(psql_scalar "SELECT current_user")"
-    echo "El usuario maestro ${current} no es dueño de estos objetos de public, así que no puede hacer ALTER ni DROP:" >&2
-    printf '%s\n' "$offenders" >&2
+  while IFS=$'\t' read -r marker detail; do
+    [[ -z "$marker" ]] && continue
+    if [[ "$marker" == "app" ]]; then
+      app_lines+=("$detail")
+    else
+      other_lines+=("$detail")
+    fi
+  done <<< "$rows"
+  if [[ ${#other_lines[@]} -gt 0 ]]; then
+    echo "Hay objetos de public cuyo dueño no es ni el maestro (${current}) ni marten_app:" >&2
+    printf '%s\n' "${other_lines[@]}" >&2
     exit 1
   fi
-  current="$(psql_scalar "SELECT current_user")"
-  echo "Dueños: ${current} es dueño de las tablas, secuencias y funciones de public."
+  if [[ ${#app_lines[@]} -gt 0 ]]; then
+    if [[ "$transfer_pending" != "true" ]]; then
+      echo "Hay objetos de marten_app en public y la migración que los traspasa no está pendiente:" >&2
+      printf '%s\n' "${app_lines[@]}" >&2
+      exit 1
+    fi
+    echo "Se traspasarán al usuario maestro (${current}):"
+    printf '%s\n' "${app_lines[@]}"
+    return
+  fi
+  echo "Dueños: ${current} es dueño de las tablas, secuencias, funciones y vistas de public."
+}
+
+ownership_transfer_is_pending() {
+  local migrations_dir="$1"
+  local file
+  shopt -s nullglob
+  for file in "$migrations_dir"/*.sql; do
+    if grep -q -- '^-- migrate: transfers-ownership-from marten_app$' "$file"; then
+      evaluate_file "$file"
+      if [[ "$SHOULD_APPLY" == "1" ]]; then
+        return 0
+      fi
+    fi
+  done
+  return 1
 }
 
 # Sets SHOULD_APPLY=1 when this file still needs to run.
@@ -264,8 +307,12 @@ plan_migrations() {
   mkdir -p "$out_dir"
   rm -f "$out_dir"/*.sql "$out_dir"/manifest.tsv "$out_dir"/pending "$out_dir"/apply.sql
   : > "$out_dir/manifest.tsv"
-  assert_public_owned_by_master
   load_applied
+  local transfer_pending=false
+  if ownership_transfer_is_pending "$migrations_dir"; then
+    transfer_pending=true
+  fi
+  report_public_owners "$transfer_pending"
   local pending=false
   shopt -s nullglob
   local -a files=("$migrations_dir"/*.sql)
@@ -327,6 +374,15 @@ apply_migrations() {
     echo "missing manifest.tsv" >&2
     exit 1
   fi
+  local transfer_pending=false
+  local planned
+  shopt -s nullglob
+  for planned in "$out_dir"/*.sql; do
+    if grep -q -- '^-- migrate: transfers-ownership-from marten_app$' "$planned"; then
+      transfer_pending=true
+    fi
+  done
+  report_public_owners "$transfer_pending"
 
   local apply_sql="$out_dir/apply.sql"
   {
