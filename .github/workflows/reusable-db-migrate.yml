@@ -1,0 +1,99 @@
+name: "Template: Database migrations"
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        required: true
+        type: string
+      tf_folder:
+        required: true
+        type: string
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }}
+    concurrency:
+      group: db-migrate-${{ inputs.env_name }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      pending: ${{ steps.plan.outputs.pending }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Prepare database connection
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        run: bash .github/scripts/db-migrate.sh prepare
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Plan migrations
+        id: plan
+        run: bash .github/scripts/db-migrate.sh plan "${{ runner.temp }}/db-migrate-plan"
+      - name: Upload migration plan
+        if: steps.plan.outputs.pending == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: db-migrate-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/db-migrate-plan
+          if-no-files-found: error
+          retention-days: 5
+
+  approve:
+    name: Approve
+    needs: plan
+    if: needs.plan.outputs.pending == 'true'
+    uses: ./.github/workflows/reusable-approve.yml
+    with:
+      env_name: ${{ inputs.env_name }}
+    permissions:
+      contents: read
+    concurrency:
+      group: db-migrate-${{ inputs.env_name }}
+      cancel-in-progress: false
+
+  apply:
+    name: Apply
+    needs: [plan, approve]
+    if: needs.plan.outputs.pending == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }}
+    concurrency:
+      group: db-migrate-${{ inputs.env_name }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Prepare database connection
+        env:
+          TF_FOLDER: ${{ inputs.tf_folder }}
+        run: bash .github/scripts/db-migrate.sh prepare
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Download migration plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: db-migrate-${{ inputs.tf_folder }}-${{ inputs.env_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/db-migrate-plan
+      - name: Apply migrations
+        run: bash .github/scripts/db-migrate.sh apply "${{ runner.temp }}/db-migrate-plan"

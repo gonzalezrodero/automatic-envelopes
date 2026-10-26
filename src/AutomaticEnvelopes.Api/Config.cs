@@ -134,15 +134,25 @@ public static class Config
     {
         services.AddNpgsqlDataSource(connectionString);
 
+        var applySchemaAtStartup = DatabaseSchemaStartup.AppliesAtStartup();
         services.CritterStackDefaults(opts =>
         {
             opts.Development.GeneratedCodeMode = TypeLoadMode.Auto;
             opts.Production.GeneratedCodeMode = TypeLoadMode.Static;
+            if (!applySchemaAtStartup)
+            {
+                opts.Development.ResourceAutoCreate = AutoCreate.None;
+                opts.Production.ResourceAutoCreate = AutoCreate.None;
+            }
         });
 
         services.AddMarten(opts =>
         {
             opts.Connection(connectionString);
+            if (!applySchemaAtStartup)
+            {
+                opts.AutoCreateSchemaObjects = AutoCreate.None;
+            }
             opts.Events.StreamIdentity = StreamIdentity.AsString;
             opts.Events.TenancyStyle = TenancyStyle.Conjoined;
 

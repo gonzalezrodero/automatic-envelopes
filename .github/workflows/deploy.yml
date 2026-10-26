@@ -11,7 +11,10 @@ on:
       - 'infra/modules/**'
       - 'infra/api-dns/**'
       - 'infra/api-delegation/**'
+      - 'db/migrations/**'
+      - '.github/scripts/db-migrate.sh'
       - '.github/workflows/deploy.yml'
+      - '.github/workflows/reusable-db-migrate.yml'
       - '.github/workflows/reusable-serverless.yml'
       - '.github/workflows/reusable-api-domain.yml'
   workflow_dispatch:
@@ -36,9 +39,22 @@ jobs:
       - run: dotnet build src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj --no-restore --configuration Release
       - run: dotnet test --project tests/AutomaticEnvelopes.Tests/AutomaticEnvelopes.Tests.csproj --configuration Release
 
+  migrate-dev:
+    name: migrate development
+    needs: build-and-test
+    uses: ./.github/workflows/reusable-db-migrate.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      env_name: development
+      tf_folder: dev
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
   deploy-dev:
     name: development
-    needs: build-and-test
+    needs: migrate-dev
     uses: ./.github/workflows/reusable-serverless.yml
     permissions:
       id-token: write
@@ -49,9 +65,22 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
+  migrate-prod:
+    name: migrate production
+    needs: deploy-dev
+    uses: ./.github/workflows/reusable-db-migrate.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      env_name: production
+      tf_folder: prod
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
   deploy-prod:
     name: production
-    needs: deploy-dev
+    needs: migrate-prod
     uses: ./.github/workflows/reusable-serverless.yml
     permissions:
       id-token: write
