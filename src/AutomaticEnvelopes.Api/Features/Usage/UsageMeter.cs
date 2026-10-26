@@ -130,11 +130,13 @@ public sealed class UsageMeter(
         }
 
         var name = UsageMessages.EmailName(tenant.Name);
-        var month = UsageMonth.Current();
-        var subject = reached ? "Límite de respuestas alcanzado" : "Aviso de uso del asistente (80%)";
+        var month = UsageMonth.Spoken(DateTimeOffset.UtcNow);
+        var subject = reached
+            ? "El asistente ya no responderá hasta el mes que viene"
+            : "El asistente está cerca del límite de respuestas";
         var body = reached
-            ? $"{name} ha alcanzado el límite de {limit} respuestas de {month}. El asistente no responderá preguntas nuevas hasta el mes que viene. Para ampliar el límite, contacta con el administrador de la plataforma."
-            : $"{name} lleva {responses} de {limit} respuestas de {month}. Al llegar al límite el asistente dejará de responder hasta el mes que viene.";
+            ? $"{name} ya ha usado las {limit} respuestas de {month}. El asistente no contestará preguntas nuevas hasta el mes que viene. Si necesitas más, contacta con quien administra el servicio."
+            : $"{name} lleva {responses} de {limit} respuestas en {month}. Cuando se acaben, el asistente dejará de contestar hasta el mes que viene.";
         try
         {
             await email.SendEmailAsync(new SendEmailRequest

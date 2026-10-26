@@ -13,14 +13,14 @@ public static class IngestLimits
     public const long MaxUploadBytes = 4 * 1024 * 1024;
     public const int MaxPdfPages = 100;
     public const int MaxCharacters = 200_000;
-    public const string PdfUnreadable = "No se ha podido leer el PDF.";
-    public const string FileTooLarge = "El archivo es demasiado grande.";
-    public const string DocumentTooLong = "El documento es demasiado largo.";
-    public const string PdfTooManyPages = "El PDF tiene demasiadas páginas.";
-    public const string UnsupportedType = "Ese archivo no se admite. Usa PDF, Markdown o texto.";
-    public const string EmptyFile = "No hay ningún archivo.";
-    public const string NoReadableText = "Ese archivo no tiene texto.";
-    public const string ReservedName = "Ese nombre de archivo está reservado.";
+    public const string PdfUnreadable = "No se ha podido leer el PDF. Prueba con otro archivo.";
+    public const string FileTooLarge = "El archivo es demasiado grande. Prueba con uno más pequeño.";
+    public const string DocumentTooLong = "El documento es demasiado largo. Prueba con uno más corto.";
+    public const string PdfTooManyPages = "El PDF tiene demasiadas páginas. Prueba con uno más corto.";
+    public const string UnsupportedType = "Ese archivo no se admite. Sube un PDF o un archivo de texto.";
+    public const string EmptyFile = "No hay ningún archivo. Elige uno y vuelve a subirlo.";
+    public const string NoReadableText = "Ese archivo no tiene texto que podamos leer. Prueba con otro.";
+    public const string ReservedName = "Ese nombre de archivo no se puede usar. Cámbialo y vuelve a subirlo.";
     public const string IngestionFailedDetail = "No se ha podido procesar el documento. Prueba con otro archivo.";
 
     public static IResult? RejectFile(IFormFile file)

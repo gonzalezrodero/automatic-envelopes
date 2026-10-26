@@ -4,9 +4,9 @@ namespace AutomaticEnvelopes.Api.Features.Tenancy;
 
 public static class TenantRequest
 {
-    public const string OrganizationInvalid = "Esa organización no es válida.";
-    public const string OrganizationNotFound = "No encontramos esa organización.";
-    public const string OrganizationForbidden = "No tienes acceso a esta organización.";
+    public const string OrganizationInvalid = "No reconocemos esa organización. Vuelve a entrar en el portal.";
+    public const string OrganizationNotFound = "No encontramos esa organización. Comprueba que has entrado en la correcta.";
+    public const string OrganizationForbidden = "No tienes acceso a esta organización. Entra con otra cuenta o pide acceso.";
 
     public static IResult? Reject(ClaimsPrincipal user, string tenantId)
     {

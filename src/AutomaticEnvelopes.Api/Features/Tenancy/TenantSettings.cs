@@ -27,14 +27,14 @@ public readonly record struct ValidTenantSettings(string SystemPrompt, string Pr
 public static class TenantSettingsValidation
 {
     public const int MaxSystemPromptLength = 20_000;
-    public const string PromptRequired = "Falta el texto del asistente.";
-    public const string PromptTooLong = "El texto del asistente es demasiado largo.";
-    public const string UrlRejected = "La política de privacidad tiene que ser una dirección https.";
-    public const string BodyRequired = "Faltan los datos de la organización.";
-    public const string ToolsUnknown = "Hay una herramienta que no reconocemos.";
+    public const string PromptRequired = "Falta el texto de cómo debe hablar el asistente. Escríbelo y vuelve a guardar.";
+    public const string PromptTooLong = "El texto de cómo debe hablar el asistente es demasiado largo. Acórtalo y vuelve a guardar.";
+    public const string UrlRejected = "La política de privacidad tiene que ser un enlace que empiece por https. Corrígela y vuelve a guardar.";
+    public const string BodyRequired = "Faltan los datos. Complétalos y vuelve a guardar.";
+    public const string ToolsUnknown = "Hay una opción que no reconocemos. Revisa lo que has elegido y vuelve a guardar.";
     public const int MaxMonthlyResponseLimit = 100_000;
-    public const string LimitRejected = "Ese límite mensual no es válido.";
-    public const string EmailRejected = "Ese correo no es válido.";
+    public const string LimitRejected = "El límite de respuestas al mes tiene que ser un número entre 0 y 100.000. Corrígelo y vuelve a guardar.";
+    public const string EmailRejected = "Ese correo no es válido. Revísalo y vuelve a guardarlo.";
 
     public static bool TryValidate(
         [NotNullWhen(true)] UpdateTenantSettingsRequest? request,

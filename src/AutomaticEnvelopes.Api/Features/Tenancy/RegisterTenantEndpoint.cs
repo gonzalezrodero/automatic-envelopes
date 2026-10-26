@@ -51,7 +51,7 @@ public static class RegisterTenantEndpoint
 
         if (request is null || string.IsNullOrWhiteSpace(request.BotPhoneNumberId))
         {
-            return Results.BadRequest(new { Error = "Falta el número de WhatsApp." });
+            return Results.BadRequest(new { Error = "Falta el número de WhatsApp. Escríbelo y vuelve a intentarlo." });
         }
 
         var botPhoneNumberId = request.BotPhoneNumberId.Trim();
@@ -60,7 +60,7 @@ public static class RegisterTenantEndpoint
 
         if (existing)
         {
-            return Results.BadRequest(new { Error = "Esa organización o ese número ya están registrados." });
+            return Results.BadRequest(new { Error = "Esa organización o ese número ya están registrados. Entra en la que ya existe o usa otros datos." });
         }
 
         var profile = new TenantProfile

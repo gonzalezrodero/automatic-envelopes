@@ -157,7 +157,7 @@ public class TenantEndpoints
         }
         if (request.EnabledTools is not null || request.MonthlyResponseLimit is not null || request.ContactEmail is not null)
         {
-            return Forbidden("No tienes permiso para cambiar esos ajustes.");
+            return Forbidden("No puedes cambiar esos ajustes. Pídeselo a quien administra el servicio.");
         }
         return null;
     }

@@ -16,7 +16,7 @@ namespace AutomaticEnvelopes.Api.Features.Portal;
 
 public static class PortalEndpoints
 {
-    private const string QuestionNotFound = "No encontramos esa pregunta.";
+    private const string QuestionNotFound = "No encontramos esa pregunta. Actualiza la página.";
     [Authorize(Policy = "TenantAdmin")]
     [WolverineGet("/tenants/{tenantId}/dashboard")]
     [EnableRateLimiting(AdminAuthPolicies.Auth)]
@@ -95,7 +95,7 @@ public static class PortalEndpoints
 
         if (!TenantIds.IsValid(conversationId))
         {
-            return Results.BadRequest(new { Error = "Esa conversación no es válida." });
+            return Results.BadRequest(new { Error = "No podemos abrir esa conversación. Vuelve al listado." });
         }
 
         if (await MissingTenant(session, tenantId, ct) is { } missing)
@@ -106,7 +106,7 @@ public static class PortalEndpoints
         var conversations = await PortalConversations.ReadAsync(store, tenantId, ct);
         var match = PortalConversations.Find(conversations, conversationId);
         return match is null
-            ? Results.NotFound(new { Error = "No encontramos esa conversación." })
+            ? Results.NotFound(new { Error = "No encontramos esa conversación. Puede que ya no esté. Vuelve al listado." })
             : Results.Ok(match);
     }
 
@@ -327,7 +327,7 @@ public static class PortalEndpoints
 
         if (!Guid.TryParse(documentId, out var id))
         {
-            return Results.BadRequest(new { Error = "Ese documento no es válido." });
+            return Results.BadRequest(new { Error = "No podemos abrir ese documento. Vuelve al listado." });
         }
 
         if (await MissingTenant(session, tenantId, ct) is { } missing)
@@ -338,7 +338,7 @@ public static class PortalEndpoints
         var file = await catalog.FindAsync(tenantId, id, ct);
         if (file is null)
         {
-            return Results.NotFound(new { Error = "No encontramos ese documento." });
+            return Results.NotFound(new { Error = "No encontramos ese documento. Puede que ya no esté. Vuelve al listado." });
         }
 
         await knowledge.DeleteChunksForDocumentAsync(tenantId, id, ct);
@@ -380,7 +380,7 @@ public static class PortalEndpoints
 
         if (!Guid.TryParse(questionId, out var id))
         {
-            return new AdmittedQuestion(Guid.Empty, Results.BadRequest(new { Error = "Esa pregunta no es válida." }));
+            return new AdmittedQuestion(Guid.Empty, Results.BadRequest(new { Error = "No podemos abrir esa pregunta. Vuelve al listado." }));
         }
 
         if (await MissingTenant(session, tenantId, ct) is { } missing)
@@ -408,7 +408,7 @@ public static class PortalEndpoints
 
         if (!Guid.TryParse(questionId, out var id))
         {
-            return new AdmittedAnswer(Guid.Empty, string.Empty, Results.BadRequest(new { Error = "Esa pregunta no es válida." }));
+            return new AdmittedAnswer(Guid.Empty, string.Empty, Results.BadRequest(new { Error = "No podemos abrir esa pregunta. Vuelve al listado." }));
         }
 
         if (!UnansweredInboxRules.TryNormalizeAnswer(body?.Answer, out var answer, out var error))

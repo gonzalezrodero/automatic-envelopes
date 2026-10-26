@@ -85,7 +85,7 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
 
             await ingestionService.IngestDocumentAsync(tenantId, extractedText, fileName, file.Length, mime, ct);
 
-            return Results.Ok(new { Message = $"Successfully ingested {file.FileName} into the vector database." });
+            return Results.Ok(new { Message = "Ya hemos guardado el documento. El asistente ya puede usarlo." });
         }
         catch (Exception ex)
         {
