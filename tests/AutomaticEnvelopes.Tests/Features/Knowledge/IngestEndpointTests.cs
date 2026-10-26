@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Features.Knowledge;
+﻿using AutomaticEnvelopes.Api.Features.Chat;
+using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Knowledge.Extractors;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
@@ -106,6 +107,59 @@ public class IngestEndpointTests
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(400);
+        service.Verify(
+            s => s.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData("respuestas.md")]
+    [InlineData("Respuestas.MD")]
+    [InlineData("docs/respuestas.md")]
+    public async Task Ingest_ReservedFileName_Returns400WithoutIngesting(string fileName)
+    {
+        var fileMock = new Mock<IFormFile>();
+        fileMock.Setup(f => f.Length).Returns(100);
+        fileMock.Setup(f => f.FileName).Returns(fileName);
+
+        var service = mocker.GetMock<IKnowledgeIngestionService>();
+        var result = await sut.Ingest(
+            "TestTenant",
+            fileMock.Object,
+            sessionMock.Object,
+            [new PdfDocumentExtractor()],
+            service.Object,
+            CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(400);
+        ErrorOf(result).Should().Be($"The file name '{AnsweredKnowledge.FileName}' is reserved.");
+        service.Verify(
+            s => s.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Ingest_UnreadablePdf_ReturnsGenericBadRequest()
+    {
+        var bytes = "This is not a valid PDF binary"u8.ToArray();
+        var fileMock = new Mock<IFormFile>();
+        fileMock.Setup(f => f.Length).Returns(bytes.Length);
+        fileMock.Setup(f => f.FileName).Returns("broken.pdf");
+        fileMock.Setup(f => f.OpenReadStream()).Returns(() => new MemoryStream(bytes));
+
+        var service = mocker.GetMock<IKnowledgeIngestionService>();
+        var result = await sut.Ingest(
+            "TestTenant",
+            fileMock.Object,
+            sessionMock.Object,
+            [new PdfDocumentExtractor()],
+            service.Object,
+            CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(400);
+        ErrorOf(result).Should().Be(IngestLimits.PdfUnreadable);
         service.Verify(
             s => s.IngestDocumentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -280,5 +334,12 @@ public class IngestEndpointTests
             "text/markdown",
             It.IsAny<CancellationToken>()),
         Times.Once);
+    }
+
+    private static string ErrorOf(IResult result)
+    {
+        var value = result.Should().BeAssignableTo<IValueHttpResult>().Which.Value;
+        value.Should().NotBeNull();
+        return value!.GetType().GetProperty("Error")!.GetValue(value)!.ToString()!;
     }
 }

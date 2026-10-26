@@ -14,6 +14,11 @@ public class PdfDocumentExtractor : IDocumentExtractor
         return document.NumberOfPages;
     }
 
+    // PdfPig inflates each FlateDecode stream before this method sees text. Its size check runs
+    // only between chained filters, and only after that buffer exists, so one content stream can
+    // exhaust memory while the upload is still under the byte cap. The page cap does not bound
+    // that buffer, and stopping the builder early would run only after the allocation.
+    // ParsingOptions has no decoded-size limit.
     public async Task<string> ExtractTextAsync(Stream stream)
     {
         var textBuilder = new StringBuilder();
