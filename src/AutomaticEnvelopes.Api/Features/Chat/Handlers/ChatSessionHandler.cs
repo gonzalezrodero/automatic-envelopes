@@ -169,8 +169,10 @@ public sealed class ChatSessionHandler(
         }
         catch (Exception delivery) when (gate.Stored && delivery is not OperationCanceledException)
         {
-            logger.LogError(failure, "Chat generation failed. TenantId: {TenantId}.", work.Tenant.Id);
-            logger.LogError(delivery, "The fallback was stored but could not be dispatched. Not retrying, to avoid a duplicate WhatsApp message. TenantId: {TenantId}.", work.Tenant.Id);
+            logger.LogError(
+                new AggregateException(failure, delivery),
+                "Chat generation failed and the stored fallback could not be dispatched. Not retrying, to avoid a duplicate WhatsApp message. TenantId: {TenantId}.",
+                work.Tenant.Id);
         }
         catch (Exception delivery) when (!gate.Stored && delivery is not OperationCanceledException)
         {
