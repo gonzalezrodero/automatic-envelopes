@@ -285,6 +285,7 @@ public static class PortalEndpoints
         IDocumentSession session,
         IEnumerable<IDocumentExtractor> extractors,
         IKnowledgeIngestionService ingestionService,
+        ILoggerFactory loggers,
         CancellationToken ct)
     {
         TenantRequest.NoStore(httpContext);
@@ -308,6 +309,11 @@ public static class PortalEndpoints
             return tooLarge;
         }
 
+        if (IngestLimits.RejectReservedName(file.FileName) is { } reserved)
+        {
+            return reserved;
+        }
+
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var extractor = extractors.FirstOrDefault(item => item.SupportedExtensions.Contains(extension));
         if (extractor == null)
@@ -315,15 +321,18 @@ public static class PortalEndpoints
             return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
         }
 
+        var readingPdf = false;
         try
         {
             await using var stream = file.OpenReadStream();
+            readingPdf = extractor is PdfDocumentExtractor;
             if (IngestLimits.RejectPdf(stream, extractor) is { } tooManyPages)
             {
                 return tooManyPages;
             }
 
             var extractedText = await extractor.ExtractTextAsync(stream);
+            readingPdf = false;
             if (string.IsNullOrWhiteSpace(extractedText))
             {
                 return Results.BadRequest(new { Error = "The uploaded file contains no readable text." });
@@ -351,6 +360,11 @@ public static class PortalEndpoints
         }
         catch (Exception ex)
         {
+            if (readingPdf && ex is not OperationCanceledException)
+            {
+                return IngestLimits.RejectPdfRead(ex, loggers.CreateLogger(nameof(PortalEndpoints)), tenantId);
+            }
+
             return Results.Problem(detail: ex.Message, title: "Ingestion failed");
         }
     }

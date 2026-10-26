@@ -9,7 +9,7 @@ using Wolverine.Http;
 
 namespace AutomaticEnvelopes.Api.Features.Knowledge;
 
-public class IngestEndpoint
+public class IngestEndpoint(ILogger<IngestEndpoint> logger)
 {
     [Authorize(Policy = "TenantAdmin")]
     [WolverinePost("/api/admin/ingest/{tenantId}")]
@@ -34,6 +34,11 @@ public class IngestEndpoint
             return tooLarge;
         }
 
+        if (IngestLimits.RejectReservedName(file.FileName) is { } reserved)
+        {
+            return reserved;
+        }
+
         var tenant = await session.LoadAsync<TenantProfile>(tenantId, ct);
         if (tenant == null)
         {
@@ -48,15 +53,18 @@ public class IngestEndpoint
             return Results.BadRequest(new { Error = $"File type '{extension}' is not supported. Please upload .pdf, .md, or .txt." });
         }
 
+        var readingPdf = false;
         try
         {
             using var stream = file.OpenReadStream();
+            readingPdf = extractor is PdfDocumentExtractor;
             if (IngestLimits.RejectPdf(stream, extractor) is { } tooManyPages)
             {
                 return tooManyPages;
             }
 
             string extractedText = await extractor.ExtractTextAsync(stream);
+            readingPdf = false;
 
             if (string.IsNullOrWhiteSpace(extractedText))
             {
@@ -81,6 +89,11 @@ public class IngestEndpoint
         }
         catch (Exception ex)
         {
+            if (readingPdf && ex is not OperationCanceledException)
+            {
+                return IngestLimits.RejectPdfRead(ex, logger, tenantId);
+            }
+
             return Results.Problem(detail: ex.Message, title: "Ingestion failed");
         }
     }

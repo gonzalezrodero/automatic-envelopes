@@ -8,6 +8,7 @@ using AutomaticEnvelopes.Api.Features.Tenancy;
 using AwesomeAssertions;
 using Marten;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Writer;
@@ -222,6 +223,53 @@ public class PortalScreenTests
             Times.Never);
     }
 
+    [Theory]
+    [InlineData("respuestas.md")]
+    [InlineData("Respuestas.MD")]
+    [InlineData("docs/respuestas.md")]
+    public async Task Upload_RejectsReservedFileName(string fileName)
+    {
+        var service = new Mock<IKnowledgeIngestionService>();
+        var result = await Upload(File(fileName, 20), [new PdfDocumentExtractor()], service.Object);
+
+        Status(result).Should().Be(400);
+        ErrorOf(result).Should().Be($"The file name '{AnsweredKnowledge.FileName}' is reserved.");
+        service.Verify(
+            item => item.IngestDocumentAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Upload_UnreadablePdf_ReturnsGenericBadRequest()
+    {
+        var bytes = "This is not a valid PDF binary"u8.ToArray();
+        var broken = new Mock<IFormFile>();
+        broken.Setup(item => item.FileName).Returns("broken.pdf");
+        broken.Setup(item => item.Length).Returns(bytes.Length);
+        broken.Setup(item => item.OpenReadStream()).Returns(() => new MemoryStream(bytes));
+
+        var service = new Mock<IKnowledgeIngestionService>();
+        var result = await Upload(broken.Object, [new PdfDocumentExtractor()], service.Object);
+
+        Status(result).Should().Be(400);
+        ErrorOf(result).Should().Be(IngestLimits.PdfUnreadable);
+        service.Verify(
+            item => item.IngestDocumentAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     [Fact]
     public async Task Upload_AcceptsAFileAtTheByteCap()
     {
@@ -273,7 +321,7 @@ public class PortalScreenTests
             "revise" => await PortalEndpoints.ReviseUnanswered(tenantId, Guid.NewGuid().ToString("D"), new AnswerUnansweredRequest { Answer = "A las 9." }, http, session, Inbox(), CancellationToken.None),
             "withdraw" => await PortalEndpoints.WithdrawUnanswered(tenantId, Guid.NewGuid().ToString("D"), http, session, Inbox(), CancellationToken.None),
             "discard" => await PortalEndpoints.DiscardUnanswered(tenantId, Guid.NewGuid().ToString("D"), http, session, Inbox(), CancellationToken.None),
-            "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), http, session, [], Ingestion(), CancellationToken.None),
+            "upload" => await PortalEndpoints.Upload(tenantId, File("notes.txt", 4), http, session, [], Ingestion(), NullLoggerFactory.Instance, CancellationToken.None),
             "delete" => await PortalEndpoints.DeleteDocument(tenantId, Guid.NewGuid().ToString("D"), http, session, catalog, knowledge, CancellationToken.None),
             _ => throw new ArgumentOutOfRangeException(nameof(route))
         };
@@ -289,6 +337,7 @@ public class PortalScreenTests
             Session(Profile("club-a")),
             extractors,
             ingestion,
+            NullLoggerFactory.Instance,
             CancellationToken.None);
     }
 
@@ -333,6 +382,13 @@ public class PortalScreenTests
 
     private static int Status(IResult result) =>
         result.Should().BeAssignableTo<IStatusCodeHttpResult>().Subject.StatusCode!.Value;
+
+    private static string ErrorOf(IResult result)
+    {
+        var value = result.Should().BeAssignableTo<IValueHttpResult>().Which.Value;
+        value.Should().NotBeNull();
+        return value!.GetType().GetProperty("Error")!.GetValue(value)!.ToString()!;
+    }
 
     private static PortalConversation Conversation(
         string id,
