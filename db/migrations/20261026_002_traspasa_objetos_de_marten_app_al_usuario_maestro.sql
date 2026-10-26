@@ -93,7 +93,30 @@ BEGIN
     GRANT USAGE, CREATE ON SCHEMA public TO marten_app;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO marten_app;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO marten_app;
-    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO marten_app;
+
+    -- Solo las funciones del maestro. GRANT ON ALL FUNCTIONS avisa, sin fallar,
+    -- por cada funcion de pgvector, que es de la extension.
+    FOR obj IN
+        SELECT n.nspname AS schema_name,
+               p.proname AS object_name,
+               p.prokind,
+               pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+          AND pg_get_userbyid(p.proowner) = current_user
+        ORDER BY 1, 2, 4
+    LOOP
+        IF obj.prokind = 'p' THEN
+            EXECUTE format(
+                'GRANT EXECUTE ON PROCEDURE %I.%I(%s) TO marten_app',
+                obj.schema_name, obj.object_name, obj.args);
+        ELSE
+            EXECUTE format(
+                'GRANT EXECUTE ON FUNCTION %I.%I(%s) TO marten_app',
+                obj.schema_name, obj.object_name, obj.args);
+        END IF;
+    END LOOP;
 
     IF granted_inherit THEN
         EXECUTE format('REVOKE marten_app FROM %I GRANTED BY %I', current_user, current_user);

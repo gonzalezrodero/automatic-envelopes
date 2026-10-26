@@ -33,7 +33,8 @@ public class DatabaseSchemaStartupTests
         transfer.Should().Contain("OWNER TO");
         transfer.Should().Contain("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO marten_app");
         transfer.Should().Contain("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO marten_app");
-        transfer.Should().Contain("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO marten_app");
+        transfer.Should().Contain("GRANT EXECUTE ON FUNCTION");
+        transfer.Should().Contain("GRANT EXECUTE ON PROCEDURE");
 
         upgrade.Should().Contain("alter table public.mt_streams add column compacted_version");
         upgrade.Should().Contain("CREATE OR REPLACE FUNCTION public.mt_quick_append_events");
