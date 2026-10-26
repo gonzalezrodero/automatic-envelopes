@@ -16,15 +16,14 @@ on:
 env:
   AWS_REGION: eu-west-1
 
-concurrency:
-  group: db-migrate-${{ inputs.env_name }}
-  cancel-in-progress: false
-
 jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    concurrency:
+      group: db-migrate-${{ inputs.env_name }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
@@ -39,28 +38,7 @@ jobs:
       - name: Prepare database connection
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
-        working-directory: infra/db
-        run: |
-          set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
-          name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "config/${TF_FOLDER}/config.tfvars")
-          desc=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].{Arn:MasterUserSecret.SecretArn,Host:Endpoint.Address,Port:Endpoint.Port,Db:DBName}' --output json)
-          arn=$(printf '%s' "$desc" | jq -r .Arn)
-          raw=$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text)
-          echo "::add-mask::$raw"
-          password=$(printf '%s' "$raw" | jq -r .password)
-          echo "::add-mask::$password"
-          {
-            echo "PGHOST=$(printf '%s' "$desc" | jq -r .Host)"
-            echo "PGPORT=$(printf '%s' "$desc" | jq -r .Port)"
-            echo "PGDATABASE=$(printf '%s' "$desc" | jq -r .Db)"
-            echo "PGUSER=$(printf '%s' "$raw" | jq -r .username)"
-            echo "PGPASSWORD<<EOF"
-            echo "$password"
-            echo "EOF"
-            echo "PGSSLMODE=verify-full"
-            echo "PGSSLROOTCERT=/tmp/rds-global-bundle.pem"
-          } >> "$GITHUB_ENV"
+        run: bash .github/scripts/db-migrate.sh prepare
       - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Plan migrations
@@ -84,6 +62,9 @@ jobs:
       env_name: ${{ inputs.env_name }}
     permissions:
       contents: read
+    concurrency:
+      group: db-migrate-${{ inputs.env_name }}
+      cancel-in-progress: false
 
   apply:
     name: Apply
@@ -91,6 +72,9 @@ jobs:
     if: needs.plan.outputs.pending == 'true'
     runs-on: ubuntu-latest
     environment: ${{ inputs.env_name }}
+    concurrency:
+      group: db-migrate-${{ inputs.env_name }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
@@ -103,28 +87,7 @@ jobs:
       - name: Prepare database connection
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}
-        working-directory: infra/db
-        run: |
-          set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
-          name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "config/${TF_FOLDER}/config.tfvars")
-          desc=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].{Arn:MasterUserSecret.SecretArn,Host:Endpoint.Address,Port:Endpoint.Port,Db:DBName}' --output json)
-          arn=$(printf '%s' "$desc" | jq -r .Arn)
-          raw=$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text)
-          echo "::add-mask::$raw"
-          password=$(printf '%s' "$raw" | jq -r .password)
-          echo "::add-mask::$password"
-          {
-            echo "PGHOST=$(printf '%s' "$desc" | jq -r .Host)"
-            echo "PGPORT=$(printf '%s' "$desc" | jq -r .Port)"
-            echo "PGDATABASE=$(printf '%s' "$desc" | jq -r .Db)"
-            echo "PGUSER=$(printf '%s' "$raw" | jq -r .username)"
-            echo "PGPASSWORD<<EOF"
-            echo "$password"
-            echo "EOF"
-            echo "PGSSLMODE=verify-full"
-            echo "PGSSLROOTCERT=/tmp/rds-global-bundle.pem"
-          } >> "$GITHUB_ENV"
+        run: bash .github/scripts/db-migrate.sh prepare
       - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Download migration plan

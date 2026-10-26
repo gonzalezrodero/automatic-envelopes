@@ -2,12 +2,12 @@
 -- Generated from this application's Marten and Wolverine configuration against
 -- PostgreSQL 16 with pgvector. Applying it leaves that database matching 9.51.0.
 -- migrate: apply-if-present public.mt_streams
--- migrate: skip-if-applied 001_marten_9_51_baseline.sql
+-- migrate: skip-if-applied 20261026_001_esquema_inicial_marten_9_51_wolverine_6_51.sql
 --
 -- Adds mt_streams.compacted_version and the mt_event_progression monitoring
--- columns, replaces mt_quick_append_events, and adds the Wolverine 6.51.2
--- envelope indexes. Existing rows are kept. The column changes and index
--- builds take a short ACCESS EXCLUSIVE lock.
+-- columns, replaces mt_quick_append_events (same signature, CREATE OR REPLACE),
+-- and adds the Wolverine 6.51.2 envelope indexes. Existing rows are kept.
+-- The column changes and index builds take a short ACCESS EXCLUSIVE lock.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -25,8 +25,6 @@ alter table public.mt_event_progression add column failure_category varchar(50) 
 alter table public.mt_event_progression add column failure_event_sequence bigint NULL;
 alter table public.mt_event_progression add column failure_event_type varchar(500) NULL;
 alter table public.mt_event_progression add column failure_event_tenant_id varchar(500) NULL;
-DROP FUNCTION IF EXISTS public.mt_quick_append_events(stream character varying, stream_type character varying, tenantid character varying, event_ids uuid[], event_types character varying[], dotnet_types character varying[], bodies jsonb[], bdatas bytea[], timestamps timestamp with time zone[], expected_version bigint) cascade;
-
 CREATE OR REPLACE FUNCTION public.mt_quick_append_events(stream varchar, stream_type varchar, tenantid varchar, event_ids uuid[], event_types varchar[], dotnet_types varchar[], bodies jsonb[], bdatas bytea[], timestamps timestamp with time zone[], expected_version bigint DEFAULT NULL::bigint) RETURNS bigint[] AS $$
 DECLARE
 	event_version bigint;

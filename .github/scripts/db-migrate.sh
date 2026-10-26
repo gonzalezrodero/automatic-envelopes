@@ -1,38 +1,25 @@
 #!/usr/bin/env bash
-# Apply db/migrations as the RDS master user. Plan prints the SQL. Apply runs
-# the planned files once, recorded in ops.schema_migrations (not granted to marten_app).
+# Apply db/migrations as the RDS master user. Plan prints SKIP or APPLY and the SQL.
+# Apply runs the planned files once, recorded in ops.schema_migrations (not granted to marten_app).
 set -euo pipefail
-
-migrations_dir="${MIGRATIONS_DIR:-db/migrations}"
-command="${1:-}"
-out_dir="${2:-}"
-
-if [[ "$command" != "plan" && "$command" != "apply" ]]; then
-  echo "usage: db-migrate.sh plan <dir> | db-migrate.sh apply <dir>" >&2
-  exit 2
-fi
-
-if [[ -z "$out_dir" ]]; then
-  echo "missing output directory" >&2
-  exit 2
-fi
-
-export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-15}"
 
 psql_at() {
   psql -v ON_ERROR_STOP=1 -X --no-psqlrc -q "$@"
 }
 
 psql_scalar() {
-  psql_at -tA -c "$1"
+  local sql="$1"
+  psql_at -tA -c "$sql"
 }
 
 valid_ident() {
-  [[ "$1" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]]
+  local ident="$1"
+  [[ "$ident" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]]
 }
 
 valid_version() {
-  [[ "$1" =~ ^[0-9]{3}_[a-z0-9_]+\.sql$ ]]
+  local version="$1"
+  [[ "$version" =~ ^[0-9]{8}_[0-9]{3}_[a-z0-9_]+\.sql$ ]]
 }
 
 declare -A APPLIED=()
@@ -58,6 +45,55 @@ object_exists() {
   local exists
   exists="$(psql_scalar "SELECT to_regclass('${ident}') IS NOT NULL")"
   [[ "$exists" == "t" ]]
+}
+
+# Extension members (pgvector) are excluded: the migrations do not alter them.
+# App objects such as extract_embedding and mt_quick_append_events are included.
+assert_public_owned_by_master() {
+  local offenders current
+  offenders="$(psql_at -tA <<'SQL'
+SELECT format('%s %s (dueño %s)', kind, name, owner)
+FROM (
+    SELECT CASE c.relkind WHEN 'S' THEN 'secuencia' ELSE 'tabla' END AS kind,
+           format('%I.%I', n.nspname, c.relname) AS name,
+           pg_get_userbyid(c.relowner) AS owner
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p', 'S')
+      AND pg_get_userbyid(c.relowner) <> current_user
+      AND NOT EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_class'::regclass
+            AND d.objid = c.oid
+            AND d.deptype = 'e'
+      )
+    UNION ALL
+    SELECT 'funcion',
+           format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)),
+           pg_get_userbyid(p.proowner)
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND pg_get_userbyid(p.proowner) <> current_user
+      AND NOT EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_proc'::regclass
+            AND d.objid = p.oid
+            AND d.deptype = 'e'
+      )
+) found
+ORDER BY 1;
+SQL
+)"
+  if [[ -n "${offenders//[[:space:]]/}" ]]; then
+    current="$(psql_scalar "SELECT current_user")"
+    echo "El usuario maestro ${current} no es dueño de estos objetos de public, así que no puede hacer ALTER ni DROP:" >&2
+    printf '%s\n' "$offenders" >&2
+    exit 1
+  fi
+  current="$(psql_scalar "SELECT current_user")"
+  echo "Dueños: ${current} es dueño de las tablas, secuencias y funciones de public."
 }
 
 # Sets SHOULD_APPLY=1 when this file still needs to run.
@@ -90,6 +126,8 @@ evaluate_file() {
         ;;
       "-- migrate: skip-if-applied "*)
         skip_applied+=("${line#-- migrate: skip-if-applied }")
+        ;;
+      *)
         ;;
     esac
   done < "$file"
@@ -158,6 +196,8 @@ sql_guard() {
         echo "            RAISE EXCEPTION 'migration ${version} refused: ${other} is already applied';"
         echo "        END IF;"
         ;;
+      *)
+        ;;
     esac
   done < "$file"
 
@@ -176,23 +216,70 @@ sql_guard() {
   echo "\\endif"
 }
 
-if [[ "$command" == "plan" ]]; then
+append_secret_env() {
+  local name="$1"
+  local secret="$2"
+  local delim
+  delim="PW$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  while [[ "$secret" == *"$delim"* ]]; do
+    delim="PW$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  done
+  {
+    printf '%s<<%s\n' "$name" "$delim"
+    printf '%s\n' "$secret"
+    printf '%s\n' "$delim"
+  } >> "${GITHUB_ENV:?GITHUB_ENV is required}"
+}
+
+prepare_connection() {
+  local tf_folder="${TF_FOLDER:?TF_FOLDER is required}"
+  local infra_dir="${INFRA_DB_DIR:-infra/db}"
+  local name desc arn raw password
+  curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+  name=$(sed -n 's/^project_name *= *"\(.*\)".*/\1/p' "${infra_dir}/config/${tf_folder}/config.tfvars")
+  if [[ -z "$name" ]]; then
+    echo "project_name missing from ${infra_dir}/config/${tf_folder}/config.tfvars" >&2
+    exit 1
+  fi
+  desc=$(aws rds describe-db-instances --db-instance-identifier "${name}-db" --query 'DBInstances[0].{Arn:MasterUserSecret.SecretArn,Host:Endpoint.Address,Port:Endpoint.Port,Db:DBName}' --output json)
+  arn=$(printf '%s' "$desc" | jq -r .Arn)
+  raw=$(aws secretsmanager get-secret-value --secret-id "$arn" --query SecretString --output text)
+  echo "::add-mask::$raw"
+  password=$(printf '%s' "$raw" | jq -r .password)
+  echo "::add-mask::$password"
+  {
+    echo "PGHOST=$(printf '%s' "$desc" | jq -r .Host)"
+    echo "PGPORT=$(printf '%s' "$desc" | jq -r .Port)"
+    echo "PGDATABASE=$(printf '%s' "$desc" | jq -r .Db)"
+    echo "PGUSER=$(printf '%s' "$raw" | jq -r .username)"
+    echo "PGSSLMODE=verify-full"
+    echo "PGSSLROOTCERT=/tmp/rds-global-bundle.pem"
+  } >> "${GITHUB_ENV:?GITHUB_ENV is required}"
+  append_secret_env PGPASSWORD "$password"
+}
+
+plan_migrations() {
+  local out_dir="$1"
+  local migrations_dir="$2"
   mkdir -p "$out_dir"
   rm -f "$out_dir"/*.sql "$out_dir"/manifest.tsv "$out_dir"/pending "$out_dir"/apply.sql
   : > "$out_dir/manifest.tsv"
+  assert_public_owned_by_master
   load_applied
-  pending=false
+  local pending=false
   shopt -s nullglob
-  files=("$migrations_dir"/*.sql)
+  local -a files=("$migrations_dir"/*.sql)
   if [[ ${#files[@]} -eq 0 ]]; then
     echo "No migration files in $migrations_dir"
   fi
-  IFS=$'\n' files_sorted=($(printf '%s\n' "${files[@]+"${files[@]}"}" | LC_ALL=C sort))
+  local file version
+  local IFS=$'\n'
+  local -a files_sorted=($(printf '%s\n' "${files[@]+"${files[@]}"}" | LC_ALL=C sort))
   unset IFS
   for file in "${files_sorted[@]+"${files_sorted[@]}"}"; do
     version="$(basename "$file")"
     if ! valid_version "$version"; then
-      echo "migration file name must be NNN_description.sql: $version" >&2
+      echo "migration file name must be YYYYMMDD_NNN_description.sql: $version" >&2
       exit 1
     fi
     evaluate_file "$file"
@@ -225,52 +312,90 @@ if [[ "$command" == "plan" ]]; then
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     echo "pending=$pending" >> "$GITHUB_OUTPUT"
   fi
-  exit 0
-fi
+}
 
-pending_file="$out_dir/pending"
-if [[ -f "$pending_file" && "$(tr -d '[:space:]' < "$pending_file")" != "true" ]]; then
-  echo "No pending migrations."
-  exit 0
-fi
+apply_migrations() {
+  local out_dir="$1"
+  local pending_file="$out_dir/pending"
+  if [[ -f "$pending_file" && "$(tr -d '[:space:]' < "$pending_file")" != "true" ]]; then
+    echo "No pending migrations."
+    return
+  fi
 
-manifest="$out_dir/manifest.tsv"
-if [[ ! -f "$manifest" ]]; then
-  echo "missing manifest.tsv" >&2
-  exit 1
-fi
+  local manifest="$out_dir/manifest.tsv"
+  if [[ ! -f "$manifest" ]]; then
+    echo "missing manifest.tsv" >&2
+    exit 1
+  fi
 
-apply_sql="$out_dir/apply.sql"
-{
-  echo "BEGIN;"
-  echo "SELECT pg_advisory_xact_lock(591022051);"
-  echo "CREATE SCHEMA IF NOT EXISTS ops;"
-  echo "REVOKE ALL ON SCHEMA ops FROM PUBLIC;"
-  echo "CREATE TABLE IF NOT EXISTS ops.schema_migrations ("
-  echo "    version text PRIMARY KEY,"
-  echo "    checksum text NOT NULL,"
-  echo "    applied_at timestamptz NOT NULL DEFAULT now()"
-  echo ");"
-  echo "REVOKE ALL ON TABLE ops.schema_migrations FROM PUBLIC;"
-  while IFS=$'\t' read -r version checksum; do
-    [[ -z "$version" ]] && continue
-    valid_version "$version"
-    [[ "$checksum" =~ ^[0-9a-f]{64}$ ]]
-    file="$out_dir/$version"
-    if [[ ! -f "$file" ]]; then
-      echo "planned file missing: $version" >&2
-      exit 1
-    fi
-    actual="$(sha256sum "$file" | awk '{print $1}')"
-    if [[ "$actual" != "$checksum" ]]; then
-      echo "planned checksum mismatch for $version" >&2
-      exit 1
-    fi
-    sql_guard "$version" "$checksum" "$file"
-  done < "$manifest"
-  echo "COMMIT;"
-} > "$apply_sql"
+  local apply_sql="$out_dir/apply.sql"
+  {
+    echo "BEGIN;"
+    echo "SET LOCAL lock_timeout = '5s';"
+    echo "SET LOCAL statement_timeout = '5min';"
+    echo "SELECT pg_advisory_xact_lock(591022051);"
+    echo "CREATE SCHEMA IF NOT EXISTS ops;"
+    echo "REVOKE ALL ON SCHEMA ops FROM PUBLIC;"
+    echo "CREATE TABLE IF NOT EXISTS ops.schema_migrations ("
+    echo "    version text PRIMARY KEY,"
+    echo "    checksum text NOT NULL,"
+    echo "    applied_at timestamptz NOT NULL DEFAULT now()"
+    echo ");"
+    echo "REVOKE ALL ON TABLE ops.schema_migrations FROM PUBLIC;"
+    local version checksum file actual
+    while IFS=$'\t' read -r version checksum; do
+      [[ -z "$version" ]] && continue
+      valid_version "$version"
+      [[ "$checksum" =~ ^[0-9a-f]{64}$ ]]
+      file="$out_dir/$version"
+      if [[ ! -f "$file" ]]; then
+        echo "planned file missing: $version" >&2
+        exit 1
+      fi
+      actual="$(sha256sum "$file" | awk '{print $1}')"
+      if [[ "$actual" != "$checksum" ]]; then
+        echo "planned checksum mismatch for $version" >&2
+        exit 1
+      fi
+      sql_guard "$version" "$checksum" "$file"
+    done < "$manifest"
+    echo "COMMIT;"
+  } > "$apply_sql"
 
-echo "========== APPLYING PLANNED MIGRATIONS =========="
-psql_at -f "$apply_sql"
-echo "Migrations applied."
+  echo "========== APPLYING PLANNED MIGRATIONS =========="
+  psql_at -f "$apply_sql"
+  echo "Migrations applied."
+}
+
+main() {
+  local command="${1:-}"
+  local out_dir="${2:-}"
+  local migrations_dir="${MIGRATIONS_DIR:-db/migrations}"
+  export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-15}"
+
+  case "$command" in
+    prepare)
+      prepare_connection
+      ;;
+    plan)
+      if [[ -z "$out_dir" ]]; then
+        echo "missing output directory" >&2
+        exit 2
+      fi
+      plan_migrations "$out_dir" "$migrations_dir"
+      ;;
+    apply)
+      if [[ -z "$out_dir" ]]; then
+        echo "missing output directory" >&2
+        exit 2
+      fi
+      apply_migrations "$out_dir"
+      ;;
+    *)
+      echo "usage: db-migrate.sh prepare | db-migrate.sh plan <dir> | db-migrate.sh apply <dir>" >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"

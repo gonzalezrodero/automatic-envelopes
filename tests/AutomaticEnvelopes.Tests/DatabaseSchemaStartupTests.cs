@@ -22,13 +22,15 @@ public class DatabaseSchemaStartupTests
     public void Migration_scripts_grant_marten_app_and_are_ordered()
     {
         var root = RepoRoot();
-        var upgrade = File.ReadAllText(Path.Combine(root, "db/migrations/002_marten_9_22_5_to_9_51.sql"));
-        var baseline = File.ReadAllText(Path.Combine(root, "db/migrations/001_marten_9_51_baseline.sql"));
+        var upgrade = File.ReadAllText(Path.Combine(root, "db/migrations/20261026_002_actualiza_marten_9_22_5_a_9_51.sql"));
+        var baseline = File.ReadAllText(Path.Combine(root, "db/migrations/20261026_001_esquema_inicial_marten_9_51_wolverine_6_51.sql"));
 
         upgrade.Should().Contain("alter table public.mt_streams add column compacted_version");
-        upgrade.Should().Contain("DROP FUNCTION IF EXISTS public.mt_quick_append_events");
+        upgrade.Should().Contain("CREATE OR REPLACE FUNCTION public.mt_quick_append_events");
+        upgrade.Should().NotContain("DROP FUNCTION");
+        upgrade.Should().NotContain("CASCADE");
         upgrade.Should().Contain("-- migrate: apply-if-present public.mt_streams");
-        upgrade.Should().Contain("-- migrate: skip-if-applied 001_marten_9_51_baseline.sql");
+        upgrade.Should().Contain("-- migrate: skip-if-applied 20261026_001_esquema_inicial_marten_9_51_wolverine_6_51.sql");
         baseline.Should().Contain("-- migrate: apply-if-missing public.mt_streams");
         baseline.Should().Contain("compacted_version");
 
