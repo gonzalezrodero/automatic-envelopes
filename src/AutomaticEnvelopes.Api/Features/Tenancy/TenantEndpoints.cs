@@ -57,7 +57,7 @@ public class TenantEndpoints
 
         var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
         return profile is null
-            ? Results.NotFound(new { Error = "Tenant was not found." })
+            ? Results.NotFound(new { Error = TenantRequest.OrganizationNotFound })
             : Results.Ok(TenantPortalProfile.From(profile));
     }
 
@@ -107,7 +107,7 @@ public class TenantEndpoints
         var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
         if (profile is null)
         {
-            return Results.NotFound(new { Error = "Tenant was not found." });
+            return Results.NotFound(new { Error = TenantRequest.OrganizationNotFound });
         }
 
         var updated = profile.WithSettings(settings.SystemPrompt, settings.PrivacyPolicyUrl, enabledTools ?? profile.EnabledTools, limit ?? profile.MonthlyResponseLimit, email ?? profile.ContactEmail);
@@ -134,7 +134,7 @@ public class TenantEndpoints
         var profile = await session.LoadAsync<TenantProfile>(tenantId, ct);
         if (profile is null)
         {
-            return Results.NotFound(new { Error = "Tenant was not found." });
+            return Results.NotFound(new { Error = TenantRequest.OrganizationNotFound });
         }
 
         var month = UsageMonth.Current();
@@ -155,17 +155,9 @@ public class TenantEndpoints
         {
             return null;
         }
-        if (request.EnabledTools is not null)
+        if (request.EnabledTools is not null || request.MonthlyResponseLimit is not null || request.ContactEmail is not null)
         {
-            return Forbidden("Only a platform admin can set enabledTools.");
-        }
-        if (request.MonthlyResponseLimit is not null)
-        {
-            return Forbidden("Only a platform admin can set monthlyResponseLimit.");
-        }
-        if (request.ContactEmail is not null)
-        {
-            return Forbidden("Only a platform admin can set contactEmail.");
+            return Forbidden("No tienes permiso para cambiar esos ajustes.");
         }
         return null;
     }

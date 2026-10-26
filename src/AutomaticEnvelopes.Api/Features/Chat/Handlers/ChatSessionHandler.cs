@@ -13,17 +13,15 @@ using Wolverine;
 
 namespace AutomaticEnvelopes.Api.Features.Chat.Handlers;
 
-public static class ChatSessionHandler 
+public sealed class ChatSessionHandler(
+    IDocumentStore store,
+    IKnowledgeBaseService knowledgeBase,
+    IChatService chatService,
+    UsageMeter usage,
+    IMessageBus bus,
+    ILogger<ChatSessionHandler> logger)
 {
-    public static async Task Handle(
-        AnalyzeChatSession command,
-        IDocumentStore store,
-        IKnowledgeBaseService knowledgeBase,
-        IChatService chatService,
-        UsageMeter usage,
-        IMessageBus bus,
-        ILogger logger,
-        CancellationToken ct)
+    public async Task Handle(AnalyzeChatSession command, CancellationToken ct)
     {
         using var session = store.LightweightSession(command.TenantId);
 
@@ -38,118 +36,222 @@ public static class ChatSessionHandler
         if (BotPrompts.DeleteCommands.Contains(userText))
         {
             logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", LogMask.Phone(command.PhoneNumber));
-            await SendDeleteCommandAsync(command, bus, ct);
+            await SendDeleteCommandAsync(command, ct);
             return;
         }
 
-        await ProcessResponseAsync(command, tenant, session, knowledgeBase, chatService, usage, bus, logger, ct);
+        await ProcessResponseAsync(command, tenant, session, ct);
     }
 
-    private static async Task ProcessResponseAsync(
-            AnalyzeChatSession command,
-            TenantProfile tenant,
-            IDocumentSession session,
-            IKnowledgeBaseService knowledgeBase,
-            IChatService chatService,
-            UsageMeter usage,
-            IMessageBus bus,
-            ILogger logger,
-            CancellationToken ct)
+    private async Task ProcessResponseAsync(
+        AnalyzeChatSession command,
+        TenantProfile tenant,
+        IDocumentSession session,
+        CancellationToken ct)
     {
         var chatHistory = await ExtractChatHistory(command.PhoneNumber, session, ct);
-        var firstContact = !chatHistory.Any(message => message.Role == ChatRole.Assistant);
+        var work = new ReplyWork(
+            command,
+            tenant,
+            session,
+            !chatHistory.Any(message => message.Role == ChatRole.Assistant),
+            chatHistory.Count > 0);
         var limit = tenant.EffectiveMonthlyResponseLimit;
         var used = await usage.ResponseCountAsync(tenant.Id, ct);
         if (used >= limit)
         {
-            await ReplyAtLimitAsync(command, tenant, firstContact, chatHistory.Count > 0, used, limit, session, usage, bus, logger, ct);
+            await ReplyAtLimitAsync(work, used, limit, ct);
             return;
         }
 
-        logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", command.TenantId);
-        var context = await GetRelevantContextAsync(knowledgeBase, command.TenantId, command.CombinedText, ct);
-        var systemMessage = BuildSystemPrompt(tenant, context);
-
-        logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
-
+        // Before a reply is stored, one fixed message is enough: returning would let SQS run
+        // the handler again and send a second WhatsApp. After it is stored, the exception
+        // continues so a failed dispatch can be retried instead of being replaced.
+        var gate = new SaveGate();
         try
         {
-            var reply = await chatService.GetResponseAsync(
-                systemMessage,
-                chatHistory,
-                command.TenantId,
-                tenant.EnabledTools,
-                ct);
-            var replyText = reply.Text;
+            await PublishGeneratedReplyAsync(work, chatHistory, gate, ct);
+        }
+        catch (Exception ex) when (!gate.Stored && ex is not OperationCanceledException)
+        {
+            await DeliverFallbackAsync(ex, work, ct);
+        }
+    }
 
-            if (string.IsNullOrWhiteSpace(replyText))
-            {
-                logger.LogWarning("Bedrock returned an empty or null response. Applying fallback message for TenantId: {TenantId}.", command.TenantId);
-                replyText = "I'm sorry, I couldn't process that request.";
-            }
+    private async Task PublishGeneratedReplyAsync(
+        ReplyWork work,
+        List<ChatMessage> chatHistory,
+        SaveGate gate,
+        CancellationToken ct)
+    {
+        var command = work.Command;
+        logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", command.TenantId);
+        var context = await GetRelevantContextAsync(knowledgeBase, command.TenantId, command.CombinedText, ct);
+        var systemMessage = BuildSystemPrompt(work.Tenant, context);
 
-            var unknown = UnknownReply.TryStrip(replyText, out var visible);
-            if (unknown)
-            {
-                replyText = string.IsNullOrWhiteSpace(visible) ? UnknownReply.Fallback : visible;
-            }
+        logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
+        var reply = await chatService.GetResponseAsync(
+            systemMessage,
+            chatHistory,
+            command.TenantId,
+            work.Tenant.EnabledTools,
+            ct);
+        var (replyText, unknown) = await VisibleReplyAsync(reply.Text, command, ct);
 
-            if (firstContact)
+        if (work.FirstContact)
+        {
+            replyText = await PrependNoticeAsync(work.Tenant, command.CombinedText, replyText, ct);
+        }
+
+        var saved = await SaveAndPublishReplyAsync(command, replyText, work.Session, work.HasHistory, gate, ct);
+        if (saved)
+        {
+            await usage.RecordAsync(work.Tenant, reply.InputTokens, reply.OutputTokens, ct);
+        }
+
+        if (unknown && saved)
+        {
+            await TryRecordUnansweredAsync(command, ct);
+        }
+    }
+
+    private async Task<(string Text, bool Unknown)> VisibleReplyAsync(
+        string replyText,
+        AnalyzeChatSession command,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(replyText))
+        {
+            logger.LogWarning("Bedrock returned an empty or null response. Applying fallback message for TenantId: {TenantId}.", command.TenantId);
+            var fallback = await TranslateForUserAsync(UserMessages.Unavailable, command.CombinedText, command.TenantId, ct);
+            return (fallback, false);
+        }
+
+        if (!UnknownReply.TryStrip(replyText, out var visible))
+        {
+            return (replyText, false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(visible))
+        {
+            return (visible, true);
+        }
+
+        var translated = await TranslateForUserAsync(UnknownReply.Fallback, command.CombinedText, command.TenantId, ct);
+        return (translated, true);
+    }
+
+    private async Task DeliverFallbackAsync(Exception failure, ReplyWork work, CancellationToken ct)
+    {
+        var gate = new SaveGate();
+        try
+        {
+            var replyText = await TranslateForUserAsync(UserMessages.Unavailable, work.Command.CombinedText, work.Tenant.Id, ct);
+            if (work.FirstContact)
             {
-                replyText = await PrependNoticeAsync(tenant, command.CombinedText, replyText, chatService, logger, ct);
+                replyText = await PrependNoticeAsync(work.Tenant, work.Command.CombinedText, replyText, ct);
             }
 
             var saved = await SaveAndPublishReplyAsync(
-                command,
+                work.Command,
                 replyText,
-                session,
-                bus,
-                logger,
-                chatHistory.Count > 0,
+                work.Session,
+                work.HasHistory,
+                gate,
                 ct);
             if (saved)
             {
-                await usage.RecordAsync(tenant, reply.InputTokens, reply.OutputTokens, ct);
+                logger.LogError(failure, "Chat generation failed. Sent a fixed fallback. TenantId: {TenantId}.", work.Tenant.Id);
+                return;
             }
 
-            if (unknown && saved)
-            {
-                await bus.InvokeAsync(
-                    new RecordUnansweredQuestion(
-                        command.TenantId,
-                        PortalIds.ForStream(command.PhoneNumber),
-                        command.CombinedText,
-                        DateTimeOffset.UtcNow),
-                    ct);
-            }
+            logger.LogError(failure, "Chat generation failed and the fallback was dropped because the chat was deleted. TenantId: {TenantId}.", work.Tenant.Id);
         }
-        catch (Exception ex)
+        catch (Exception delivery) when (gate.Stored && delivery is not OperationCanceledException)
         {
-            logger.LogError(ex, "Fatal error invoking AI generation for TenantId: {TenantId}.", command.TenantId);
-            throw;
+            logger.LogError(failure, "Chat generation failed. TenantId: {TenantId}.", work.Tenant.Id);
+            logger.LogError(delivery, "The fallback was stored but could not be dispatched. Not retrying, to avoid a duplicate WhatsApp message. TenantId: {TenantId}.", work.Tenant.Id);
+        }
+        catch (Exception delivery) when (!gate.Stored && delivery is not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"Chat generation failed for tenant {work.Tenant.Id} and the fallback reply was not delivered.",
+                new AggregateException(failure, delivery));
         }
     }
 
-    private static async Task ReplyAtLimitAsync(
-        AnalyzeChatSession command, TenantProfile tenant, bool firstContact, bool hasHistory, int used, int limit,
-        IDocumentSession session, UsageMeter usage, IMessageBus bus, ILogger logger, CancellationToken ct)
+    private async Task TryRecordUnansweredAsync(AnalyzeChatSession command, CancellationToken ct)
+    {
+        try
+        {
+            await bus.InvokeAsync(
+                new RecordUnansweredQuestion(
+                    command.TenantId,
+                    PortalIds.ForStream(command.PhoneNumber),
+                    command.CombinedText,
+                    DateTimeOffset.UtcNow),
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "The reply was sent, but the unanswered question was not recorded. TenantId: {TenantId}.", command.TenantId);
+        }
+    }
+
+    private async Task ReplyAtLimitAsync(ReplyWork work, int used, int limit, CancellationToken ct)
     {
         logger.LogInformation(
             "Monthly response limit reached. TenantId: {TenantId}. Responses: {Responses}. Limit: {Limit}.",
-            tenant.Id, used, limit);
+            work.Tenant.Id, used, limit);
 
-        var replyText = UsageMessages.Spanish;
-        if (firstContact)
+        var replyText = await TranslateForUserAsync(UsageMessages.Spanish, work.Command.CombinedText, work.Tenant.Id, ct);
+        if (work.FirstContact)
         {
-            var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
-            replyText = BotPrompts.FirstContactNotice(name, tenant.PrivacyPolicyUrl).Trim() + "\n\n" + replyText;
+            replyText = await PrependNoticeAsync(work.Tenant, work.Command.CombinedText, replyText, ct);
         }
 
-        await SaveAndPublishReplyAsync(command, replyText, session, bus, logger, hasHistory, ct);
-        await usage.NotifyBlockedAsync(tenant, ct);
+        await SaveAndPublishReplyAsync(work.Command, replyText, work.Session, work.HasHistory, new SaveGate(), ct);
+        await usage.NotifyBlockedAsync(work.Tenant, ct);
     }
 
-    private static async Task SendDeleteCommandAsync(AnalyzeChatSession command, IMessageBus bus, CancellationToken ct)
+    private async Task<string> TranslateForUserAsync(string spanish, string userText, string tenantId, CancellationToken ct)
+    {
+        string? translated = null;
+        try
+        {
+            translated = await chatService.TranslateNoticeAsync(spanish, userText, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "User-facing text translation failed for TenantId: {TenantId}. Using the Spanish text.", tenantId);
+        }
+
+        if (!IsUsableTranslation(translated))
+        {
+            return spanish;
+        }
+
+        return translated!.Trim();
+    }
+
+    private static bool IsUsableTranslation(string? translated)
+    {
+        if (string.IsNullOrWhiteSpace(translated))
+        {
+            return false;
+        }
+
+        var text = translated.Trim();
+        if (text.Length > BotPrompts.MaxTranslatedNoticeLength)
+        {
+            return false;
+        }
+
+        return !text.Contains("<language_sample>", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("</language_sample>", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task SendDeleteCommandAsync(AnalyzeChatSession command, CancellationToken ct)
     {
         var syntheticMessageId = $"wamid.grouped.{Guid.NewGuid():N}";
 
@@ -206,12 +308,10 @@ public static class ChatSessionHandler
         return BotPrompts.Compose(personaPrompt, string.Empty, currentDate, context);
     }
 
-    private static async Task<string> PrependNoticeAsync(
+    private async Task<string> PrependNoticeAsync(
         TenantProfile tenant,
         string userText,
         string replyText,
-        IChatService chatService,
-        ILogger logger,
         CancellationToken ct)
     {
         var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
@@ -234,13 +334,12 @@ public static class ChatSessionHandler
         return translated.Trim() + "\n\n" + replyText;
     }
 
-    private static async Task<bool> SaveAndPublishReplyAsync(
+    private async Task<bool> SaveAndPublishReplyAsync(
         AnalyzeChatSession command,
         string replyText,
         IDocumentSession session,
-        IMessageBus bus,
-        ILogger logger,
         bool dropIfStreamDeleted,
+        SaveGate gate,
         CancellationToken ct)
     {
         if (dropIfStreamDeleted)
@@ -266,9 +365,22 @@ public static class ChatSessionHandler
 
         session.Events.Append(command.PhoneNumber, replyEvent);
         await session.SaveChangesAsync(ct);
+        gate.Stored = true;
 
         logger.LogInformation("Bot reply saved to event stream. Dispatching ReplyGenerated event to Wolverine.");
         await bus.InvokeAsync(replyEvent, ct);
         return true;
+    }
+
+    private sealed record ReplyWork(
+        AnalyzeChatSession Command,
+        TenantProfile Tenant,
+        IDocumentSession Session,
+        bool FirstContact,
+        bool HasHistory);
+
+    private sealed class SaveGate
+    {
+        public bool Stored { get; set; }
     }
 }

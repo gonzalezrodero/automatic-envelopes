@@ -5,7 +5,7 @@ public static class UnknownReply
     public const string Marker = "[[UNKNOWN]]";
 
     public const string Fallback =
-        "I am sorry, I do not have that specific information at this moment. Please contact the organization directly.";
+        "No tengo ese dato. Contacta con la organización.";
 
     /// <summary>
     /// Removes <see cref="Marker"/> wherever the model placed it, including when the privacy notice follows it.

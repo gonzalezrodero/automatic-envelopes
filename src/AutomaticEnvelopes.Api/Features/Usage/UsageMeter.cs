@@ -62,10 +62,10 @@ public sealed class UsageMeter(
         });
 
     public Task ClearAlertsAsync(string tenantId, CancellationToken ct) =>
-        Exec(tenantId, ct, $$"""
+        Exec(tenantId, $$"""
             update {{Table}} set data = jsonb_set(jsonb_set(data, '{Notified80}', 'false'::jsonb, true), '{Notified100}', 'false'::jsonb, true), {{Stamp}}
             where tenant_id = ? and id = ?
-            """, tenantId, UsageMonth.Current());
+            """, [tenantId, UsageMonth.Current()], ct);
 
     private async Task Guard(string tenantId, Func<Task> action)
     {
@@ -83,13 +83,13 @@ public sealed class UsageMeter(
     {
         var month = UsageMonth.Current();
         var created = JsonSerializer.Serialize(new TenantMonthUsage { Id = month, Responses = 1, InputTokens = inputTokens, OutputTokens = outputTokens });
-        await Exec(tenantId, ct, $$"""
+        await Exec(tenantId, $$"""
             insert into {{Table}} (tenant_id, id, data) values (?, ?, cast(? as jsonb))
             on conflict (tenant_id, id) do update set data = jsonb_set(jsonb_set(jsonb_set({{Table}}.data,
                 '{Responses}', to_jsonb(coalesce(({{Table}}.data->>'Responses')::int, 0) + 1)),
                 '{InputTokens}', to_jsonb(coalesce(({{Table}}.data->>'InputTokens')::bigint, 0) + cast(? as bigint))),
                 '{OutputTokens}', to_jsonb(coalesce(({{Table}}.data->>'OutputTokens')::bigint, 0) + cast(? as bigint))), {{Stamp}}
-            """, tenantId, month, created, inputTokens, outputTokens);
+            """, [tenantId, month, created, inputTokens, outputTokens], ct);
         await using var session = store.LightweightSession(tenantId);
         return await session.LoadAsync<TenantMonthUsage>(month, ct);
     }
@@ -98,14 +98,14 @@ public sealed class UsageMeter(
     {
         var month = UsageMonth.Current();
         var created = JsonSerializer.Serialize(new TenantMonthUsage { Id = month, Notified80 = true, Notified100 = reached });
-        return Exec(tenantId, ct, $$"""
+        return Exec(tenantId, $$"""
             insert into {{Table}} (tenant_id, id, data) values (?, ?, cast(? as jsonb))
             on conflict (tenant_id, id) do update set data = jsonb_set(jsonb_set({{Table}}.data, '{Notified80}', 'true'::jsonb, true),
                 '{Notified100}', case when ? then 'true'::jsonb else coalesce({{Table}}.data->'Notified100', 'false'::jsonb) end, true), {{Stamp}}
-            """, tenantId, month, created, reached);
+            """, [tenantId, month, created, reached], ct);
     }
 
-    private async Task Exec(string tenantId, CancellationToken ct, string sql, params object[] args)
+    private async Task Exec(string tenantId, string sql, object[] args, CancellationToken ct)
     {
         await using var session = store.LightweightSession(tenantId);
         session.QueueSqlCommand(sql, args);
@@ -129,7 +129,7 @@ public sealed class UsageMeter(
             return false;
         }
 
-        var name = (string.IsNullOrWhiteSpace(tenant.Name) ? tenant.Id : tenant.Name.Trim()).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+        var name = UsageMessages.EmailName(tenant.Name);
         var month = UsageMonth.Current();
         var subject = reached ? "Límite de respuestas alcanzado" : "Aviso de uso del asistente (80%)";
         var body = reached

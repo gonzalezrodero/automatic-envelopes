@@ -28,4 +28,11 @@ public static class UsageMonth
 public static class UsageMessages
 {
     public const string Spanish = "Este servicio no está disponible este mes. Contacta con el club.";
+    public const string OrganizationFallback = "Tu organización";
+
+    public static string EmailName(string? name)
+    {
+        var raw = string.IsNullOrWhiteSpace(name) ? OrganizationFallback : name.Trim();
+        return raw.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+    }
 }

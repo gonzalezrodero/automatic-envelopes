@@ -31,4 +31,12 @@ public class UsageRulesTests
         first.Should().NotBe(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("34600111222"))).ToLowerInvariant());
         PhoneRateKey.TryHash("club-a", "34600111222", "short", out _).Should().BeFalse();
     }
+
+    [Fact]
+    public void EmailName_UsesAFriendlyLabelWhenTheOrganizationHasNoName()
+    {
+        UsageMessages.EmailName(null).Should().Be("Tu organización");
+        UsageMessages.EmailName("  ").Should().Be(UsageMessages.OrganizationFallback);
+        UsageMessages.EmailName("Club\r\nProva").Should().Be("Club  Prova");
+    }
 }
