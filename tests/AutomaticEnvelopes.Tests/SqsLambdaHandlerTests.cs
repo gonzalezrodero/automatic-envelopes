@@ -117,14 +117,38 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
     }
 
     [Fact]
-    public async Task FunctionHandler_RecoveryMessage_DoesNotFailTheBatch()
+    public async Task FunctionHandler_TenantIdContainingTheOldSweepName_StillClosesTheWindow()
     {
-        var body = JsonSerializer.Serialize(new RecoverStuckChatDebounceSagas());
-        var sqsEvent = CreateSqsEvent(body, "arn:aws:sqs:eu-west-1:123:automatic-envelopes-system-queue", "recover-1");
+        const string tenantId = "recover-stuck-chat-sagas";
+        var botPhoneId = "303030";
+        var userPhone = $"346{Random.Shared.Next(10000000, 99999999)}";
+        var sagaId = ChatSagaIds.For(tenantId, userPhone);
+        var startedAt = DateTimeOffset.UtcNow;
+
+        await fixture.SeedTenantAsync(tenantId, botPhoneId);
+        using (var setup = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession())
+        {
+            setup.Store(new ChatDebounceSaga
+            {
+                Id = sagaId,
+                PhoneNumber = userPhone,
+                TenantId = tenantId,
+                BotPhoneNumberId = botPhoneId,
+                CombinedText = "Hello",
+                StartedAt = startedAt
+            });
+            await setup.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var body = JsonSerializer.Serialize(new ChatWindowExpired(sagaId, startedAt.UtcTicks));
+        var sqsEvent = CreateSqsEvent(body, "arn:aws:sqs:eu-west-1:123:automatic-envelopes-system-queue", "kind-substr");
 
         var result = await _handler.FunctionHandler(sqsEvent, Mock.Of<ILambdaContext>());
 
         result.BatchItemFailures.Should().BeEmpty();
+        using var session = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
+        var deleted = await session.LoadAsync<ChatDebounceSaga>(sagaId, TestContext.Current.CancellationToken);
+        deleted.Should().BeNull();
     }
 
     [Fact]

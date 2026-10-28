@@ -1,5 +1,3 @@
-using System.Data;
-using AutomaticEnvelopes.Api.Common;
 using JasperFx;
 using Marten;
 using Marten.Linq.LastModified;
@@ -8,9 +6,9 @@ using Wolverine;
 namespace AutomaticEnvelopes.Api.Features.Chat;
 
 /// <summary>
-/// One row per closed debounce window (id = saga id) and one lease row that keeps a
-/// single recovery chain alive. A duplicate expiry for that same window sees the row
-/// and does not send a second reply. The next window deletes it.
+/// One row per closed debounce window (id = saga id) and one lease row. The lease only
+/// decides when the next user message may republish overdue expiries. It is written in
+/// that same session, so a rolled-back message does not consume the lease.
 /// </summary>
 public sealed class ChatDebounceMarker
 {
@@ -19,126 +17,115 @@ public sealed class ChatDebounceMarker
     public string Id { get; set; } = string.Empty;
 
     public DateTimeOffset NotBefore { get; set; }
-}
 
-public record RecoverStuckChatDebounceSagas
-{
-    public const string Kind = "recover-stuck-chat-sagas";
-
-    public string MessageType { get; init; } = Kind;
+    /// <summary>Saga revision this window was answered at. A newer revision is answered again.</summary>
+    public int ClaimedVersion { get; set; }
 }
 
 public static class ChatDebounceRecovery
 {
-    private static readonly TimeSpan DueGrace = TimeSpan.FromSeconds(30);
-
-    public static async Task<bool> TryStartChainAsync(IDocumentStore store, CancellationToken ct)
+    public static async Task RepublishDueAsync(
+        IDocumentSession session,
+        OutgoingMessages messages,
+        ChatDebounceSaga current,
+        CancellationToken ct)
     {
-        using var session = store.LightweightSession(IsolationLevel.ReadCommitted);
         var now = DateTimeOffset.UtcNow;
         var lease = await session.LoadAsync<ChatDebounceMarker>(ChatDebounceMarker.RecoveryId, ct);
-        if (lease != null && lease.NotBefore > now.Add(DueGrace))
+        if (lease != null && lease.NotBefore > now)
         {
-            return false;
+            return;
         }
 
-        var notBefore = now.Add(ChatDebounceSaga.StuckAfter);
-        if (lease == null)
+        if (current.WindowIsOverdue())
         {
-            session.Insert(new ChatDebounceMarker { Id = ChatDebounceMarker.RecoveryId, NotBefore = notBefore });
-        }
-        else
-        {
-            lease.NotBefore = notBefore;
-            session.Store(lease);
+            messages.Add(new ChatWindowExpired(current.Id, current.StartedAt.UtcTicks));
         }
 
-        try
-        {
-            await session.SaveChangesAsync(ct);
-            return true;
-        }
-        catch (Exception ex) when (ex is ConcurrencyException or DocumentAlreadyExistsException
-            || ex.InnerException is ConcurrencyException or DocumentAlreadyExistsException)
-        {
-            return false;
-        }
-    }
-}
-
-public static class ChatWindowExpiredHandler
-{
-    public static async Task<OutgoingMessages> Handle(
-        ChatWindowExpired expired,
-        IDocumentSession session,
-        ILogger<ChatWindowExpired> logger,
-        CancellationToken ct)
-    {
-        var messages = new OutgoingMessages();
-        var saga = await session.LoadAsync<ChatDebounceSaga>(expired.SagaId, ct);
-        if (saga == null)
-        {
-            logger.LogInformation("Debounce window for {SagaId} was already closed.", LogMask.Id(expired.SagaId));
-            return messages;
-        }
-
-        // A late expiry from the previous window must not close, or overwrite, the one open now.
-        if (expired.WindowStartedAtTicks != saga.StartedAt.UtcTicks)
-        {
-            logger.LogInformation(
-                "Ignoring debounce expiry for {SagaId} because it belongs to an older window.",
-                LogMask.Id(expired.SagaId));
-            return messages;
-        }
-
-        // Same id as the saga. The loser of a duplicate expiry finds the row and finishes
-        // without a reply. The next window deletes it.
-        if (await session.LoadAsync<ChatDebounceMarker>(saga.Id, ct) != null)
-        {
-            logger.LogInformation("Debounce window for {PhoneNumber} was already closed.", LogMask.Phone(saga.PhoneNumber));
-            session.Delete(saga);
-            return messages;
-        }
-
-        session.Insert(new ChatDebounceMarker { Id = saga.Id });
-        logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", LogMask.Phone(saga.PhoneNumber));
-        session.Delete(saga);
-        messages.Add(new AnalyzeChatSession(saga.PhoneNumber, saga.TenantId, saga.BotPhoneNumberId, saga.CombinedText));
-        return messages;
-    }
-}
-
-public static class RecoverStuckChatDebounceSagasHandler
-{
-    public static async Task<OutgoingMessages> Handle(
-        RecoverStuckChatDebounceSagas _,
-        IDocumentSession session,
-        IDocumentStore store,
-        ILogger logger,
-        CancellationToken ct)
-    {
-        var cutoff = DateTimeOffset.UtcNow - ChatDebounceSaga.StuckAfter;
+        var cutoff = now - ChatDebounceSaga.StuckAfter;
         var epoch = DateTimeOffset.UnixEpoch;
         var stuck = await session.Query<ChatDebounceSaga>()
             .Where(saga => (saga.StartedAt > epoch && saga.StartedAt < cutoff) || saga.ModifiedBefore(cutoff))
             .ToListAsync(ct);
 
-        var messages = new OutgoingMessages();
         foreach (var saga in stuck)
         {
+            if (saga.Id == current.Id)
+            {
+                continue;
+            }
+
             messages.Add(new ChatWindowExpired(saga.Id, saga.StartedAt.UtcTicks));
         }
 
-        if (stuck.Count > 0)
+        session.Store(new ChatDebounceMarker
         {
-            logger.LogInformation("Re-publishing debounce expiry for {Count} stuck chat sagas.", stuck.Count);
+            Id = ChatDebounceMarker.RecoveryId,
+            NotBefore = now.Add(ChatDebounceSaga.StuckAfter)
+        });
+    }
+}
+
+public static class ChatWindowExpiredHandler
+{
+    private const string LockSql =
+        "select mt_version from public.mt_doc_chatdebouncesaga where id = ? for update";
+
+    private const string DeleteSql =
+        "delete from public.mt_doc_chatdebouncesaga where id = ? and mt_version = ? returning id";
+
+    public static async Task Handle(
+        ChatWindowExpired expired,
+        IDocumentSession session,
+        IMessageBus bus,
+        CancellationToken ct)
+    {
+        await session.BeginTransactionAsync(ct);
+        var locked = await session.AdvancedSql.QueryAsync<long>(LockSql, ct, expired.SagaId);
+        if (locked.Count == 0)
+        {
+            return;
         }
 
-        if (await ChatDebounceRecovery.TryStartChainAsync(store, ct))
+        var saga = await session.LoadAsync<ChatDebounceSaga>(expired.SagaId, ct);
+        if (saga == null || saga.StartedAt.UtcTicks != expired.WindowStartedAtTicks)
         {
-            messages.Add(new RecoverStuckChatDebounceSagas().DelayedFor(ChatDebounceSaga.StuckAfter));
+            return;
         }
 
-        return messages;
+        var marker = await session.LoadAsync<ChatDebounceMarker>(saga.Id, ct);
+        if (marker != null && marker.ClaimedVersion == saga.Version)
+        {
+            await DeleteSagaAsync(session, saga, locked[0], ct);
+            return;
+        }
+
+        if (marker != null)
+        {
+            session.Delete(marker);
+        }
+
+        // The reply stays inside this SQS attempt. The claim commits only after it succeeds.
+        await bus.InvokeAsync(
+            new AnalyzeChatSession(saga.PhoneNumber, saga.TenantId, saga.BotPhoneNumberId, saga.CombinedText),
+            ct);
+
+        await DeleteSagaAsync(session, saga, locked[0], ct);
+        session.Insert(new ChatDebounceMarker { Id = saga.Id, ClaimedVersion = saga.Version });
+    }
+
+    private static async Task DeleteSagaAsync(
+        IDocumentSession session,
+        ChatDebounceSaga saga,
+        long version,
+        CancellationToken ct)
+    {
+        var deleted = await session.AdvancedSql.QueryAsync<string>(DeleteSql, ct, saga.Id, version);
+        if (deleted.Count == 0)
+        {
+            throw new ConcurrencyException($"Chat debounce saga '{saga.Id}' changed before it was closed.");
+        }
+
+        session.Eject(saga);
     }
 }

@@ -4,7 +4,7 @@
 -- against a database that already had 20261026_001 applied.
 --
 -- Adds mt_doc_chatdebouncemarker. One row claims a closed debounce window
--- (id = saga id) and one lease row keeps the recovery chain alive.
+-- (id = saga id). A second row (id = recovery) is the sweep lease.
 -- ChatDebounceSaga.StartedAt stays inside the document JSON, so
 -- mt_doc_chatdebouncesaga is unchanged.
 -- CREATE TABLE IF NOT EXISTS is safe where the table is already present.
@@ -18,13 +18,6 @@ CREATE TABLE IF NOT EXISTS public.mt_doc_chatdebouncemarker (
 CONSTRAINT pkey_mt_doc_chatdebouncemarker_id PRIMARY KEY (id)
 );
 
--- Grants for the Lambda login. marten_app is not the table owner (infra/db/marten_app.tf).
-DO $marten_app_grants$
-BEGIN
-    EXECUTE format('GRANT CONNECT ON DATABASE %I TO marten_app', current_database());
-    GRANT USAGE, CREATE ON SCHEMA public TO marten_app;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO marten_app;
-    GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO marten_app;
-    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO marten_app;
-END
-$marten_app_grants$;
+-- marten_app already has schema usage from 20261026_001. This table is new, so
+-- grant DML on it alone. CONNECT, CREATE, and ALL TABLES stay in that earlier migration.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.mt_doc_chatdebouncemarker TO marten_app;

@@ -10,7 +10,7 @@ public record ChatWindowExpired(string SagaId, long WindowStartedAtTicks);
 
 public record AnalyzeChatSession(string PhoneNumber, string TenantId, string BotPhoneNumberId, string CombinedText);
 
-public class ChatDebounceSaga : Saga
+public class ChatDebounceSaga : Saga, IRevisioned
 {
     public static readonly TimeSpan StuckAfter = TimeSpan.FromMinutes(10);
 
@@ -25,12 +25,9 @@ public class ChatDebounceSaga : Saga
     /// <summary>When this debounce window opened. Missing on rows written before the field existed.</summary>
     public DateTimeOffset StartedAt { get; set; }
 
-    public bool ExpiryRepublished { get; set; }
-
     public async Task<OutgoingMessages> StartsOrHandles(
         MessageReceived message,
         IDocumentSession session,
-        IDocumentStore store,
         ILogger<ChatDebounceSaga> logger,
         CancellationToken ct)
     {
@@ -65,29 +62,15 @@ public class ChatDebounceSaga : Saga
             session.Delete<ChatDebounceMarker>(Id);
             messages.Add(new ChatWindowExpired(message.SagaId, StartedAt.UtcTicks));
         }
-        else if (!ExpiryRepublished && WindowIsOverdue())
+        else if (StartedAt == default)
         {
-            if (StartedAt == default)
-            {
-                StartedAt = DateTimeOffset.UtcNow - StuckAfter - TimeSpan.FromSeconds(1);
-            }
-
-            ExpiryRepublished = true;
-            logger.LogInformation(
-                "Re-publishing debounce expiry for {PhoneNumber} because the window is overdue.",
-                maskedPhone);
-            messages.Add(new ChatWindowExpired(Id, StartedAt.UtcTicks));
+            StartedAt = DateTimeOffset.UtcNow - StuckAfter - TimeSpan.FromSeconds(1);
         }
 
-        if (await ChatDebounceRecovery.TryStartChainAsync(store, ct))
-        {
-            messages.Add(new RecoverStuckChatDebounceSagas());
-            messages.Add(new RecoverStuckChatDebounceSagas().DelayedFor(StuckAfter));
-        }
-
+        await ChatDebounceRecovery.RepublishDueAsync(session, messages, this, ct);
         return messages;
     }
 
-    private bool WindowIsOverdue() =>
+    internal bool WindowIsOverdue() =>
         StartedAt == default || StartedAt <= DateTimeOffset.UtcNow - StuckAfter;
 }

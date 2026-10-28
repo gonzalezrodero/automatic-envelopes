@@ -49,6 +49,10 @@ public class IntegrationAppFixture : IAsyncLifetime
     public const string UsageFromAddress = "noreply@core-webhook.eu";
 
     public Mock<IAmazonBedrockRuntime> BedrockClientMock { get; } = new();
+
+    public ConcurrentQueue<string> ConverseTexts { get; } = new();
+
+    public Func<CancellationToken, Task>? BeforeConverse { get; set; }
     public Mock<IWhatsAppClient> WhatsAppClientMock { get; } = new();
     public Mock<IAmazonSimpleEmailServiceV2> EmailMock { get; } = new();
     public ConcurrentQueue<Amazon.SimpleEmailV2.Model.SendEmailRequest> SentEmails { get; } = new();
@@ -193,7 +197,7 @@ public class IntegrationAppFixture : IAsyncLifetime
 
         BedrockClientMock
             .Setup(c => c.ConverseAsync(It.IsAny<ConverseRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ConverseRequest request, CancellationToken ct) =>
+            .Returns(async (ConverseRequest request, CancellationToken ct) =>
             {
                 // Extract all the text from the incoming request (which includes the system prompt + RAG chunks)
                 var allRequestText = string.Join(" ", request.System.Select(s => s.Text)) + " " +
@@ -210,6 +214,12 @@ public class IntegrationAppFixture : IAsyncLifetime
                 {
                     // Specifically for the SanitizeHistory test if needed
                     responseText = "Historial limpio y anonimizado";
+                }
+
+                ConverseTexts.Enqueue(allRequestText);
+                if (BeforeConverse != null)
+                {
+                    await BeforeConverse(ct);
                 }
 
                 return new ConverseResponse
