@@ -42,7 +42,8 @@ public class ChatDebounceSagaIntegrationTests(IntegrationAppFixture fixture)
         sagaState.PhoneNumber.Should().Be(userPhone);
 
         // Act 3: Force the timeout to simulate the 10 seconds passing instantly
-        var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(sagaId));
+        var trackedSession = await fixture.Host.InvokeMessageAndWaitAsync(
+            new ChatWindowExpired(sagaId, sagaState!.StartedAt.UtcTicks));
 
         // Assert 2: Verify Wolverine published the final consolidated command to the AI Handler
         var aiCommand = trackedSession.Executed.MessagesOf<AnalyzeChatSession>().SingleOrDefault();
@@ -83,16 +84,84 @@ public class ChatDebounceSagaIntegrationTests(IntegrationAppFixture fixture)
         sagaB.PhoneNumber.Should().Be(phone);
         sagaB.CombinedText.Should().Be("Hello from B");
 
-        var trackedA = await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(sagaA.Id));
+        var trackedA = await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(sagaA.Id, sagaA.StartedAt.UtcTicks));
         var commandA = trackedA.Executed.MessagesOf<AnalyzeChatSession>().Single();
         commandA.TenantId.Should().Be(tenantA);
         commandA.PhoneNumber.Should().Be(phone);
         commandA.CombinedText.Should().Be("Hello from A\nStill A");
 
-        var trackedB = await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(sagaB.Id));
+        var trackedB = await fixture.Host.InvokeMessageAndWaitAsync(new ChatWindowExpired(sagaB.Id, sagaB.StartedAt.UtcTicks));
         var commandB = trackedB.Executed.MessagesOf<AnalyzeChatSession>().Single();
         commandB.TenantId.Should().Be(tenantB);
         commandB.PhoneNumber.Should().Be(phone);
         commandB.CombinedText.Should().Be("Hello from B");
+    }
+
+    [Fact]
+    public async Task GivenAnOverdueSaga_WhenRecoveryRuns_ThenOnlyThatWindowIsClosedOnce()
+    {
+        var tenantId = $"tenant-recover-{Guid.NewGuid():N}";
+        var botPhoneId = $"bot-{Guid.NewGuid():N}";
+        var stalePhone = $"346{Random.Shared.Next(10000000, 99999999)}";
+        var freshPhone = $"346{Random.Shared.Next(10000000, 99999999)}";
+        await fixture.SeedTenantAsync(tenantId, botPhoneId);
+
+        var staleId = ChatSagaIds.For(tenantId, stalePhone);
+        var freshId = ChatSagaIds.For(tenantId, freshPhone);
+        using (var setup = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession())
+        {
+            setup.Store(new ChatDebounceSaga
+            {
+                Id = staleId,
+                TenantId = tenantId,
+                BotPhoneNumberId = botPhoneId,
+                PhoneNumber = stalePhone,
+                CombinedText = "Still waiting",
+                StartedAt = DateTimeOffset.UtcNow.AddMinutes(-30)
+            });
+            setup.Store(new ChatDebounceSaga
+            {
+                Id = freshId,
+                TenantId = tenantId,
+                BotPhoneNumberId = botPhoneId,
+                PhoneNumber = freshPhone,
+                CombinedText = "Just arrived",
+                StartedAt = DateTimeOffset.UtcNow
+            });
+            await setup.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var tracked = await fixture.Host.InvokeMessageAndWaitAsync(new RecoverStuckChatDebounceSagas());
+        var republished = tracked.Sent.MessagesOf<ChatWindowExpired>().Single();
+        republished.SagaId.Should().Be(staleId);
+
+        await fixture.Host.InvokeMessageAndWaitAsync(republished);
+        await fixture.Host.InvokeMessageAndWaitAsync(republished);
+
+        using var query = fixture.Host.Services.GetRequiredService<IDocumentStore>().LightweightSession(tenantId);
+        var replies = await query.Events.FetchStreamAsync(stalePhone, token: TestContext.Current.CancellationToken);
+        replies.Select(e => e.Data).OfType<ReplyGenerated>().Should().ContainSingle();
+
+        var store = fixture.Host.Services.GetRequiredService<IDocumentStore>();
+        using (var root = store.QuerySession())
+        {
+            (await root.LoadAsync<ChatDebounceSaga>(staleId, TestContext.Current.CancellationToken)).Should().BeNull();
+            (await root.LoadAsync<ChatDebounceSaga>(freshId, TestContext.Current.CancellationToken)).Should().NotBeNull();
+        }
+
+        await fixture.Host.InvokeMessageAndWaitAsync(
+            new MessageReceived("next", stalePhone, "A new question", tenantId, botPhoneId, DateTimeOffset.UtcNow));
+        await fixture.Host.InvokeMessageAndWaitAsync(republished);
+        replies = await query.Events.FetchStreamAsync(stalePhone, token: TestContext.Current.CancellationToken);
+        replies.Select(e => e.Data).OfType<ReplyGenerated>().Should().ContainSingle();
+
+        using var reopenedSession = store.QuerySession();
+        var reopened = await reopenedSession.LoadAsync<ChatDebounceSaga>(staleId, TestContext.Current.CancellationToken);
+        reopened.Should().NotBeNull();
+        var second = await fixture.Host.InvokeMessageAndWaitAsync(
+            new ChatWindowExpired(staleId, reopened!.StartedAt.UtcTicks));
+        second.Executed.MessagesOf<AnalyzeChatSession>().Should().ContainSingle();
+        replies = await query.Events.FetchStreamAsync(stalePhone, token: TestContext.Current.CancellationToken);
+        replies.Select(e => e.Data).OfType<ReplyGenerated>().Should().HaveCount(2);
     }
 }

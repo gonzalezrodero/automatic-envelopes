@@ -101,7 +101,7 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
             await setupSession.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        var msg = new ChatWindowExpired(sagaId);
+        var msg = new ChatWindowExpired(sagaId, default);
         var sqsEvent = CreateSqsEvent(JsonSerializer.Serialize(msg), "arn:aws:sqs:eu-west-1:123:automatic-envelopes-system-queue", "sqs-msg-2");
 
         // Act
@@ -117,10 +117,21 @@ public class SqsLambdaHandlerIntegrationTests(IntegrationAppFixture fixture) : I
     }
 
     [Fact]
+    public async Task FunctionHandler_RecoveryMessage_DoesNotFailTheBatch()
+    {
+        var body = JsonSerializer.Serialize(new RecoverStuckChatDebounceSagas());
+        var sqsEvent = CreateSqsEvent(body, "arn:aws:sqs:eu-west-1:123:automatic-envelopes-system-queue", "recover-1");
+
+        var result = await _handler.FunctionHandler(sqsEvent, Mock.Of<ILambdaContext>());
+
+        result.BatchItemFailures.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task FunctionHandler_SystemMessageMissingPhone_LogsWarningAndIgnores()
     {
         // Arrange
-        var msg = new ChatWindowExpired("");
+        var msg = new ChatWindowExpired("", default);
         var sqsEvent = CreateSqsEvent(JsonSerializer.Serialize(msg), "arn:aws:sqs:automatic-envelopes-system-queue", "sys-msg-id");
 
         // Act

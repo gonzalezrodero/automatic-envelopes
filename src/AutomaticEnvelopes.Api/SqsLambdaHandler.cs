@@ -108,6 +108,13 @@ public class SqsLambdaHandler
     {
         logger.LogInformation("Attempting to deserialize internal SYSTEM SQS record. MessageId: {MessageId}", record.MessageId);
 
+        if (record.Body.Contains(RecoverStuckChatDebounceSagas.Kind, StringComparison.Ordinal))
+        {
+            logger.LogInformation("Recovering stuck chat debounce sagas. MessageId: {MessageId}", record.MessageId);
+            await bus.InvokeAsync(new RecoverStuckChatDebounceSagas(), ct);
+            return;
+        }
+
         var expiredMessage = JsonSerializer.Deserialize<ChatWindowExpired>(record.Body, jsonOptions);
 
         if (expiredMessage != null && !string.IsNullOrEmpty(expiredMessage.SagaId))

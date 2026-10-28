@@ -1,17 +1,19 @@
 ﻿using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Core.Events;
 using JasperFx;
+using Marten;
 using Wolverine;
-using Wolverine.Persistence.Sagas;
 
 namespace AutomaticEnvelopes.Api.Features.Chat;
 
-public record ChatWindowExpired([property: SagaIdentity] string SagaId);
+public record ChatWindowExpired(string SagaId, long WindowStartedAtTicks);
 
 public record AnalyzeChatSession(string PhoneNumber, string TenantId, string BotPhoneNumberId, string CombinedText);
 
 public class ChatDebounceSaga : Saga
 {
+    public static readonly TimeSpan StuckAfter = TimeSpan.FromMinutes(10);
+
     [Identity]
     public string Id { get; set; } = string.Empty;
 
@@ -20,7 +22,17 @@ public class ChatDebounceSaga : Saga
     public string PhoneNumber { get; set; } = string.Empty;
     public string CombinedText { get; set; } = string.Empty;
 
-    public OutgoingMessages StartsOrHandles(MessageReceived message, ILogger<ChatDebounceSaga> logger)
+    /// <summary>When this debounce window opened. Missing on rows written before the field existed.</summary>
+    public DateTimeOffset StartedAt { get; set; }
+
+    public bool ExpiryRepublished { get; set; }
+
+    public async Task<OutgoingMessages> StartsOrHandles(
+        MessageReceived message,
+        IDocumentSession session,
+        IDocumentStore store,
+        ILogger<ChatDebounceSaga> logger,
+        CancellationToken ct)
     {
         Id = message.SagaId;
         PhoneNumber = message.PhoneNumber;
@@ -35,7 +47,6 @@ public class ChatDebounceSaga : Saga
         else if (CombinedText.Length + message.Text.Length > 4000)
         {
             logger.LogWarning("Saga context length exceeded 4000 chars for {PhoneNumber}. Dropping extra text.", maskedPhone);
-            return messages;
         }
         else
         {
@@ -49,17 +60,34 @@ public class ChatDebounceSaga : Saga
 
             TenantId = message.TenantId;
             BotPhoneNumberId = message.BotPhoneNumberId;
+            StartedAt = DateTimeOffset.UtcNow;
+            // The previous window's completion marker would block this window's expiry.
+            session.Delete<ChatDebounceMarker>(Id);
+            messages.Add(new ChatWindowExpired(message.SagaId, StartedAt.UtcTicks));
+        }
+        else if (!ExpiryRepublished && WindowIsOverdue())
+        {
+            if (StartedAt == default)
+            {
+                StartedAt = DateTimeOffset.UtcNow - StuckAfter - TimeSpan.FromSeconds(1);
+            }
 
-            messages.Add(new ChatWindowExpired(message.SagaId));
+            ExpiryRepublished = true;
+            logger.LogInformation(
+                "Re-publishing debounce expiry for {PhoneNumber} because the window is overdue.",
+                maskedPhone);
+            messages.Add(new ChatWindowExpired(Id, StartedAt.UtcTicks));
+        }
+
+        if (await ChatDebounceRecovery.TryStartChainAsync(store, ct))
+        {
+            messages.Add(new RecoverStuckChatDebounceSagas());
+            messages.Add(new RecoverStuckChatDebounceSagas().DelayedFor(StuckAfter));
         }
 
         return messages;
     }
 
-    public async Task Handle(ChatWindowExpired _, IMessageBus bus, ILogger<ChatDebounceSaga> logger)
-    {
-        logger.LogInformation("Debounce window closed for {PhoneNumber}. Dispatching to AI.", LogMask.Phone(PhoneNumber));
-        MarkCompleted();
-        await bus.InvokeAsync(new AnalyzeChatSession(PhoneNumber, TenantId, BotPhoneNumberId, CombinedText));
-    }
+    private bool WindowIsOverdue() =>
+        StartedAt == default || StartedAt <= DateTimeOffset.UtcNow - StuckAfter;
 }

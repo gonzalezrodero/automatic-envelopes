@@ -202,6 +202,11 @@ public static class Config
 
     public static IServiceCollection AddWolverine(this IServiceCollection services, IConfiguration config)
     {
+        services.ConfigureMarten(opts =>
+        {
+            opts.Schema.For<ChatDebounceMarker>().UseOptimisticConcurrency(true);
+        });
+
         return services.AddWolverine(opts =>
         {
             opts.Discovery.IncludeAssembly(typeof(Program).Assembly);
@@ -246,13 +251,18 @@ public static class Config
                 .SendInline()
                 .UseInterop(queue => new RawJsonSqsMapper());
 
+            opts.PublishMessage<RecoverStuckChatDebounceSagas>()
+                .ToSqsQueue("automatic-envelopes-system-queue")
+                .SendInline()
+                .UseInterop(queue => new RawJsonSqsMapper());
+
             if (config.GetValue<bool>("EnableSqsListener"))
             {
                 opts.ListenToSqsQueue("automatic-envelopes-messages-queue")
                     .ReceiveRawJsonMessage(typeof(ProcessWhatsAppMessage));
 
                 opts.ListenToSqsQueue("automatic-envelopes-system-queue")
-                    .ReceiveRawJsonMessage(typeof(ChatWindowExpired));
+                    .InteropWith(new SystemQueueEnvelopeMapper());
             }
         });
     }
