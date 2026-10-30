@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
@@ -48,12 +50,61 @@ public class AdminPortalAuthConfigTests
         await using var provider = BuildProvider([]);
         var policy = await GetPolicy(provider);
 
-        configured.CorsOrigins.Should().NotBeEmpty();
+        configured.CorsOrigins.Should().Equal("https://admin.core-webhook.eu");
+        configured.CorsOrigins.Should().NotContain("http://localhost:5173");
         configured.AllowedRedirectUris.Should().NotBeEmpty();
         policy.AllowAnyOrigin.Should().BeFalse();
         policy.SupportsCredentials.Should().BeTrue();
         policy.Origins.Should().BeEquivalentTo(configured.CorsOrigins);
         policy.Origins.Should().NotContain("*");
+    }
+
+    [Fact]
+    public void LocalConfiguration_AllowsLocalhostOnlyInDevelopmentAndTesting()
+    {
+        var directory = Path.GetDirectoryName(AdminAuthAppSettings.Path())!;
+        var development = AdminAuthOptions.FromConfiguration(new ConfigurationBuilder()
+            .AddJsonFile(AdminAuthAppSettings.Path())
+            .AddJsonFile(Path.Combine(directory, "appsettings.Development.json"))
+            .Build());
+        var testing = AdminAuthOptions.FromConfiguration(new ConfigurationBuilder()
+            .AddJsonFile(AdminAuthAppSettings.Path())
+            .AddJsonFile(Path.Combine(directory, "appsettings.Testing.json"))
+            .Build());
+
+        development.CorsOrigins.Should().Equal("http://localhost:5173", "https://admin.core-webhook.eu");
+        testing.CorsOrigins.Should().Equal("http://localhost:5173", "https://admin.core-webhook.eu");
+    }
+
+    [Theory]
+    [InlineData("Production", null, true)]
+    [InlineData("Production", "", true)]
+    [InlineData("Production", "   ", true)]
+    [InlineData("Production", "eu-west-1_pool", false)]
+    [InlineData("Development", "", false)]
+    [InlineData("Testing", "", false)]
+    public void AddAdminPortalAuth_RequiresUserPoolOutsideDevelopment(string environmentName, string? poolId, bool shouldThrow)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AdminAuth:AllowedOrigins:0"] = "https://admin.core-webhook.eu",
+                ["COGNITO_USER_POOL_ID"] = poolId
+            })
+            .Build();
+
+        var act = () => services.AddAdminPortalAuth(configuration, new TestHostEnvironment(environmentName));
+
+        if (shouldThrow)
+        {
+            act.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("COGNITO_USER_POOL_ID");
+        }
+        else
+        {
+            act.Should().NotThrow();
+        }
     }
 
     [Fact]
@@ -348,5 +399,13 @@ public class AdminPortalAuthConfigTests
         var context = new MessageReceivedContext(http, scheme, jwt);
         await jwt.Events.OnMessageReceived(context);
         return context.Token;
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "AutomaticEnvelopes.Tests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }

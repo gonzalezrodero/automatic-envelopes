@@ -15,7 +15,7 @@ builder.AddAwsSecureConfiguration();
 var connectionString = builder.Configuration.GetConnectionString("Marten")!;
 
 // Services
-builder.Services.AddAuthentication(builder.Configuration);
+builder.Services.AddAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddCustomAuthorization();
 builder.Services.AddRateLimiting();
 builder.Services.AddDatabase(connectionString);

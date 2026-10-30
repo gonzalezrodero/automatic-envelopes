@@ -99,9 +99,12 @@ public static class Config
         return (path.Value ?? string.Empty).TrimEnd('/').ToLowerInvariant();
     }
 
-    public static IServiceCollection AddAuthentication(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddAuthentication(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
-        return services.AddAdminPortalAuth(configuration);
+        return services.AddAdminPortalAuth(configuration, environment);
     }
 
     public static IServiceCollection AddCustomAuthorization(this IServiceCollection services)
