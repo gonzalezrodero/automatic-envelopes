@@ -117,6 +117,50 @@ public class PortalEndpointsIntegrationTests(IntegrationAppFixture fixture)
         empty.RootElement.GetArrayLength().Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("usage")]
+    [InlineData("unanswered-post")]
+    [InlineData("unanswered-delete")]
+    [InlineData("documents-post")]
+    [InlineData("documents-delete")]
+    [InlineData("ingest")]
+    public async Task CrossTenantRoutes_AreForbidden(string route)
+    {
+        var mine = $"club-{Guid.NewGuid():N}";
+        var other = $"club-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid();
+
+        await fixture.Host.Scenario(s =>
+        {
+            AsTenant(s, mine);
+            switch (route)
+            {
+                case "usage":
+                    s.Get.Url($"/tenants/{other}/usage");
+                    break;
+                case "unanswered-post":
+                    s.Post.Json(new { answer = "No." }).ToUrl($"/tenants/{other}/unanswered/{id}");
+                    break;
+                case "unanswered-delete":
+                    s.Delete.Url($"/tenants/{other}/unanswered/{id}");
+                    break;
+                case "documents-post":
+                    s.Post.MultipartFormData(TextFile("notes.txt", "Horario.")).ToUrl($"/tenants/{other}/documents");
+                    break;
+                case "documents-delete":
+                    s.Delete.Url($"/tenants/{other}/documents/{id}");
+                    break;
+                case "ingest":
+                    s.Post.MultipartFormData(TextFile("notes.txt", "Horario.")).ToUrl($"/api/admin/ingest/{other}");
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(route), route, null);
+            }
+
+            s.StatusCodeShouldBe(403);
+        });
+    }
+
     private async Task AppendChatAsync(string tenantId, string phone, string text)
     {
         var store = fixture.Host.Services.GetRequiredService<IDocumentStore>();

@@ -11,7 +11,13 @@ public static partial class TenantIds
     public static bool IsValid(string? tenantId) =>
         !string.IsNullOrEmpty(tenantId) &&
         tenantId.Length <= MaxLength &&
-        IdPattern().IsMatch(tenantId);
+        IdPattern().IsMatch(tenantId) &&
+        !IsReserved(tenantId);
+
+    // Cognito group names used for authorization are not tenant ids.
+    // "admin" is the platform-admin group; registering it would collide with that role.
+    private static bool IsReserved(string tenantId) =>
+        tenantId == TenantAccess.AdminGroup;
 
     [GeneratedRegex("^[a-z0-9-]+$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex IdPattern();

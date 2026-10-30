@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Features.Chat;
+﻿using System.Security.Claims;
+using AutomaticEnvelopes.Api.Features.Chat;
 using AutomaticEnvelopes.Api.Features.Knowledge;
 using AutomaticEnvelopes.Api.Features.Knowledge.Extractors;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
@@ -16,6 +17,10 @@ namespace AutomaticEnvelopes.Tests.Features.Knowledge;
 
 public class IngestEndpointTests
 {
+    private static readonly ClaimsPrincipal AdminUser = new(new ClaimsIdentity(
+        [new Claim("cognito:groups", TenantAccess.AdminGroup)],
+        authenticationType: "Bearer"));
+
     private readonly AutoMocker mocker;
     private readonly IngestEndpoint sut;
     private readonly Mock<IDocumentSession> sessionMock;
@@ -29,7 +34,7 @@ public class IngestEndpointTests
 
         sessionMock.Setup(s => s.LoadAsync<TenantProfile>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                    .ReturnsAsync((string id, CancellationToken ct) =>
-                       id == "TestTenant" || id == "ClubSama-123"
+                       id == "test-tenant" || id == "club-sama-123"
                        ? new TenantProfile { Id = id }
                        : null);
     }
@@ -42,7 +47,8 @@ public class IngestEndpointTests
         fileMock.Setup(f => f.FileName).Returns("big.pdf");
 
         var result = await sut.Ingest(
-            "TestTenant",
+            "test-tenant",
+            AdminUser,
             fileMock.Object,
             sessionMock.Object,
             [],
@@ -68,7 +74,8 @@ public class IngestEndpointTests
 
         var service = mocker.GetMock<IKnowledgeIngestionService>();
         var result = await sut.Ingest(
-            "TestTenant",
+            "test-tenant",
+            AdminUser,
             fileMock.Object,
             sessionMock.Object,
             [extractor.Object],
@@ -99,7 +106,8 @@ public class IngestEndpointTests
 
         var service = mocker.GetMock<IKnowledgeIngestionService>();
         var result = await sut.Ingest(
-            "TestTenant",
+            "test-tenant",
+            AdminUser,
             fileMock.Object,
             sessionMock.Object,
             [new PdfDocumentExtractor()],
@@ -125,7 +133,8 @@ public class IngestEndpointTests
 
         var service = mocker.GetMock<IKnowledgeIngestionService>();
         var result = await sut.Ingest(
-            "TestTenant",
+            "test-tenant",
+            AdminUser,
             fileMock.Object,
             sessionMock.Object,
             [new PdfDocumentExtractor()],
@@ -151,7 +160,8 @@ public class IngestEndpointTests
 
         var service = mocker.GetMock<IKnowledgeIngestionService>();
         var result = await sut.Ingest(
-            "TestTenant",
+            "test-tenant",
+            AdminUser,
             fileMock.Object,
             sessionMock.Object,
             [new PdfDocumentExtractor()],
@@ -177,7 +187,7 @@ public class IngestEndpointTests
         var service = mocker.GetMock<IKnowledgeIngestionService>().Object;
 
         // Act
-        var result = await sut.Ingest("TestTenant", fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
+        var result = await sut.Ingest("test-tenant", AdminUser, fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
 
         // Assert
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
@@ -195,7 +205,7 @@ public class IngestEndpointTests
         var service = mocker.GetMock<IKnowledgeIngestionService>().Object;
 
         // Act
-        var result = await sut.Ingest("FakeTenant", fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
+        var result = await sut.Ingest("fake-tenant", AdminUser, fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
 
         // Assert
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
@@ -217,7 +227,7 @@ public class IngestEndpointTests
         var service = mocker.GetMock<IKnowledgeIngestionService>().Object;
 
         // Act
-        var result = await sut.Ingest("TestTenant", fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
+        var result = await sut.Ingest("test-tenant", AdminUser, fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
 
         // Assert
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
@@ -237,7 +247,8 @@ public class IngestEndpointTests
         extractor.Setup(e => e.ExtractTextAsync(It.IsAny<Stream>())).ReturnsAsync("cells");
 
         var result = await sut.Ingest(
-            "TestTenant",
+            "test-tenant",
+            AdminUser,
             fileMock.Object,
             sessionMock.Object,
             [extractor.Object],
@@ -265,7 +276,7 @@ public class IngestEndpointTests
         var service = mocker.GetMock<IKnowledgeIngestionService>().Object;
 
         // Act
-        var result = await sut.Ingest("TestTenant", fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
+        var result = await sut.Ingest("test-tenant", AdminUser, fileMock.Object, sessionMock.Object, extractors, service, CancellationToken.None);
 
         // Assert
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
@@ -293,7 +304,7 @@ public class IngestEndpointTests
             .ThrowsAsync(new Exception("Random failure in DB"));
 
         // Act
-        var result = await sut.Ingest("TestTenant", fileMock.Object, sessionMock.Object, extractors, serviceMock.Object, CancellationToken.None);
+        var result = await sut.Ingest("test-tenant", AdminUser, fileMock.Object, sessionMock.Object, extractors, serviceMock.Object, CancellationToken.None);
 
         // Assert
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
@@ -308,7 +319,7 @@ public class IngestEndpointTests
     public async Task Ingest_ValidFile_ReturnsOkAndCallsServiceWithCorrectTenant()
     {
         // Arrange
-        var tenantId = "ClubSama-123";
+        var tenantId = "club-sama-123";
         var fileName = "reglas_2026.md";
         var extractedText = "# Reglas 2026\n...";
 
@@ -325,7 +336,7 @@ public class IngestEndpointTests
         var serviceMock = mocker.GetMock<IKnowledgeIngestionService>();
 
         // Act
-        var result = await sut.Ingest(tenantId, fileMock.Object, sessionMock.Object, extractors, serviceMock.Object, CancellationToken.None);
+        var result = await sut.Ingest(tenantId, AdminUser, fileMock.Object, sessionMock.Object, extractors, serviceMock.Object, CancellationToken.None);
 
         // Assert
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
@@ -339,6 +350,31 @@ public class IngestEndpointTests
             "text/markdown",
             It.IsAny<CancellationToken>()),
         Times.Once);
+    }
+
+    [Fact]
+    public async Task Ingest_CallerFromAnotherTenant_Returns403BeforeReadingTheFile()
+    {
+        var caller = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("cognito:groups", "club-a")],
+            authenticationType: "Bearer"));
+        var file = new Mock<IFormFile>();
+        file.Setup(f => f.Length).Returns(10);
+
+        var result = await sut.Ingest(
+            "club-b",
+            caller,
+            file.Object,
+            sessionMock.Object,
+            [],
+            mocker.GetMock<IKnowledgeIngestionService>().Object,
+            CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(403);
+        sessionMock.Verify(
+            s => s.LoadAsync<TenantProfile>(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     private static string ErrorOf(IResult result)
