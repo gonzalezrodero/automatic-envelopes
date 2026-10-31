@@ -12,7 +12,11 @@ public class AdminCsrfMiddlewareTests
     [Theory]
     [InlineData("GET", "/api/admin/ingest/club", null, null, null, 200)]
     [InlineData("POST", "/api/whatsapp/webhook", null, null, null, 200)]
-    [InlineData("POST", "/auth/token", null, null, null, 200)]
+    [InlineData("POST", "/auth/token", null, null, null, 403)]
+    [InlineData("POST", "/auth/token", null, Allowed, null, 200)]
+    [InlineData("POST", "/auth/token", null, "https://evil.example", null, 403)]
+    [InlineData("POST", "/auth/logout", null, Allowed, null, 200)]
+    [InlineData("POST", "/auth/logout", null, "https://evil.example", null, 403)]
     [InlineData("POST", "/api/admin/ingest/club", "Bearer machine-token", null, null, 200)]
     [InlineData("POST", "/api/admin/ingest/club", null, null, null, 403)]
     [InlineData("POST", "/api/admin/ingest/club", null, "https://evil.example", null, 403)]
@@ -55,6 +59,32 @@ public class AdminCsrfMiddlewareTests
         if (referer is not null)
         {
             context.Request.Headers.Referer = referer;
+        }
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be(status);
+    }
+
+    [Theory]
+    [InlineData("http://localhost:5173", 200)]
+    [InlineData("https://admin.core-webhook.eu", 200)]
+    [InlineData("https://evil.example", 403)]
+    [InlineData(null, 403)]
+    public async Task TokenExchange_RequiresAnAllowedOriginEvenWithoutASessionCookie(string? origin, int status)
+    {
+        var middleware = new AdminCsrfMiddleware(
+            _ => Task.CompletedTask,
+            Options.Create(new AdminAuthOptions
+            {
+                AllowedOrigins = ["http://localhost:5173", "https://admin.core-webhook.eu"]
+            }));
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Post;
+        context.Request.Path = "/auth/token";
+        if (origin is not null)
+        {
+            context.Request.Headers.Origin = origin;
         }
 
         await middleware.InvokeAsync(context);

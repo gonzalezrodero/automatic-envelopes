@@ -22,6 +22,13 @@ public sealed class AdminCsrfMiddleware(RequestDelegate next, IOptions<AdminAuth
             return false;
         }
 
+        // POST /auth/token is a login. It has no session cookie yet, so the cookie gate below
+        // would miss a cross-site code exchange. /auth/logout still checks Origin itself.
+        if (request.Path.StartsWithSegments("/auth"))
+        {
+            return true;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Headers.Authorization))
         {
             return false;
@@ -49,7 +56,9 @@ public sealed class AdminCsrfMiddleware(RequestDelegate next, IOptions<AdminAuth
         || HttpMethods.IsDelete(method);
 
     private static bool IsAdminOrPortal(PathString path) =>
-        path.StartsWithSegments("/api/admin") || path.StartsWithSegments("/tenants");
+        path.StartsWithSegments("/api/admin")
+        || path.StartsWithSegments("/tenants")
+        || path.StartsWithSegments("/auth");
 
     private static string? OriginOf(string? referer) =>
         Uri.TryCreate(referer, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Host)

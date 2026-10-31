@@ -1,4 +1,5 @@
-﻿using AutomaticEnvelopes.Api.Features.Knowledge.Extractors;
+﻿using System.Security.Claims;
+using AutomaticEnvelopes.Api.Features.Knowledge.Extractors;
 using AutomaticEnvelopes.Api.Features.Knowledge.Services;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using Marten;
@@ -18,12 +19,18 @@ public class IngestEndpoint(ILogger<IngestEndpoint> logger)
     [RequestSizeLimit(IngestLimits.MaxUploadBytes)]
     public async Task<IResult> Ingest(
         string tenantId,
+        ClaimsPrincipal user,
         IFormFile file,
         IDocumentSession session,
         IEnumerable<IDocumentExtractor> extractors,
         IKnowledgeIngestionService ingestionService,
         CancellationToken ct)
     {
+        if (TenantRequest.Reject(user, tenantId) is { } rejected)
+        {
+            return rejected;
+        }
+
         if (file == null || file.Length == 0)
         {
             return Results.BadRequest(new { Error = IngestLimits.EmptyFile });

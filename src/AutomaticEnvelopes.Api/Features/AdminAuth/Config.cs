@@ -6,13 +6,22 @@ namespace AutomaticEnvelopes.Api.Features.AdminAuth;
 
 public static class Config
 {
-    public static IServiceCollection AddAdminPortalAuth(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddAdminPortalAuth(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment? environment = null)
     {
         var authOptions = AdminAuthOptions.FromConfiguration(configuration);
         if (authOptions.CorsOrigins.Length == 0)
         {
             throw new InvalidOperationException(
                 "ADMIN_PORTAL_ORIGINS or AdminAuth:AllowedOrigins must list at least one exact origin. '*' is not allowed.");
+        }
+
+        if (string.IsNullOrWhiteSpace(authOptions.UserPoolId) && RequiresUserPool(environment))
+        {
+            throw new InvalidOperationException(
+                "COGNITO_USER_POOL_ID is required outside the Development environment.");
         }
 
         services.AddSingleton<IOptions<AdminAuthOptions>>(Options.Create(authOptions));
@@ -75,4 +84,8 @@ public static class Config
 
         return services;
     }
+
+    // Testing is the Alba host: it authenticates with a stub and must boot without a pool.
+    private static bool RequiresUserPool(IHostEnvironment? environment) =>
+        environment is not null && !environment.IsDevelopment() && !environment.IsEnvironment("Testing");
 }

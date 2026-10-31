@@ -29,6 +29,12 @@ public class TenantAccessTests
     }
 
     [Fact]
+    public void IsValid_RejectsThePlatformAdminGroupName()
+    {
+        TenantIds.IsValid(TenantAccess.AdminGroup).Should().BeFalse();
+    }
+
+    [Fact]
     public void AdminGroup_CanAccessEveryTenant_EvenWhenATenantGroupIsAlsoPresent()
     {
         var user = Principal(
