@@ -146,6 +146,17 @@ public static class ChatSessionHandler
         return (UnknownReply.Fallback, true);
     }
 
+    // VisibleReply strips the model answer. The first-contact notice is concatenated afterwards
+    // and can put the marker back, so strip once more before the text is stored and sent.
+    private static string WithoutCustomerMarker(string replyText)
+    {
+        if (!replyText.Contains(UnknownReply.Marker, StringComparison.Ordinal))
+            return replyText;
+
+        var stripped = replyText.Replace(UnknownReply.Marker, string.Empty, StringComparison.Ordinal);
+        return string.IsNullOrWhiteSpace(stripped) ? UnknownReply.Fallback : stripped;
+    }
+
     private static async Task DeliverFallbackAsync(Exception failure, ReplyWork work, Deps deps, CancellationToken ct)
     {
         var gate = new SaveGate();
@@ -319,12 +330,13 @@ public static class ChatSessionHandler
         }
 
         var syntheticMessageId = $"wamid.grouped.{Guid.NewGuid():N}";
+        var visibleReply = WithoutCustomerMarker(replyText);
 
         var replyEvent = new ReplyGenerated(
             syntheticMessageId,
             command.BotPhoneNumberId,
             command.PhoneNumber,
-            replyText,
+            visibleReply,
             command.TenantId);
 
         work.Session.Events.Append(command.PhoneNumber, replyEvent);
