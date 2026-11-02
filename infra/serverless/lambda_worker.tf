@@ -12,7 +12,7 @@ resource "aws_lambda_function" "worker" {
       ASPNETCORE_ENVIRONMENT   = var.app_environment
       WhatsApp__BaseUrl        = "https://graph.facebook.com/v19.0/"
       BedrockSettings__Region  = var.aws_region
-      BedrockSettings__ModelId = "eu.anthropic.claude-sonnet-4-6"
+      BedrockSettings__ModelId = var.bedrock_model_id
 
       SECRET_ARN_MARTEN = data.terraform_remote_state.database.outputs.db_password_secret_arn
       DB_HOST           = data.terraform_remote_state.database.outputs.db_endpoint
