@@ -103,40 +103,6 @@ jobs:
             fi
           done
 
-      # Existing parameters were created by hand. Import them before plan so
-      # apply does not try to create them. A missing parameter is left for
-      # Terraform to create with the placeholder. Do not print parameter values.
-      - name: Adopt existing WhatsApp SSM parameters
-        env:
-          TF_FOLDER: ${{ inputs.tf_folder }}
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          set -euo pipefail
-          for key in access-token app-secret verify-token phone-number-id; do
-            addr="aws_ssm_parameter.whatsapp[\"${key}\"]"
-            param="/automatic-envelopes/whatsapp/${key}"
-            if terraform state show "$addr" >/dev/null 2>&1; then
-              echo "$addr already in state"
-              continue
-            fi
-            err="$(mktemp)"
-            if aws ssm get-parameter --name "$param" --query 'Parameter.Name' --output text >"$err" 2>&1; then
-              rm -f "$err"
-              echo "Importing $addr"
-              terraform import \
-                -var-file="config/$TF_FOLDER/config.tfvars" \
-                -var="image_tag=import" \
-                "$addr" "$param"
-            elif grep -q 'ParameterNotFound' "$err"; then
-              rm -f "$err"
-              echo "$param is absent; Terraform will create it with the placeholder"
-            else
-              cat "$err" >&2
-              rm -f "$err"
-              exit 1
-            fi
-          done
-
       - name: Terraform Plan
         env:
           TF_FOLDER: ${{ inputs.tf_folder }}

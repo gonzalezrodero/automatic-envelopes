@@ -52,9 +52,35 @@ Lambdas load every parameter under `/automatic-envelopes/whatsapp/` at process s
 
 One token, one app secret, and one verify token serve every tenant. Each tenant's number must stay on this WABA or the shared token cannot send as that number.
 
-Terraform declares the four parameters as `SecureString` with the placeholder `replace-me` and ignores later changes to the value. Infrastructure is applied only by the API workflow. Do not run `terraform apply` yourself.
+These four parameters are created and rotated by hand. They are not in Terraform, so the secret never enters Terraform state. Do not commit a value and do not print it. Set each shell variable in the same terminal, then run `aws ssm put-parameter`. The names in `$ACCESS_TOKEN`, `$APP_SECRET`, `$VERIFY_TOKEN`, and `$PHONE_NUMBER_ID` are placeholders. `--overwrite` updates a parameter that already exists. Rotation is the same four commands.
 
-Confirm the parameters without printing the secret:
+```bash
+aws ssm put-parameter \
+  --name /automatic-envelopes/whatsapp/access-token \
+  --type SecureString \
+  --value "$ACCESS_TOKEN" \
+  --overwrite
+
+aws ssm put-parameter \
+  --name /automatic-envelopes/whatsapp/app-secret \
+  --type SecureString \
+  --value "$APP_SECRET" \
+  --overwrite
+
+aws ssm put-parameter \
+  --name /automatic-envelopes/whatsapp/verify-token \
+  --type SecureString \
+  --value "$VERIFY_TOKEN" \
+  --overwrite
+
+aws ssm put-parameter \
+  --name /automatic-envelopes/whatsapp/phone-number-id \
+  --type SecureString \
+  --value "$PHONE_NUMBER_ID" \
+  --overwrite
+```
+
+Confirm each parameter without printing the secret. Omit `--with-decryption`.
 
 ```bash
 aws ssm get-parameter \
@@ -63,23 +89,11 @@ aws ssm get-parameter \
   --output text
 ```
 
-Repeat for `access-token`, `app-secret`, and `phone-number-id`. Omit `--with-decryption`.
+Repeat for `access-token`, `app-secret`, and `phone-number-id`.
 
-If the workflow had to create a parameter, replace the placeholder in your shell and do not write the value into git:
+The API does not start without `verify-token`. `Program.cs` calls `AddFeatures` with `validateVerifyToken: true`, and `WhatsAppOptions` rejects a missing or blank `VerifyToken` before the process serves traffic. The worker does not run that check. `app-secret` is required to accept a webhook POST. `access-token` is required when a reply is sent.
 
-```bash
-aws ssm put-parameter \
-  --name /automatic-envelopes/whatsapp/verify-token \
-  --type SecureString \
-  --value "$VERIFY_TOKEN" \
-  --overwrite
-```
-
-Use the same command for the other three names, each from its own shell variable.
-
-A running Lambda keeps the values it read at startup. After any SSM change, redeploy with the API workflow so `automatic-envelopes-api` and `automatic-envelopes-worker` start new environments. Do not edit Lambda environment variables by hand. Terraform owns them.
-
-Destroying the serverless stack deletes these four parameters. The next apply creates them again as `replace-me`.
+Lambdas read the path once, when the process starts (`AddAwsSecureConfiguration`). A parameter created or rotated after that stays invisible until a new execution environment starts. Redeploy with the API workflow so `automatic-envelopes-api` and `automatic-envelopes-worker` cold-start. Do not edit Lambda environment variables by hand. Terraform owns those variables, and it does not own these four parameters.
 
 ## 4. Cognito group, portal user, and tenant registration
 
@@ -178,4 +192,4 @@ Search the same window for `Silent abort` if the message produced no reply.
 
 Shared by every tenant: the WABA, the Meta app, `access-token`, `app-secret`, `verify-token`, the webhook URL, and the two Lambdas. Per tenant: the tenant id, the Cognito group of the same name, the portal user, the Marten profile (`botPhoneNumberId`, prompt, labels), and the uploaded documents.
 
-Real traffic stays blocked while Meta business verification is unfinished or the number is still a test number. A placeholder SSM value (`replace-me`) also blocks a real webhook check and real sends until it is replaced and the Lambdas have started again.
+Real traffic stays blocked while Meta business verification is unfinished or the number is still a test number. A missing `verify-token` stops the API from starting. A wrong token or secret keeps the webhook or the send path failing until the `put-parameter` commands above have been run and both Lambdas have started again.
