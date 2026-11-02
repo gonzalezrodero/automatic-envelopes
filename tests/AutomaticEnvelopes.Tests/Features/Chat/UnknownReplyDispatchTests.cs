@@ -79,6 +79,29 @@ public class UnknownReplyDispatchTests
     }
 
     [Fact]
+    public async Task GivenAFaithfulNoticeThatContainsTheMarker_WhenHandled_ThenStoredAndDispatchedTextOmitsIt()
+    {
+        var phone = "34600111222";
+        var translation = FaithfulNotice().Replace("Hi!", "Hi! [[UNKNOWN]]", StringComparison.Ordinal);
+        var harness = new HandlerHarness(phone, "Abre a las 9.", firstContact: true, translation: translation);
+
+        await harness.Run("¿A qué hora abre?");
+
+        harness.Appended.Should().NotBeNull();
+        var stored = harness.Appended!.Text;
+        stored.Should().NotContain(UnknownReply.Marker);
+        stored.Should().Contain("Hi!");
+        stored.Should().Contain(BotPrompts.FallbackPrivacyPolicyUrl);
+        stored.Should().Contain("BORRAR DATOS");
+        stored.Should().EndWith("\n\nAbre a las 9.");
+        harness.Recorded.Should().BeNull();
+        harness.Bus.Verify(item => item.InvokeAsync(
+            It.Is<ReplyGenerated>(reply => reply.Text == stored),
+            It.IsAny<CancellationToken>(),
+            null), Times.Once);
+    }
+
+    [Fact]
     public async Task GivenAnUnknownReplyOnFirstContact_WhenHandled_ThenTheNoticeIsPrepended()
     {
         var phone = "34600111222";

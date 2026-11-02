@@ -59,3 +59,17 @@ variable "dns_zone_name" {
   description = "Route 53 zone in this account that will hold the development API hostname."
   default     = ""
 }
+
+variable "bedrock_model_id" {
+  type        = string
+  description = "EU Bedrock inference profile for Lambda answers. Rollback value: eu.anthropic.claude-sonnet-4-6."
+  default     = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+  validation {
+    condition = contains([
+      "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "eu.anthropic.claude-sonnet-4-6",
+    ], var.bedrock_model_id)
+    error_message = "Use the EU Haiku 4.5 profile, or eu.anthropic.claude-sonnet-4-6 to roll back. The Lambda IAM policy allows both."
+  }
+}

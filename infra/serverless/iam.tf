@@ -67,6 +67,7 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
     resources = ["*"]
   }
 
+  # Sonnet stays so reverting bedrock_model_id does not also require an IAM change.
   statement {
     sid    = "AllowBedrockSonnet46"
     effect = "Allow"
@@ -81,6 +82,44 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
     ]
   }
 
+  # Geo profiles need the profile ARN and the foundation model in every destination region.
+  # Source is eu-west-1. From Ireland, Haiku 4.5 routes to these six regions only.
+  statement {
+    sid    = "AllowBedrockHaiku45Profile"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream"
+    ]
+    resources = [
+      "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+    ]
+  }
+
+  statement {
+    sid    = "AllowBedrockHaiku45FoundationModels"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream"
+    ]
+    resources = [
+      "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "arn:aws:bedrock:eu-north-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "arn:aws:bedrock:eu-south-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "arn:aws:bedrock:eu-south-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "arn:aws:bedrock:eu-west-3::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "bedrock:InferenceProfileArn"
+      values = [
+        "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+      ]
+    }
+  }
+
 }
 
 
@@ -88,6 +127,13 @@ resource "aws_iam_role_policy" "lambda_custom" {
   name   = "${var.project_name}-lambda-custom-policy"
   role   = aws_iam_role.lambda_exec.id
   policy = data.aws_iam_policy_document.lambda_custom_permissions.json
+
+  lifecycle {
+    precondition {
+      condition     = var.aws_region == "eu-west-1"
+      error_message = "Haiku foundation-model ARNs are the destination list for source eu-west-1. Update that list before changing aws_region."
+    }
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "attach_bootstrap_bedrock_policy" {
