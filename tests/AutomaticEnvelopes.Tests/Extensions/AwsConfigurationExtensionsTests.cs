@@ -84,7 +84,7 @@ public class AwsConfigurationExtensionsTests : IDisposable
     }
 
     [Fact]
-    public void AddAwsSecureConfigurationCore_IgnoresNestedTenantAccessTokens()
+    public void AddAwsSecureConfigurationCore_DoesNotLoadAccessTokens()
     {
         var testPath = "/automatic-envelopes/whatsapp/";
         Environment.SetEnvironmentVariable("SSM_PATH_WHATSAPP", testPath);
@@ -94,6 +94,7 @@ public class AwsConfigurationExtensionsTests : IDisposable
             Parameters =
             [
                 new Parameter { Name = $"{testPath}access-token", Value = "shared-token" },
+                new Parameter { Name = $"{testPath}app-secret", Value = "app-secret-value" },
                 new Parameter { Name = $"{testPath}tenants/club-a/access-token", Value = "tenant-token" }
             ]
         };
@@ -107,7 +108,12 @@ public class AwsConfigurationExtensionsTests : IDisposable
 
         builder.AddAwsSecureConfigurationCore(secretsMock.Object, ssmMock.Object);
 
-        builder.Configuration["WhatsApp:AccessToken"].Should().Be("shared-token");
+        builder.Configuration["WhatsApp:AccessToken"].Should().BeNull();
+        builder.Configuration["WhatsApp:AppSecret"].Should().Be("app-secret-value");
+        var serialized = builder.Configuration.GetSection("WhatsApp").GetChildren()
+            .Select(child => child.Value);
+        serialized.Should().NotContain("shared-token");
+        serialized.Should().NotContain("tenant-token");
     }
 
     [Fact]

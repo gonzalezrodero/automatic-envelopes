@@ -17,13 +17,13 @@
 #   TENANT_SYSTEM_PROMPT TENANT_PRIVACY_POLICY_URL
 # TENANT_SHORT_NAME defaults to the name argument.
 #
-# Optional WhatsApp access token for this tenant only:
+# Required on a real run. Never printed:
 #   WHATSAPP_ACCESS_TOKEN
-# When set, the script stores it at
-# /automatic-envelopes/whatsapp/tenants/<tenantId>/access-token
-# (SecureString, --overwrite). When unset, the tenant keeps the shared
-# /automatic-envelopes/whatsapp/access-token. botPhoneNumberId is stored
-# per tenant on the tenant document and is the only phone number id used.
+# Stored at /automatic-envelopes/whatsapp/tenants/<tenantId>/access-token
+# (SecureString, --overwrite). Required for every tenant, including one on
+# the owner's WABA. The same value may be stored for more than one tenant.
+# botPhoneNumberId is stored per tenant on the tenant document and is the
+# only phone number id used.
 set -euo pipefail
 
 if [[ $- == *x* ]]; then
@@ -51,11 +51,11 @@ curl command with $ADMIN_ACCESS_TOKEN unexpanded.
 
 --dry-run prints the AWS and curl commands and does not call AWS or the API.
 
-WHATSAPP_ACCESS_TOKEN, when set, is stored as a SecureString at
-/automatic-envelopes/whatsapp/tenants/<tenantId>/access-token. The value is
-not printed. When it is unset, the script prints the put-parameter command
-and does not call SSM. botPhoneNumberId is stored per tenant on the tenant
-document and is the only phone number id used.
+WHATSAPP_ACCESS_TOKEN is required for a real run. It is stored as a
+SecureString at /automatic-envelopes/whatsapp/tenants/<tenantId>/access-token.
+The value is not printed. A real run stops when it is unset. botPhoneNumberId
+is stored per tenant on the tenant document and is the only phone number id
+used.
 EOF
 }
 
@@ -175,10 +175,9 @@ EOF
 ensure_whatsapp_access_token() {
   local name="/automatic-envelopes/whatsapp/tenants/${TENANT_ID}/access-token"
   if [[ -z "${WHATSAPP_ACCESS_TOKEN:-}" ]]; then
-    echo "WHATSAPP_ACCESS_TOKEN is unset. This tenant keeps the shared access token until the per-tenant parameter exists."
-    echo "botPhoneNumberId is stored per tenant on the tenant document and is the only phone number id used."
-    print_whatsapp_access_token_command
-    return 0
+    echo "WHATSAPP_ACCESS_TOKEN is required. A real run stores it at ${name} and does not print the value." >&2
+    print_whatsapp_access_token_command >&2
+    exit 1
   fi
   if [[ "$WHATSAPP_ACCESS_TOKEN" == *$'\n'* || "$WHATSAPP_ACCESS_TOKEN" == *$'\r'* ]]; then
     echo "WHATSAPP_ACCESS_TOKEN contains a newline. Refusing to store it." >&2
@@ -382,6 +381,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "dry-run: no AWS or API calls."
   echo "dry-run: would require AWS_PROFILE for the ${ENV_NAME} account ${EXPECTED_ACCOUNT}."
   echo "dry-run: would look up pool id with: aws cognito-idp list-user-pools --max-results 60 (name ${POOL_NAME})."
+  echo "dry-run: a real run requires WHATSAPP_ACCESS_TOKEN and does not print it."
   echo "dry-run: botPhoneNumberId is stored per tenant on the tenant document and is the only phone number id used."
   print_whatsapp_access_token_command
   run_or_print aws cognito-idp create-group --user-pool-id '<pool-id>' --group-name "$TENANT_ID" --description "Portal users for tenant ${TENANT_ID}."
@@ -389,6 +389,11 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   run_or_print aws cognito-idp admin-add-user-to-group --user-pool-id '<pool-id>' --username "$EMAIL" --group-name "$TENANT_ID"
   print_register_command
   exit 0
+fi
+
+if [[ -z "${WHATSAPP_ACCESS_TOKEN:-}" ]]; then
+  echo "WHATSAPP_ACCESS_TOKEN is required. A real run stores it at /automatic-envelopes/whatsapp/tenants/${TENANT_ID}/access-token and does not print the value." >&2
+  exit 1
 fi
 
 require_aws

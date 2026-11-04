@@ -58,35 +58,43 @@ public class WhatsAppAccessTokenSourceTests
     }
 
     [Fact]
-    public async Task MissingParameter_UsesTheSharedToken_AndCachesTheFallback()
+    public async Task MissingParameter_Throws_AndIsNotCached()
     {
         ssm.Setup(client => client.GetParameterAsync(
                 It.IsAny<GetParameterRequest>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ParameterNotFoundException("missing"));
         var source = CreateSource();
+        const string path = "/automatic-envelopes/whatsapp/tenants/club-a/access-token";
 
-        var first = await source.GetAccessTokenAsync(TenantId, CancellationToken.None);
-        var second = await source.GetAccessTokenAsync(TenantId, CancellationToken.None);
+        var first = () => source.GetAccessTokenAsync(TenantId, CancellationToken.None);
+        var second = () => source.GetAccessTokenAsync(TenantId, CancellationToken.None);
 
-        first.Should().Be(SharedToken);
-        second.Should().Be(SharedToken);
+        (await first.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain(TenantId).And.Contain(path);
+        (await second.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain(path);
         ssm.Verify(client => client.GetParameterAsync(
             It.IsAny<GetParameterRequest>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+        logger.Text.Should().Contain(TenantId);
+        logger.Text.Should().Contain(path);
         logger.Text.Should().NotContain(SharedToken);
         logger.Text.Should().NotContain(TenantToken);
     }
 
     [Fact]
-    public async Task EmptyParameter_UsesTheSharedToken()
+    public async Task EmptyParameter_ThrowsTheParameterPath()
     {
         SetupParameter(TenantId, "  ");
         var source = CreateSource();
+        const string path = "/automatic-envelopes/whatsapp/tenants/club-a/access-token";
 
-        var token = await source.GetAccessTokenAsync(TenantId, CancellationToken.None);
+        var act = () => source.GetAccessTokenAsync(TenantId, CancellationToken.None);
 
-        token.Should().Be(SharedToken);
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain(TenantId).And.Contain(path).And.NotContain("  ");
+        logger.Text.Should().Contain(path);
         logger.Text.Should().NotContain(SharedToken);
     }
 
@@ -140,17 +148,21 @@ public class WhatsAppAccessTokenSourceTests
     {
         var source = CreateSource();
 
-        var token = await source.GetAccessTokenAsync(tenantId, CancellationToken.None);
+        var act = () => source.GetAccessTokenAsync(tenantId, CancellationToken.None);
 
-        token.Should().Be(SharedToken);
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain($"tenant '{tenantId}'").And.Contain(WhatsAppAccessTokenSource.ParameterPathPattern);
         ssm.Verify(client => client.GetParameterAsync(
             It.IsAny<GetParameterRequest>(),
             It.IsAny<CancellationToken>()), Times.Never);
+        logger.Text.Should().Contain("cannot be read because the tenant id is invalid");
+        logger.Text.Should().Contain(WhatsAppAccessTokenSource.ParameterPathPattern);
         logger.Text.Should().NotContain(SharedToken);
+        logger.Text.Should().NotContain(TenantToken);
     }
 
     [Fact]
-    public async Task WithoutSsm_UsesTheSharedToken()
+    public async Task WithoutSsm_UsesTheConfiguredToken()
     {
         var source = new WhatsAppAccessTokenSource(
             null,

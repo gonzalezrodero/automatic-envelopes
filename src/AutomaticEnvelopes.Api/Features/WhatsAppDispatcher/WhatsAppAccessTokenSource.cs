@@ -22,6 +22,7 @@ public sealed class WhatsAppAccessTokenSource(
     TimeProvider? time = null) : IWhatsAppAccessTokenSource
 {
     public const string TenantParameterPrefix = "/automatic-envelopes/whatsapp/tenants/";
+    public const string ParameterPathPattern = "/automatic-envelopes/whatsapp/tenants/{tenantId}/access-token";
     public static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
     private readonly TimeProvider clock = time ?? TimeProvider.System;
@@ -33,16 +34,12 @@ public sealed class WhatsAppAccessTokenSource(
 
     public async Task<string> GetAccessTokenAsync(string tenantId, CancellationToken ct)
     {
-        // Local runs and tests have no SSM_PATH_WHATSAPP. They keep the token from configuration.
+        // Local runs and tests have no SSM_PATH_WHATSAPP. They keep the configured token.
         if (ssm is null)
-            return SharedToken();
+            return ConfiguredToken();
 
         if (!TenantIds.IsValid(tenantId))
-        {
-            logger.LogWarning(
-                "Tenant id cannot be used as an SSM path segment. Using the shared WhatsApp access token.");
-            return SharedToken();
-        }
+            throw TokenFailure(tenantId, ParameterPathPattern, "cannot be read because the tenant id is invalid");
 
         var parameterName = ParameterName(tenantId);
         if (TryGetCached(parameterName, out var cached))
@@ -75,26 +72,28 @@ public sealed class WhatsAppAccessTokenSource(
                     tenantId);
                 return value;
             }
-
-            logger.LogWarning(
-                "Per-tenant WhatsApp access token parameter is empty. Using the shared access token. TenantId: {TenantId}",
-                tenantId);
         }
         catch (ParameterNotFoundException)
         {
-            logger.LogInformation(
-                "Per-tenant WhatsApp access token is not in SSM. Using the shared access token. TenantId: {TenantId}",
-                tenantId);
+            throw TokenFailure(tenantId, parameterName, "is missing");
         }
 
-        return SharedToken();
+        throw TokenFailure(tenantId, parameterName, "is empty");
     }
 
-    private string SharedToken()
+    private string ConfiguredToken()
     {
         var token = options.Value.AccessToken;
         ArgumentException.ThrowIfNullOrWhiteSpace(token);
         return token;
+    }
+
+    private InvalidOperationException TokenFailure(string? tenantId, string parameterName, string reason)
+    {
+        var id = tenantId ?? string.Empty;
+        var message = $"WhatsApp access token {reason} for tenant '{id}'. Parameter: {parameterName}.";
+        logger.LogError("{Message}", message);
+        return new InvalidOperationException(message);
     }
 
     private bool TryGetCached(string parameterName, out string token)
