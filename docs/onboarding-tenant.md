@@ -41,18 +41,19 @@ Until Meta business verification is complete, and until this is a real registere
 
 ## 3. Shared SSM parameters
 
-Lambdas load the parameters directly under `/automatic-envelopes/whatsapp/` at process start (`SSM_PATH_WHATSAPP`). The read is not recursive, so a name under `tenants/` is not part of this load. The four names:
+Lambdas load the parameters directly under `/automatic-envelopes/whatsapp/` at process start (`SSM_PATH_WHATSAPP`). The read is not recursive, so a name under `tenants/` is not part of this load. The three names:
 
 | Name | Loaded as | Role |
 | --- | --- | --- |
 | `access-token` | `WhatsApp:AccessToken` | Shared bearer token. Used when the tenant has no parameter at `/automatic-envelopes/whatsapp/tenants/{tenantId}/access-token`. |
 | `app-secret` | `WhatsApp:AppSecret` | Checks `X-Hub-Signature-256` on webhook POST. Stays global. It belongs to the Meta app. |
 | `verify-token` | `WhatsApp:VerifyToken` | Webhook GET challenge. Stays global. The API process does not start when this is missing or blank (`Program.cs` validates it). The worker does not. |
-| `phone-number-id` | `WhatsApp:PhoneNumberId` | Stored for operators. The bot does not route on it and does not send with it. Routing and sending use each tenant's `botPhoneNumberId`. |
 
-One app secret and one verify token serve every tenant. The shared access token is the fallback. A number on another WABA needs its own access token in the per-tenant parameter below. Sending still uses that tenant's `botPhoneNumberId`.
+`botPhoneNumberId` is stored per tenant on the tenant document. It is the only phone number id the bot uses. Meta sends it as `metadata.phone_number_id`. The worker finds the tenant with that id, and the send call puts it in the Graph URL.
 
-These four parameters are created and rotated by hand. They are not in Terraform, so the secret never enters Terraform state. Do not commit a value and do not print it. Set each shell variable in the same terminal, then run `aws ssm put-parameter`. The names in `$ACCESS_TOKEN`, `$APP_SECRET`, `$VERIFY_TOKEN`, and `$PHONE_NUMBER_ID` are placeholders. `--overwrite` updates a parameter that already exists. Rotation is the same four commands.
+One app secret and one verify token serve every tenant. The shared access token is the fallback. A number on another WABA needs its own access token in the per-tenant parameter below.
+
+These three parameters are created and rotated by hand. They are not in Terraform, so the secret never enters Terraform state. Do not commit a value and do not print it. Set each shell variable in the same terminal, then run `aws ssm put-parameter`. The names in `$ACCESS_TOKEN`, `$APP_SECRET`, and `$VERIFY_TOKEN` are placeholders. `--overwrite` updates a parameter that already exists. Rotation is the same three commands.
 
 ```bash
 aws ssm put-parameter \
@@ -72,12 +73,6 @@ aws ssm put-parameter \
   --type SecureString \
   --value "$VERIFY_TOKEN" \
   --overwrite
-
-aws ssm put-parameter \
-  --name /automatic-envelopes/whatsapp/phone-number-id \
-  --type SecureString \
-  --value "$PHONE_NUMBER_ID" \
-  --overwrite
 ```
 
 Confirm each parameter without printing the secret. Omit `--with-decryption`.
@@ -89,19 +84,17 @@ aws ssm get-parameter \
   --output text
 ```
 
-Repeat for `access-token`, `app-secret`, and `phone-number-id`.
+Repeat for `access-token` and `app-secret`.
 
 The API does not start without `verify-token`. `Program.cs` calls `AddFeatures` with `validateVerifyToken: true`, and `WhatsAppOptions` rejects a missing or blank `VerifyToken` before the process serves traffic. The worker does not run that check. `app-secret` is required to accept a webhook POST. The shared `access-token` is required when a reply is sent for a tenant that has no per-tenant parameter.
 
-Lambdas read these four names once, when the process starts (`AddAwsSecureConfiguration`). A shared parameter created or rotated after that stays invisible until a new execution environment starts. Redeploy with the API workflow so `automatic-envelopes-api` and `automatic-envelopes-worker` cold-start. Do not edit Lambda environment variables by hand. Terraform owns those variables, and it does not own these four parameters.
+Lambdas read these three names once, when the process starts (`AddAwsSecureConfiguration`). A shared parameter created or rotated after that stays invisible until a new execution environment starts. Redeploy with the API workflow so `automatic-envelopes-api` and `automatic-envelopes-worker` cold-start. Do not edit Lambda environment variables by hand. Terraform owns those variables, and it does not own these three parameters.
 
 ### Per-tenant access token
 
 When the worker sends a reply it reads `/automatic-envelopes/whatsapp/tenants/{tenantId}/access-token` from SSM. The value stays in memory for 5 minutes. Creating or rotating that parameter does not need a redeploy. After the cache expires, the next reply uses the new value. If the parameter does not exist, the worker uses the shared `access-token` loaded at startup. Current tenants keep working with no new parameter and no redeploy.
 
-Do not create a per-tenant `phone-number-id`. The id Meta sends as `metadata.phone_number_id` is stored as `botPhoneNumberId` on the tenant document, and that is the id the send call puts in the Graph URL.
-
-`app-secret` and `verify-token` stay on the shared path.
+`botPhoneNumberId` on the tenant document is the only phone number id used. `app-secret` and `verify-token` stay on the shared path.
 
 ```bash
 aws ssm put-parameter \
