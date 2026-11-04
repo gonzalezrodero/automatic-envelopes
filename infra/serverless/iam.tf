@@ -54,10 +54,13 @@ data "aws_iam_policy_document" "lambda_custom_permissions" {
     ]
     resources = [
       data.terraform_remote_state.database.outputs.db_password_secret_arn,
+      # Includes /automatic-envelopes/whatsapp/tenants/* for per-tenant access tokens.
+      # The worker role sources this document. Do not add aws_ssm_parameter for those values.
       "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/automatic-envelopes/*"
     ]
   }
 
+  # Decrypts Secrets Manager payloads and SSM SecureString parameters (default key alias/aws/ssm).
   statement {
     sid    = "AllowKMSDecryptForSecrets"
     effect = "Allow"

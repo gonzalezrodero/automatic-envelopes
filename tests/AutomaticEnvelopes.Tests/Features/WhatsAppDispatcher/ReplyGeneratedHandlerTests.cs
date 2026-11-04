@@ -1,9 +1,7 @@
-using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 
 namespace AutomaticEnvelopes.Tests.Features.WhatsAppDispatcher;
@@ -29,13 +27,16 @@ public class ReplyGeneratedHandlerTests
             .ReturnsAsync(new WhatsAppResponse("whatsapp", [], [new WhatsAppMessageMetadata("wamid.out")]));
 
         var reply = new ReplyGenerated("wamid.in", "bot-phone", "34600111222", "Hola, el club abre a las 9.", "club-a");
+        var tokens = new RecordingTokenSource("test-token");
 
         await ReplyGeneratedHandler.Handle(
             reply,
             client.Object,
-            Options.Create(new WhatsAppOptions { AccessToken = "test-token" }),
+            tokens,
             NullLogger.Instance,
             CancellationToken.None);
+
+        tokens.TenantId.Should().Be("club-a");
 
         phoneNumberId.Should().Be("bot-phone");
         sent.Should().NotBeNull();
@@ -46,5 +47,16 @@ public class ReplyGeneratedHandlerTests
             It.IsAny<WhatsAppTextRequest>(),
             "Bearer test-token",
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private sealed class RecordingTokenSource(string token) : IWhatsAppAccessTokenSource
+    {
+        public string? TenantId { get; private set; }
+
+        public Task<string> GetAccessTokenAsync(string tenantId, CancellationToken ct)
+        {
+            TenantId = tenantId;
+            return Task.FromResult(token);
+        }
     }
 }

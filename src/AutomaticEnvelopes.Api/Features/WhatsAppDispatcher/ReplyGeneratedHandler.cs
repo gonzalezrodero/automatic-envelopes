@@ -1,7 +1,5 @@
 ﻿using AutomaticEnvelopes.Api.Common;
-using AutomaticEnvelopes.Api.Common.Configuration;
 using AutomaticEnvelopes.Api.Core.Events;
-using Microsoft.Extensions.Options;
 
 namespace AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
 
@@ -10,14 +8,13 @@ public static class ReplyGeneratedHandler
     public static async Task Handle(
         ReplyGenerated @event,
         IWhatsAppClient whatsappClient,
-        IOptions<WhatsAppOptions> options,
+        IWhatsAppAccessTokenSource accessTokens,
         ILogger logger,
         CancellationToken ct)
     {
-        var config = options.Value;
-        ArgumentException.ThrowIfNullOrWhiteSpace(config.AccessToken);
-
-        var token = $"Bearer {config.AccessToken}";
+        // BotPhoneNumberId on the event is the tenant's Graph phone number id.
+        var accessToken = await accessTokens.GetAccessTokenAsync(@event.TenantId, ct);
+        var token = $"Bearer {accessToken}";
 
         var request = new WhatsAppTextRequest(
             To: @event.PhoneNumber,

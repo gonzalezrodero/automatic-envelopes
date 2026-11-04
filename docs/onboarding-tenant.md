@@ -20,7 +20,7 @@ Examples: `club-example`. Not `Club_Example`, not `admin`.
 
 ## 2. Meta (manual)
 
-All tenants share one WhatsApp Business account (WABA), one Meta app, and one webhook. Add the customer's number to that WABA. Do not create a second app or a second token.
+All tenants share one Meta app and one webhook. `app-secret` and `verify-token` stay on that app. An access token may be per tenant. A tenant that stays on the shared WhatsApp Business account (WABA) can keep using the shared access token. Do not create a second Meta app.
 
 1. In WhatsApp Manager, open the existing WABA and add the customer's phone number. Finish the display-name review and the registration code Meta shows.
 2. Copy the **Phone number ID**. It is a numeric id. It is not the E.164 number customers dial. That id is `botPhoneNumberId`.
@@ -41,16 +41,16 @@ Until Meta business verification is complete, and until this is a real registere
 
 ## 3. Shared SSM parameters
 
-Lambdas load every parameter under `/automatic-envelopes/whatsapp/` at process start (`SSM_PATH_WHATSAPP`). The four names:
+Lambdas load the parameters directly under `/automatic-envelopes/whatsapp/` at process start (`SSM_PATH_WHATSAPP`). The read is not recursive, so a name under `tenants/` is not part of this load. The four names:
 
 | Name | Loaded as | Role |
 | --- | --- | --- |
-| `access-token` | `WhatsApp:AccessToken` | Bearer token for the shared WABA. Required to send a reply. |
-| `app-secret` | `WhatsApp:AppSecret` | Checks `X-Hub-Signature-256` on webhook POST. |
-| `verify-token` | `WhatsApp:VerifyToken` | Webhook GET challenge. The API process does not start when this is missing or blank (`Program.cs` validates it). The worker does not. |
-| `phone-number-id` | `WhatsApp:PhoneNumberId` | Stored for operators. The bot does not route on it. Routing uses each tenant's `botPhoneNumberId`. |
+| `access-token` | `WhatsApp:AccessToken` | Shared bearer token. Used when the tenant has no parameter at `/automatic-envelopes/whatsapp/tenants/{tenantId}/access-token`. |
+| `app-secret` | `WhatsApp:AppSecret` | Checks `X-Hub-Signature-256` on webhook POST. Stays global. It belongs to the Meta app. |
+| `verify-token` | `WhatsApp:VerifyToken` | Webhook GET challenge. Stays global. The API process does not start when this is missing or blank (`Program.cs` validates it). The worker does not. |
+| `phone-number-id` | `WhatsApp:PhoneNumberId` | Stored for operators. The bot does not route on it and does not send with it. Routing and sending use each tenant's `botPhoneNumberId`. |
 
-One token, one app secret, and one verify token serve every tenant. Each tenant's number must stay on this WABA or the shared token cannot send as that number.
+One app secret and one verify token serve every tenant. The shared access token is the fallback. A number on another WABA needs its own access token in the per-tenant parameter below. Sending still uses that tenant's `botPhoneNumberId`.
 
 These four parameters are created and rotated by hand. They are not in Terraform, so the secret never enters Terraform state. Do not commit a value and do not print it. Set each shell variable in the same terminal, then run `aws ssm put-parameter`. The names in `$ACCESS_TOKEN`, `$APP_SECRET`, `$VERIFY_TOKEN`, and `$PHONE_NUMBER_ID` are placeholders. `--overwrite` updates a parameter that already exists. Rotation is the same four commands.
 
@@ -91,9 +91,36 @@ aws ssm get-parameter \
 
 Repeat for `access-token`, `app-secret`, and `phone-number-id`.
 
-The API does not start without `verify-token`. `Program.cs` calls `AddFeatures` with `validateVerifyToken: true`, and `WhatsAppOptions` rejects a missing or blank `VerifyToken` before the process serves traffic. The worker does not run that check. `app-secret` is required to accept a webhook POST. `access-token` is required when a reply is sent.
+The API does not start without `verify-token`. `Program.cs` calls `AddFeatures` with `validateVerifyToken: true`, and `WhatsAppOptions` rejects a missing or blank `VerifyToken` before the process serves traffic. The worker does not run that check. `app-secret` is required to accept a webhook POST. The shared `access-token` is required when a reply is sent for a tenant that has no per-tenant parameter.
 
-Lambdas read the path once, when the process starts (`AddAwsSecureConfiguration`). A parameter created or rotated after that stays invisible until a new execution environment starts. Redeploy with the API workflow so `automatic-envelopes-api` and `automatic-envelopes-worker` cold-start. Do not edit Lambda environment variables by hand. Terraform owns those variables, and it does not own these four parameters.
+Lambdas read these four names once, when the process starts (`AddAwsSecureConfiguration`). A shared parameter created or rotated after that stays invisible until a new execution environment starts. Redeploy with the API workflow so `automatic-envelopes-api` and `automatic-envelopes-worker` cold-start. Do not edit Lambda environment variables by hand. Terraform owns those variables, and it does not own these four parameters.
+
+### Per-tenant access token
+
+When the worker sends a reply it reads `/automatic-envelopes/whatsapp/tenants/{tenantId}/access-token` from SSM. The value stays in memory for 5 minutes. Creating or rotating that parameter does not need a redeploy. After the cache expires, the next reply uses the new value. If the parameter does not exist, the worker uses the shared `access-token` loaded at startup. Current tenants keep working with no new parameter and no redeploy.
+
+Do not create a per-tenant `phone-number-id`. The id Meta sends as `metadata.phone_number_id` is stored as `botPhoneNumberId` on the tenant document, and that is the id the send call puts in the Graph URL.
+
+`app-secret` and `verify-token` stay on the shared path.
+
+```bash
+aws ssm put-parameter \
+  --name "/automatic-envelopes/whatsapp/tenants/${TENANT_ID}/access-token" \
+  --type SecureString \
+  --value "$WHATSAPP_ACCESS_TOKEN" \
+  --overwrite
+```
+
+Confirm without printing the secret. Omit `--with-decryption`.
+
+```bash
+aws ssm get-parameter \
+  --name "/automatic-envelopes/whatsapp/tenants/${TENANT_ID}/access-token" \
+  --query 'Parameter.{Name:Name,Type:Type,Version:Version}' \
+  --output text
+```
+
+`scripts/onboard-tenant.sh` runs that `put-parameter` when `WHATSAPP_ACCESS_TOKEN` is set. It never prints the value. When the variable is unset, the script prints the command and leaves the tenant on the shared token. Leave it unset for a tenant that should keep using the shared WABA token.
 
 ## 4. Cognito group, portal user, and tenant registration
 
@@ -107,12 +134,15 @@ Preview:
 scripts/onboard-tenant.sh --dry-run prod club-example owner@example.com PHONE_NUMBER_ID "Example Club"
 ```
 
-Real run. Group exists: skip. User exists: skip. The user is still added to the group (safe to repeat). Registration is sent only when `ADMIN_ACCESS_TOKEN` is set.
+Real run. Group exists: skip. User exists: skip. The user is still added to the group (safe to repeat). Registration is sent only when `ADMIN_ACCESS_TOKEN` is set. The per-tenant access token is stored only when `WHATSAPP_ACCESS_TOKEN` is set.
 
 ```bash
 export AWS_PROFILE=the-profile-for-this-account
+export WHATSAPP_ACCESS_TOKEN
 scripts/onboard-tenant.sh prod club-example owner@example.com PHONE_NUMBER_ID "Example Club"
 ```
+
+`export WHATSAPP_ACCESS_TOKEN` keeps a value already set in the shell. Do not put the token in the command. Omit it when this tenant should use the shared access token.
 
 The pool allows admin-created users only. The script calls `admin-create-user` with the email as the username and asks Cognito to email the temporary password. The customer signs in with that email.
 
@@ -190,6 +220,6 @@ Search the same window for `Silent abort` if the message produced no reply.
 
 ## What is shared, and what blocks real use
 
-Shared by every tenant: the WABA, the Meta app, `access-token`, `app-secret`, `verify-token`, the webhook URL, and the two Lambdas. Per tenant: the tenant id, the Cognito group of the same name, the portal user, the Marten profile (`botPhoneNumberId`, prompt, labels), and the uploaded documents.
+Shared by every tenant: the Meta app, `app-secret`, `verify-token`, the webhook URL, the two Lambdas, and the fallback `access-token`. Per tenant: the tenant id, the Cognito group of the same name, the portal user, the Marten profile (`botPhoneNumberId`, prompt, labels), the uploaded documents, and, when the tenant has its own token, `/automatic-envelopes/whatsapp/tenants/{tenantId}/access-token`.
 
-Real traffic stays blocked while Meta business verification is unfinished or the number is still a test number. A missing `verify-token` stops the API from starting. A wrong token or secret keeps the webhook or the send path failing until the `put-parameter` commands above have been run and both Lambdas have started again.
+Real traffic stays blocked while Meta business verification is unfinished or the number is still a test number. A missing `verify-token` stops the API from starting. A wrong app secret or shared access token stays wrong until the shared `put-parameter` commands have been run and both Lambdas have started again. A wrong per-tenant access token is fixed by `put-parameter --overwrite` on that tenant's name. The worker picks it up within 5 minutes. No redeploy.
