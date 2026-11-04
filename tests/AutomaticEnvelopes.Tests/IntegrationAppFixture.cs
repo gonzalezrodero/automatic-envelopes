@@ -130,7 +130,6 @@ public class IntegrationAppFixture : IAsyncLifetime
                 services.Configure<WhatsAppOptions>(opts => {
                     opts.AccessToken = "integration_test_access_token";
                     opts.BaseUrl = "https://dummy-whatsapp-api.com";
-                    opts.PhoneNumberId = "integration_test_phone_id";
                     opts.AppSecret = "integration_test_secret";
                     opts.VerifyToken = "integration_test_verify_token";
                 });

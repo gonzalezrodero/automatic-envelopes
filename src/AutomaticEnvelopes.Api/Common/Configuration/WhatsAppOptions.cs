@@ -10,7 +10,6 @@ public class WhatsAppOptions
     public string VerifyToken { get; set; } = string.Empty;
     public string AppSecret { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = string.Empty;
-    public string PhoneNumberId { get; set; } = string.Empty;
     public string AccessToken { get; set; } = string.Empty;
 }
 

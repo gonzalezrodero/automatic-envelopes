@@ -53,14 +53,12 @@ public class WhatsAppOptionsValidatorTests
         shipped.Should().NotContain("dummy_verify_token");
         shipped.Should().NotContain("dummy_secret");
         shipped.Should().NotContain("dummy_token");
-        shipped.Should().NotContain("26096431083348486");
 
         using var document = JsonDocument.Parse(shipped);
         var whatsApp = document.RootElement.GetProperty("WhatsApp");
         whatsApp.TryGetProperty("VerifyToken", out _).Should().BeFalse();
         whatsApp.TryGetProperty("AppSecret", out _).Should().BeFalse();
         whatsApp.TryGetProperty("AccessToken", out _).Should().BeFalse();
-        whatsApp.TryGetProperty("PhoneNumberId", out _).Should().BeFalse();
         whatsApp.GetProperty("BaseUrl").GetString().Should().NotBeNullOrWhiteSpace();
         document.RootElement.TryGetProperty("ConnectionStrings", out _).Should().BeFalse();
 

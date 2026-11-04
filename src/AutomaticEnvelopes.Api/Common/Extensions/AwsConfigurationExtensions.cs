@@ -77,14 +77,20 @@ public static class AwsConfigurationExtensions
             var response = ssmClient.GetParametersByPathAsync(new GetParametersByPathRequest
             {
                 Path = ssmPath,
-                WithDecryption = true
+                WithDecryption = true,
+                // One level only. Access tokens are read per tenant at send time.
+                Recursive = false
             }).GetAwaiter().GetResult();
 
             foreach (var param in response.Parameters)
             {
-                // Map AWS path to .NET IOptions structure 
+                // Map AWS path to .NET IOptions structure
                 // e.g., "/automatic-envelopes/whatsapp/app-secret" -> "WhatsApp:AppSecret"
                 var keyName = param.Name.Split('/')[^1];
+                // The shared access-token is not used. Each tenant has its own parameter.
+                if (param.Name.Contains("/tenants/", StringComparison.Ordinal)
+                    || keyName.Equals("access-token", StringComparison.Ordinal))
+                    continue;
                 var pascalCaseKey = string.Join("", keyName.Split('-').Select(p => char.ToUpper(p[0]) + p[1..]));
 
                 secureConfig[$"WhatsApp:{pascalCaseKey}"] = param.Value;
