@@ -64,6 +64,7 @@ public static class AwsConfigurationExtensions
                 Database = "automaticenvelopes",
                 Username = root.GetProperty("username").GetString(),
                 Password = root.GetProperty("password").GetString(),
+                // RDS rds.force_ssl rejects connections that are not encrypted.
                 SslMode = SslMode.Require
             };
 
