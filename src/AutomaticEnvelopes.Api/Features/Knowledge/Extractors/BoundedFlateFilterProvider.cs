@@ -115,7 +115,7 @@ internal sealed class BoundedFlateFilter : IFilter
         try
         {
             raw = new MemoryStream(compressed, 2, compressed.Length - 2, writable: false);
-            deflate = new DeflateStream(raw, CompressionMode.Decompress);
+            deflate = new DeflateStream(raw, CompressionMode.Decompress, leaveOpen: true);
             Span<byte> buffer = stackalloc byte[8192];
             while (true)
             {
@@ -142,20 +142,7 @@ internal sealed class BoundedFlateFilter : IFilter
         }
         finally
         {
-            if (deflate is not null)
-            {
-                try
-                {
-                    deflate.Dispose();
-                }
-                catch (InvalidDataException)
-                {
-                }
-                catch (IOException)
-                {
-                }
-            }
-
+            deflate?.Dispose();
             raw?.Dispose();
         }
     }

@@ -54,10 +54,81 @@ public class PdfDocumentExtractorTests
     }
 
     [Fact]
+    public async Task ExtractTextAsync_SmallFlateStream_ReadsThePage()
+    {
+        var pdf = PdfWithStream(Compress("q\nQ\n"u8.ToArray()), "/FlateDecode");
+        using var stream = new MemoryStream(pdf);
+
+        PdfDocumentExtractor.CountPages(stream).Should().Be(1);
+        stream.Position = 0;
+        var text = await sut.ExtractTextAsync(stream);
+
+        text.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExtractTextAsync_AsciiHexThenFlateUnderCap_ReadsThePage()
+    {
+        var flate = Compress("q\nQ\n"u8.ToArray());
+        var hex = Encoding.ASCII.GetBytes(Convert.ToHexString(flate) + ">");
+        var pdf = PdfWithStream(hex, "[/ASCIIHexDecode /FlateDecode]");
+        using var stream = new MemoryStream(pdf);
+
+        PdfDocumentExtractor.CountPages(stream).Should().Be(1);
+        stream.Position = 0;
+        var text = await sut.ExtractTextAsync(stream);
+
+        text.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExtractTextAsync_CorruptFlateStream_DoesNotApplyTheDecodeCap()
+    {
+        var pdf = PdfWithStream([0, 0, 0, 0, 0, 0, 0, 0], "/FlateDecode");
+        using var stream = new MemoryStream(pdf);
+
+        var thrown = await Record.ExceptionAsync(() => sut.ExtractTextAsync(stream));
+
+        thrown.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractTextAsync_TruncatedFlateStream_DoesNotApplyTheDecodeCap()
+    {
+        var pdf = PdfWithStream([0x78], "/FlateDecode");
+        using var stream = new MemoryStream(pdf);
+
+        var thrown = await Record.ExceptionAsync(() => sut.ExtractTextAsync(stream));
+
+        thrown.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractTextAsync_InlineImages_ChecksFiltersWithoutExpanding()
+    {
+        var flate = Compress([0]);
+        using var content = new MemoryStream();
+        void Write(string text) => content.Write(Encoding.ASCII.GetBytes(text));
+
+        Write("BI\n/W 1\n/H 1\n/CS /G\n/BPC 8\nID\n");
+        content.WriteByte(0);
+        Write("\nEI\nBI\n/W 1\n/H 1\n/CS /G\n/BPC 8\n/F /Fl\nID\n");
+        content.Write(flate);
+        Write("\nEI\n");
+
+        var pdf = PdfWithStream(content.ToArray(), filter: null);
+        using var stream = new MemoryStream(pdf);
+
+        var thrown = await Record.ExceptionAsync(() => sut.ExtractTextAsync(stream));
+
+        thrown.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ExtractTextAsync_FlateStreamPastDecodeLimit_Throws()
     {
         // One byte past the cap. The compressed file stays under the upload limit.
-        var pdf = PdfWithFlateStream(CompressZeros(IngestLimits.MaxDecodedPdfBytes + 1));
+        var pdf = PdfWithStream(CompressZeros(IngestLimits.MaxDecodedPdfBytes + 1), "/FlateDecode");
         pdf.Length.Should().BeLessThan((int)IngestLimits.MaxUploadBytes);
         using var stream = new MemoryStream(pdf);
 
@@ -65,6 +136,17 @@ public class PdfDocumentExtractorTests
 
         await act.Should().ThrowAsync<PdfDocumentFormatException>()
             .WithMessage("*decode limit*");
+    }
+
+    private static byte[] Compress(byte[] data)
+    {
+        using var output = new MemoryStream();
+        using (var zlib = new ZLibStream(output, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            zlib.Write(data);
+        }
+
+        return output.ToArray();
     }
 
     private static byte[] CompressZeros(long count)
@@ -85,7 +167,7 @@ public class PdfDocumentExtractorTests
         return output.ToArray();
     }
 
-    private static byte[] PdfWithFlateStream(byte[] zlibStream)
+    private static byte[] PdfWithStream(byte[] streamData, string? filter)
     {
         using var document = new MemoryStream();
         var offsets = new List<long> { 0 };
@@ -105,8 +187,9 @@ public class PdfDocumentExtractorTests
 
         offsets.Add(document.Position);
         Write("4 0 obj\n");
-        Write($"<< /Length {zlibStream.Length} /Filter /FlateDecode >>\nstream\n");
-        document.Write(zlibStream);
+        var filterEntry = filter is null ? "" : $" /Filter {filter}";
+        Write($"<< /Length {streamData.Length}{filterEntry} >>\nstream\n");
+        document.Write(streamData);
         Write("\nendstream\nendobj\n");
 
         var xref = document.Position;
