@@ -110,7 +110,7 @@ public static class ChatSessionHandler
 
         if (work.FirstContact)
         {
-            replyText = await PrependNoticeAsync(work.Tenant, command.CombinedText, replyText, deps, ct);
+            replyText = await PrependNoticeAsync(work.Tenant, replyText, deps, ct);
         }
 
         var saved = await SaveAndPublishReplyAsync(work, replyText, gate, deps, ct);
@@ -284,7 +284,6 @@ public static class ChatSessionHandler
 
     private static async Task<string> PrependNoticeAsync(
         TenantProfile tenant,
-        string userText,
         string replyText,
         Deps deps,
         CancellationToken ct)
@@ -293,10 +292,12 @@ public static class ChatSessionHandler
         var notice = BotPrompts.FirstContactNotice(name, tenant.PrivacyPolicyUrl);
         var url = BotPrompts.NoticePrivacyUrl(tenant.PrivacyPolicyUrl);
 
+        // The reply already chose the language (tenant prompt and the customer-language rule).
+        // Translate the notice from that reply so both parts share one language.
         string? translated = null;
         try
         {
-            translated = await deps.Chat.TranslateNoticeAsync(notice, userText, ct);
+            translated = await deps.Chat.TranslateNoticeAsync(notice, replyText, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

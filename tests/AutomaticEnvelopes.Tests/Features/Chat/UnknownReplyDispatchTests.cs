@@ -118,8 +118,28 @@ public class UnknownReplyDispatchTests
         harness.Recorded.Should().NotBeNull();
         harness.Chat.Verify(item => item.TranslateNoticeAsync(
             It.Is<string>(notice => notice.Contains("¡Hola!") && notice.Contains("BORRAR DATOS")),
-            "¿A qué hora abre?",
+            "No tengo ese dato.",
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GivenFirstContact_WhenTheUserTextAndTheAnswerDiffer_ThenTheNoticeFollowsTheAnswer()
+    {
+        var phone = "34600111222";
+        var answer = "Hola! En què et puc ajudar?";
+        var harness = new HandlerHarness(phone, answer, firstContact: true, translation: FaithfulNotice());
+
+        await harness.Run("hola que tal com estas?");
+
+        harness.Chat.Verify(item => item.TranslateNoticeAsync(
+            It.Is<string>(notice => notice.Contains("¡Hola!") && notice.Contains("BORRAR DATOS")),
+            answer,
+            It.IsAny<CancellationToken>()), Times.Once);
+        harness.Chat.Verify(item => item.TranslateNoticeAsync(
+            It.IsAny<string>(),
+            "hola que tal com estas?",
+            It.IsAny<CancellationToken>()), Times.Never);
+        harness.Appended!.Text.Should().EndWith("\n\n" + answer);
     }
 
     [Fact]

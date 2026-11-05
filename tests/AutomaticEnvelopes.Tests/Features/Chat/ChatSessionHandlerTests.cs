@@ -75,7 +75,8 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         translationPrompt.Should().Contain(PrivacyPolicyUrl);
         var sample = requests[1].Messages != null ? string.Join(" ", requests[1].Messages.SelectMany(m => m.Content).Select(c => c.Text)) : "";
         sample.Should().Contain("<language_sample>");
-        sample.Should().Contain("Quina és la contrasenya?");
+        sample.Should().Contain("This is a mocked response.");
+        sample.Should().NotContain("Quina és la contrasenya?");
     }
 
     [Fact]
