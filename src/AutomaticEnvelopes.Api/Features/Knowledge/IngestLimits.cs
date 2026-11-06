@@ -11,6 +11,14 @@ public static class IngestLimits
     /// <c>file.Length</c> is the guard on Lambda. <c>[RequestSizeLimit]</c> applies only under Kestrel.
     /// </summary>
     public const long MaxUploadBytes = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// Largest total FlateDecode output accepted for one PDF. PdfPig checks decoded size only
+    /// between chained filters, after that buffer exists, so one stream can expand far past
+    /// <see cref="MaxUploadBytes"/>. 64 MiB still fits a normal upload and stays under the 512 MB API Lambda.
+    /// </summary>
+    public const long MaxDecodedPdfBytes = 64 * 1024 * 1024;
+
     public const int MaxPdfPages = 100;
     public const int MaxCharacters = 200_000;
     public const string PdfUnreadable = "No se ha podido leer el PDF. Prueba con otro archivo.";

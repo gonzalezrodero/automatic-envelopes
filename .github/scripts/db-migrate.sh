@@ -295,6 +295,7 @@ prepare_connection() {
     echo "PGPORT=$(printf '%s' "$desc" | jq -r .Port)"
     echo "PGDATABASE=$(printf '%s' "$desc" | jq -r .Db)"
     echo "PGUSER=$(printf '%s' "$raw" | jq -r .username)"
+    # RDS rds.force_ssl rejects plaintext. verify-full also checks the RDS CA.
     echo "PGSSLMODE=verify-full"
     echo "PGSSLROOTCERT=/tmp/rds-global-bundle.pem"
   } >> "${GITHUB_ENV:?GITHUB_ENV is required}"
