@@ -102,3 +102,9 @@ Wrong slice: webhook verification and HMAC stay in `WhatsAppWebhook`. Graph send
 
 Wrong tenant scope: a handler that takes the HTTP `IDocumentSession` and queries `DocumentChunk`, events, or usage will see the default tenant. Open `LightweightSession(tenantId)` and keep `tenant_id` in raw SQL. `KnowledgeBaseService` and `UsageMeter` already do both. RLS is disabled on the conjoined tables, so a policy will not save a missing predicate. Saga state is isolated by `{tenantId}:{phone}` on a table with no `tenant_id` column. Do not mark that saga multi-tenanted without a migration and a session change. Deleting history must constrain `mt_events` and `mt_streams` by `tenant_id`, as `DeleteChatHistoryHandler` does.
 
+
+### 2026-11-21 — BotPhoneNumberId unique index
+
+Marten 9.51 `DocumentMappingExpression.UniqueIndex(UniqueIndexType, expressions)` has no tenancy argument. `TenancyScope` is only on the overload that also takes an index name. Default scope is Global. For single-tenanted `TenantProfile`, the computed index is `CREATE UNIQUE INDEX ... ON public.mt_doc_tenantprofile USING btree ((data ->> 'BotPhoneNumberId'))` with no `tenant_id`.
+
+`db-patch` writes relative to the API content root, and with both the Marten store and the Wolverine message database configured it requires `-d`. Use `-d marten://store` and an absolute path under `db/migrations`. Set `AWS_LAMBDA_FUNCTION_NAME` for that run so startup does not apply the new index before the diff. Weasel also writes a sibling `.drop.sql`; the migrations folder does not keep those. `20261026_003` stays skipped when `20261026_001` is already applied.

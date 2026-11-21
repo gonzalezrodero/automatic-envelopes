@@ -38,11 +38,11 @@
 **What:** The Copilot files from `squad init` (`.github/agents/`, `.github/skills/`, `.mcp.json`, `.copilot/`) and `.squad/templates/` were removed on purpose. Cursor loads `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc`, and `.cursor/mcp.json`. Team state stays in `.squad/` (roster, charters, routing, decisions). Do not add an npm dependency, and do not restore the Squad CLI skill pack or its workflow templates.
 **Why:** Those files are the Copilot host and the Squad product's own scaffolding. The Cursor coordinator file already contains the protocol. `squad doctor` still looks for `.github/agents/squad.agent.md` and root `.mcp.json`; that check is the Copilot layout, and this repo leaves it unmet.
 
-### 2026-11-21: Economy model profile on Cursor
+### 2026-11-21: Default model profile on Cursor
 
 **By:** Lead
-**What:** `.squad/config.json` sets `modelProfile` to `economy` and `economyMode` to true. Charters leave `Preferred: auto` so this profile is not overridden. On Cursor the session model still wins when the host cannot pass a per-spawn model; pick an inexpensive model in the Cursor model picker.
-**Why:** Squad work here runs through Cursor. The economy profile is the cheap path Squad documents (`gpt-5.6-luna` after the economy map on hosts that honor it).
+**What:** `.squad/config.json` sets no `modelProfile`, so Squad uses its default `quality-first` profile. Charters leave `Preferred: auto`. On Cursor the session model still wins when the host cannot pass a per-spawn model.
+**Why:** Squad's author says the economy profile ends up costing more through retries and weaker work (PR #138).
 
 ### 2026-11-21: Onboarding conventions
 
@@ -94,9 +94,8 @@
 **What:** Production `GeneratedCodeMode` stays `TypeLoadMode.Static`. New handlers and endpoints must still compile under the existing `codegen write` step. Do not switch production to runtime generation, and do not add a code-generation package or project to replace it.
 **Why:** `Config.AddDatabase` (`CritterStackDefaults`) and `.github/workflows/sonarcloud.yml` step "Pre-generate JasperFx static code", which runs `dotnet run --project src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj -- codegen write` before the step named Build.
 
-## Governance
+### 2026-11-21: Global unique index on TenantProfile.BotPhoneNumberId
 
-- All meaningful changes require team consensus
-- Document architectural decisions here
-- Keep history focused on work, decisions focused on direction
-- Standing rules above override a specialist's generic charter when they conflict
+**By:** Lead
+**What:** `TenantProfile.BotPhoneNumberId` has a global computed Marten unique index (`mt_doc_tenantprofile_uidx_bot_phone_number_id`), shipped as dated migration `20261121_001`. It is global because `TenantProfile` is single-tenanted and the table has no `tenant_id`. `RegisterTenantEndpoint` keeps its 400 check; the index is the race backstop.
+**Why:** Two tenants must never share a WhatsApp bot number, since inbound routing looks the tenant up by that number.

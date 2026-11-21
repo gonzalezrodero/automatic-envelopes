@@ -65,3 +65,10 @@ Assertions are `value.Should()...`. Async integration tests pass `TestContext.Cu
 - Alba’s stub user is an admin. Portal tests that forget `AsTenant` look authorized for every tenant. CSRF integration tests must send the cookie and an allowed `Origin`; a bearer header skips the cookie check in the narrow middleware tests.
 - Webhook signatures are HMAC of the exact raw body using the fake app secret the fixture already configured. Do not embed a real Meta token, a customer payload, or a live phone. Temp PDFs in the E2E ingest path go under the system temp directory and must be deleted, as `FullPipelineE2ETests` does.
 - Two classes are named `IngestEndpointTests`: the mocked one under `Features/Knowledge`, and the Alba one under `E2E`. Filter by namespace. `dotnet test` on a laptop without Docker is not a green suite.
+
+### 2026-11-21 — Global BotPhoneNumberId unique index
+
+- `TenantProfileBotPhoneUniqueIndexTests.BotPhoneNumberId_IsGloballyUnique_AndSameTenantUpsertSucceeds` stores through a Marten lightweight session, not the register endpoint. `tenant-a` and `tenant-b` were absent, so those ids were used. Phones are `phone-{guid:N}`.
+- A duplicate phone throws `JasperFx.DocumentAlreadyExistsException` whose inner `PostgresException` is SqlState 23505 and constraint `mt_doc_tenantprofile_uidx_bot_phone_number_id`. Asserting `PostgresException` directly fails.
+- `DeployedDatabaseSchemaTests.Baseline_script_matches_marten_configuration` now applies `20261026_001` and then `20261121_001` before `AssertDatabaseMatchesConfigurationAsync`.
+- `dotnet test` could not start `AutomaticEnvelopes.Tests.exe` (Win32 4551, Application Control). The same FullyQualifiedName filter passed via `dotnet exec` on the test dll with `-filterVSTest`: 3 passed, 0 failed.
