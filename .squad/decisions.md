@@ -44,6 +44,56 @@
 **What:** `.squad/config.json` sets `modelProfile` to `economy` and `economyMode` to true. Charters leave `Preferred: auto` so this profile is not overridden. On Cursor the session model still wins when the host cannot pass a per-spawn model; pick an inexpensive model in the Cursor model picker.
 **Why:** Squad work here runs through Cursor. The economy profile is the cheap path Squad documents (`gpt-5.6-luna` after the economy map on hosts that honor it).
 
+### 2026-11-21: Onboarding conventions
+
+#### 2026-11-21: One project, Wolverine vertical slices
+
+**By:** Lead
+**What:** Product code stays in `src/AutomaticEnvelopes.Api`. A feature is a folder under `Features/` with a Wolverine endpoint (`[WolverineGet]`, `[WolverinePost]`, `[WolverinePatch]`, or `[WolverineDelete]`) and/or a `Handle` method, plus an `AddXFeature` extension only when it needs DI. Register that extension from `Config.AddFeatures`. Wolverine already scans `typeof(Program).Assembly`. Do not add a second project, a controller layer, or another mediator.
+**Why:** `AutomaticEnvelopes.slnx` has one product project and one test project. `Config.AddFeatures` composes the feature extensions. `WhatsAppWebhookEndpoint` and `ProcessWhatsAppMessageHandler` are the slice shape. Portal, tenancy, and admin routes are the same attributes on endpoint types under `Features/`.
+
+#### 2026-11-21: Marten patches are dated SQL, not Lambda startup
+
+**By:** Lead
+**What:** Schema changes are a new file `db/migrations/YYYYMMDD_NNN_snake_case.sql`. `NNN` orders same-day files so a lexical sort is chronological. Generate it with `dotnet run --project src/AutomaticEnvelopes.Api -- db-patch <that path>` against a database that already has the previous patch, then review the SQL. Do not let either Lambda apply Marten schema. `DatabaseSchemaStartup` is false when `AWS_LAMBDA_FUNCTION_NAME` is set, and `Config.AddDatabase` then sets `AutoCreate.None`.
+**Why:** `README.md` (Local database) and the header of `db/migrations/20261028_001_chat_debounce_window_claim.sql`. `Program.cs` returns `RunJasperFxCommands`. `DatabaseSchemaStartup.cs` and `Config.AddDatabase`. Existing files: `20261026_001`, `20261026_002`, `20261026_003`, `20261028_001`.
+
+#### 2026-11-21: Integration tests share one Alba host
+
+**By:** Lead
+**What:** A test that needs the HTTP pipeline or Postgres uses `[Collection("Integration")]` and `IntegrationAppFixture`. That fixture is `AlbaHost.For<Program>` in environment `Testing`, Postgres `pgvector/pgvector:pg16` via Testcontainers, ElasticMQ for the two app queues, and `ConnectionStrings__Marten` set to the container. Bedrock, WhatsApp, and SES are mocks. `AutoCreate.All` belongs in that fixture only. Do not point tests at RDS, and do not add a second host bootstrap.
+**Why:** `tests/AutomaticEnvelopes.Tests/IntegrationAppFixture.cs` (`IntegrationCollection`) and `AutomaticEnvelopes.Tests.csproj` (xunit.v3, Alba, Testcontainers.PostgreSql).
+
+#### 2026-11-21: HTTP Lambda and SQS worker stay separate hosts
+
+**By:** Lead
+**What:** `Program.cs` is the only host that validates the WhatsApp verify token (`AddFeatures(..., validateVerifyToken: true)`), maps Wolverine HTTP endpoints, and uses `AddAWSLambdaHosting`. `SqsLambdaHandler` is the worker and calls `AddFeatures` without that flag. Do not copy the API middleware, the verify-token gate, or schema apply onto the worker, and do not move the SQS batch loop into `Program.cs`.
+**Why:** `src/AutomaticEnvelopes.Api/Program.cs` and `src/AutomaticEnvelopes.Api/SqsLambdaHandler.cs`. `Config.AddFeatures` defaults `validateVerifyToken` to false.
+
+#### 2026-11-21: Conjoined tenancy and the tenant id rule
+
+**By:** Lead
+**What:** Marten tenancy stays `TenancyStyle.Conjoined`. `TenantProfile` stays `SingleTenanted`. The other documents registered in `AddDatabase` stay `MultiTenanted`. Tenant-scoped reads and writes use `LightweightSession(tenant.Id)` after the profile is resolved. A tenant id is `TenantIds.IsValid`: `^[a-z0-9-]+$`, 1 to 64 characters, and not `admin`. Do not add a row-level scheme, a database per tenant, or a tenant id that fails that rule.
+**Why:** `src/AutomaticEnvelopes.Api/Config.cs` (`AddDatabase`) and `src/AutomaticEnvelopes.Api/Features/Tenancy/TenantAccess.cs`. `ProcessWhatsAppMessageHandler` opens the session with the resolved tenant id.
+
+#### 2026-11-21: Bedrock is the only model client
+
+**By:** Lead
+**What:** Chat goes through `IAmazonBedrockRuntime.ConverseAsync` and `BedrockSettings`. Embeddings go through `EmbeddingService.InvokeModelAsync` and the existing Titan model id at 512 dimensions. `Microsoft.Extensions.AI` is the chat-history type, not a second provider. Do not add an Ollama, OpenAI, or Gemini client. A tool the bot can call has to be on the API allowlist in the same slice; a name that is not on that list is rejected, and an empty list attaches nothing.
+**Why:** `src/AutomaticEnvelopes.Api/Features/Chat/ChatService.cs`, `src/AutomaticEnvelopes.Api/Features/Knowledge/Services/EmbeddingService.cs`, `Config.AddAi`, and `src/AutomaticEnvelopes.Api/appsettings.json` (`BedrockSettings`). README's provider list is ahead of the code.
+
+#### 2026-11-21: One Meta app; route on BotPhoneNumberId
+
+**By:** Lead
+**What:** All tenants share one Meta app, one `WhatsApp:AppSecret`, and one `WhatsApp:VerifyToken`. Each tenant has its own access token at `/automatic-envelopes/whatsapp/tenants/{tenantId}/access-token` and its own `TenantProfile.BotPhoneNumberId`. The worker finds the tenant by that phone-number id. Do not add a second Meta app, a per-tenant verify token, or a route that uses the display phone.
+**Why:** `docs/onboarding-tenant.md` and `ProcessWhatsAppMessageHandler.GetTenantAsync`, which queries `TenantProfile.BotPhoneNumberId`.
+
+#### 2026-11-21: Production JasperFx codegen stays static
+
+**By:** Lead
+**What:** Production `GeneratedCodeMode` stays `TypeLoadMode.Static`. New handlers and endpoints must still compile under the existing `codegen write` step. Do not switch production to runtime generation, and do not add a code-generation package or project to replace it.
+**Why:** `Config.AddDatabase` (`CritterStackDefaults`) and `.github/workflows/sonarcloud.yml` step "Pre-generate JasperFx static code", which runs `dotnet run --project src/AutomaticEnvelopes.Api/AutomaticEnvelopes.Api.csproj -- codegen write` before the step named Build.
+
 ## Governance
 
 - All meaningful changes require team consensus
