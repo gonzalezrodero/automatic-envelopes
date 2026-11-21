@@ -2,7 +2,5 @@
   "version": 1,
   "clients": [
     "cursor"
-  ],
-  "modelProfile": "economy",
-  "economyMode": true
+  ]
 }
