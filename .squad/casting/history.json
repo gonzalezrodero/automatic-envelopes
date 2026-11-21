@@ -1,0 +1,63 @@
+{
+  "assignment_cast_snapshots": {
+    "cli-cast-r2-2026-11-21T18:04:23.530Z": {
+      "created_at": "2026-11-21T18:04:23.530Z",
+      "agents": [
+        "lead"
+      ],
+      "universe": "cli-cast"
+    },
+    "cli-cast-r3-2026-11-21T18:04:24.087Z": {
+      "created_at": "2026-11-21T18:04:24.087Z",
+      "agents": [
+        "reviewer"
+      ],
+      "universe": "cli-cast"
+    },
+    "cli-cast-r4-2026-11-21T18:04:24.643Z": {
+      "created_at": "2026-11-21T18:04:24.643Z",
+      "agents": [
+        "backend"
+      ],
+      "universe": "cli-cast"
+    },
+    "cli-cast-r5-2026-11-21T18:04:25.211Z": {
+      "created_at": "2026-11-21T18:04:25.211Z",
+      "agents": [
+        "infra"
+      ],
+      "universe": "cli-cast"
+    },
+    "cli-cast-r6-2026-11-21T18:04:25.776Z": {
+      "created_at": "2026-11-21T18:04:25.776Z",
+      "agents": [
+        "tester"
+      ],
+      "universe": "cli-cast"
+    }
+  },
+  "universe_usage_history": [
+    {
+      "universe": "cli-cast",
+      "used_at": "2026-11-21T18:04:23.530Z"
+    },
+    {
+      "universe": "cli-cast",
+      "used_at": "2026-11-21T18:04:24.087Z"
+    },
+    {
+      "universe": "cli-cast",
+      "used_at": "2026-11-21T18:04:24.643Z"
+    },
+    {
+      "universe": "cli-cast",
+      "used_at": "2026-11-21T18:04:25.211Z"
+    },
+    {
+      "universe": "cli-cast",
+      "used_at": "2026-11-21T18:04:25.776Z"
+    }
+  ],
+  "transaction_id": "bf63c7e0-6a92-462c-b6f2-d751da8177c5",
+  "registry_revision": 6
+}
