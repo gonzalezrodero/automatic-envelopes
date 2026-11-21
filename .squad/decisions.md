@@ -32,11 +32,11 @@
 **What:** The CI job name `build` must not change. Do not edit workflow files to rename jobs or steps. Jobs already in this repo include `build-test` (pull request), `build-and-test` (deploy), and `sonarcloud`, plus a step named Build.
 **Why:** Required checks and the deploy chain key off those names. Renaming a job makes a green change look red, or skips a gate.
 
-### 2026-11-21: Squad product skills are not this repo's conventions
+### 2026-11-21: Copilot projection and Squad templates are not committed
 
 **By:** Lead
-**What:** `.github/skills/squad-conventions` and the Squad CLI skills under `.squad/templates/skills/` (`release-process`, `versioning-policy`, `cli-wiring`, `ci-validation-gates`, and anything that says `node:test` or `package.json`) describe the Squad product. They do not apply to Automatic Envelopes. This repo stays .NET 10, xUnit, Alba, Testcontainers, and Terraform. Do not add an npm dependency to the project.
-**Why:** `squad init` copies those skills into every repo. Following them here would invent a Node test runner.
+**What:** The Copilot files from `squad init` (`.github/agents/`, `.github/skills/`, `.mcp.json`, `.copilot/`) and `.squad/templates/` were removed on purpose. Cursor loads `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc`, and `.cursor/mcp.json`. Team state stays in `.squad/` (roster, charters, routing, decisions). Do not add an npm dependency, and do not restore the Squad CLI skill pack or its workflow templates.
+**Why:** Those files are the Copilot host and the Squad product's own scaffolding. The Cursor coordinator file already contains the protocol. `squad doctor` still looks for `.github/agents/squad.agent.md` and root `.mcp.json`; that check is the Copilot layout, and this repo leaves it unmet.
 
 ### 2026-11-21: Economy model profile on Cursor
 
