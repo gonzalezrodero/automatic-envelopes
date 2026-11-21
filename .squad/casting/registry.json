@@ -1,0 +1,54 @@
+{
+  "schema": "squad-agent-provenance/v1",
+  "schema_version": 1,
+  "revision": 6,
+  "generated_at": "2026-11-21T18:04:25.776Z",
+  "agents": {
+    "lead": {
+      "display_name": "Lead",
+      "persistent_name": "Lead",
+      "role": "Lead / Architect",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-21T18:04:23.530Z",
+      "updated_at": "2026-11-21T18:04:23.530Z"
+    },
+    "reviewer": {
+      "display_name": "Reviewer",
+      "persistent_name": "Reviewer",
+      "role": "Code Reviewer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-21T18:04:24.087Z",
+      "updated_at": "2026-11-21T18:04:24.087Z"
+    },
+    "backend": {
+      "display_name": "Backend",
+      "persistent_name": "Backend",
+      "role": "Backend Developer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-21T18:04:24.643Z",
+      "updated_at": "2026-11-21T18:04:24.643Z"
+    },
+    "infra": {
+      "display_name": "Infra",
+      "persistent_name": "Infra",
+      "role": "DevOps Engineer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-21T18:04:25.211Z",
+      "updated_at": "2026-11-21T18:04:25.211Z"
+    },
+    "tester": {
+      "display_name": "Tester",
+      "persistent_name": "Tester",
+      "role": "Test Engineer",
+      "universe": "cli-cast",
+      "status": "active",
+      "created_at": "2026-11-21T18:04:25.776Z",
+      "updated_at": "2026-11-21T18:04:25.776Z"
+    }
+  },
+  "transaction_id": "bf63c7e0-6a92-462c-b6f2-d751da8177c5"
+}
