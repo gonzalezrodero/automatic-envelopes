@@ -137,12 +137,59 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().NotBeNull();
-        result!.MessageId.Should().Be("wamid.HBgL");
-        result.BotPhoneNumberId.Should().Be("12345");
-        result.PhoneNumber.Should().Be("34666555444");
-        result.Text.Should().Be("Hola SamàBot!");
-        result.Timestamp.ToUnixTimeSeconds().Should().Be(1603059201);
+        var message = result.Should().ContainSingle().Subject;
+        message.MessageId.Should().Be("wamid.HBgL");
+        message.BotPhoneNumberId.Should().Be("12345");
+        message.PhoneNumber.Should().Be("34666555444");
+        message.Text.Should().Be("Hola SamàBot!");
+        message.Timestamp.ToUnixTimeSeconds().Should().Be(1603059201);
+    }
+
+    [Fact]
+    public async Task ExtractMessageAsync_WithTwoTextsAndALeadingImage_ReturnsBothTexts()
+    {
+        var payload = """
+        {
+          "object": "whatsapp_business_account",
+          "entry": [
+            {
+              "changes": [
+                {
+                  "value": {
+                    "metadata": { "phone_number_id": "12345" },
+                    "messages": [
+                      { "from": "34666555444", "id": "wamid.image", "timestamp": "1603059201", "type": "image" },
+                      { "from": "34666555444", "id": "wamid.one", "timestamp": "1603059202", "type": "text", "text": { "body": "First" } },
+                      { "from": "34666555444", "id": "wamid.two", "timestamp": "1603059203", "type": "text", "text": { "body": "Second" } }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "changes": [
+                {
+                  "value": {
+                    "metadata": { "phone_number_id": "67890" },
+                    "messages": [
+                      { "from": "34666000000", "id": "wamid.three", "timestamp": "1603059204", "type": "text", "text": { "body": "Other entry" } }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var context = new DefaultHttpContext();
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(payload));
+
+        var result = await sut.ExtractMessageAsync(context.Request);
+
+        result.Select(message => message.MessageId).Should().Equal("wamid.one", "wamid.two", "wamid.three");
+        result[2].BotPhoneNumberId.Should().Be("67890");
+        result[2].Text.Should().Be("Other entry");
     }
 
     [Fact]
@@ -180,7 +227,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
 
         loggerMock.Verify(
             x => x.Log(
@@ -229,7 +276,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
 
         loggerMock.Verify(
             x => x.Log(
@@ -255,7 +302,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
 
         loggerMock.Verify(
             x => x.Log(
@@ -281,7 +328,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
 
         loggerMock.Verify(
             x => x.Log(
@@ -332,7 +379,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
 
         loggerMock.Verify(
             x => x.Log(
@@ -357,7 +404,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
 
         loggerMock.Verify(
             x => x.Log(
@@ -384,7 +431,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
 
         loggerMock.Verify(
             x => x.Log(
@@ -407,7 +454,7 @@ public class WhatsAppPayloadProcessorTests
         var result = await sut.ExtractMessageAsync(context.Request);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().BeEmpty();
     }
 
     [Fact]

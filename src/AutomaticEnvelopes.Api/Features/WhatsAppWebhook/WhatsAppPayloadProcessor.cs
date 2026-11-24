@@ -11,7 +11,7 @@ namespace AutomaticEnvelopes.Api.Features.WhatsAppWebhook;
 public interface IWhatsAppPayloadProcessor
 {
     Task<bool> IsSignatureValidAsync(HttpRequest request);
-    Task<ProcessWhatsAppMessage?> ExtractMessageAsync(HttpRequest request);
+    Task<IReadOnlyList<ProcessWhatsAppMessage>> ExtractMessageAsync(HttpRequest request);
 }
 
 public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
@@ -57,10 +57,10 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
         return isValid;
     }
 
-    public async Task<ProcessWhatsAppMessage?> ExtractMessageAsync(HttpRequest request)
+    public async Task<IReadOnlyList<ProcessWhatsAppMessage>> ExtractMessageAsync(HttpRequest request)
     {
         var body = await ReadRequestBodyAsync(request);
-        return ParseJsonToMessage(Encoding.UTF8.GetString(body), logger);
+        return ParseJsonToMessages(Encoding.UTF8.GetString(body), logger);
     }
 
     private static async Task<byte[]> ReadRequestBodyAsync(HttpRequest request)
@@ -83,8 +83,9 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
         return Convert.ToHexStringLower(hashBytes);
     }
 
-    private static ProcessWhatsAppMessage? ParseJsonToMessage(string body, ILogger logger)
+    private static IReadOnlyList<ProcessWhatsAppMessage> ParseJsonToMessages(string body, ILogger logger)
     {
+        var parsed = new List<ProcessWhatsAppMessage>();
         try
         {
             using var document = JsonDocument.Parse(body);
@@ -93,52 +94,40 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
             if (!root.TryGetProperty("entry", out var entries) || entries.GetArrayLength() == 0)
             {
                 logger.LogDebug("Payload ignored: missing 'entry' array. Not a standard webhook event.");
-                return null;
+                return parsed;
             }
 
-            var firstEntry = entries[0];
-            if (!firstEntry.TryGetProperty("changes", out var changes) || changes.GetArrayLength() == 0)
+            foreach (var entry in entries.EnumerateArray())
             {
-                logger.LogDebug("Payload ignored: missing 'changes' array within entry.");
-                return null;
+                if (!entry.TryGetProperty("changes", out var changes) || changes.GetArrayLength() == 0)
+                {
+                    logger.LogDebug("Payload ignored: missing 'changes' array within entry.");
+                    continue;
+                }
+
+                foreach (var change in changes.EnumerateArray())
+                {
+                    if (!change.TryGetProperty("value", out var valueNode))
+                    {
+                        continue;
+                    }
+
+                    if (!valueNode.TryGetProperty("messages", out var messages) || messages.GetArrayLength() == 0)
+                    {
+                        logger.LogDebug("Payload ignored: missing 'messages' array. Likely a status update or read receipt.");
+                        continue;
+                    }
+
+                    foreach (var messageNode in messages.EnumerateArray())
+                    {
+                        var message = ReadTextMessage(messageNode, valueNode, logger);
+                        if (message != null)
+                        {
+                            parsed.Add(message);
+                        }
+                    }
+                }
             }
-
-            var valueNode = changes[0].GetProperty("value");
-            if (!valueNode.TryGetProperty("messages", out var messages) || messages.GetArrayLength() == 0)
-            {
-                // Extremely common scenario: read receipts, delivery statuses, or system updates.
-                logger.LogDebug("Payload ignored: missing 'messages' array. Likely a status update or read receipt.");
-                return null;
-            }
-
-            var messageNode = messages[0];
-
-            var fromNumber = messageNode.GetProperty("from").GetString();
-            var messageId = messageNode.GetProperty("id").GetString();
-            var timestampStr = messageNode.GetProperty("timestamp").GetString();
-            var botNumberId = valueNode.GetProperty("metadata").GetProperty("phone_number_id").GetString();
-
-            if (!messageNode.TryGetProperty("text", out var textNode) || !textNode.TryGetProperty("body", out var bodyNode))
-            {
-                // Logs when a user sends an image, audio, or document
-                var msgType = messageNode.TryGetProperty("type", out var typeNode) ? typeNode.GetString() : "unknown";
-                logger.LogInformation("Received non-text message type '{MessageType}' from {FromNumber}. Ignoring.", msgType, LogMask.Phone(fromNumber));
-                return null;
-            }
-
-            var messageText = bodyNode.GetString();
-
-            if (string.IsNullOrEmpty(fromNumber) || string.IsNullOrEmpty(messageText) || string.IsNullOrEmpty(messageId) || timestampStr == null || botNumberId == null)
-            {
-                logger.LogWarning("Message payload is missing essential fields (From, Text, MessageId, Timestamp, or BotId). Payload structure might have changed.");
-                return null;
-            }
-
-            var timestamp = DateTimeOffset.FromUnixTimeSeconds(long.Parse(timestampStr));
-
-            logger.LogInformation("Successfully parsed WhatsApp text message. MessageId: {MessageId}, From: {FromNumber}, BotPhoneNumberId: {BotPhoneNumberId}", messageId, LogMask.Phone(fromNumber), botNumberId);
-
-            return new ProcessWhatsAppMessage(messageId, botNumberId, fromNumber, messageText, timestamp);
         }
         catch (JsonException ex)
         {
@@ -149,6 +138,35 @@ public class WhatsAppPayloadProcessor : IWhatsAppPayloadProcessor
             logger.LogError(ex, "Unexpected error occurred while parsing WhatsApp message payload.");
         }
 
-        return null;
+        return parsed;
+    }
+
+    private static ProcessWhatsAppMessage? ReadTextMessage(JsonElement messageNode, JsonElement valueNode, ILogger logger)
+    {
+        var fromNumber = messageNode.TryGetProperty("from", out var fromNode) ? fromNode.GetString() : null;
+        var messageId = messageNode.TryGetProperty("id", out var idNode) ? idNode.GetString() : null;
+        var timestampStr = messageNode.TryGetProperty("timestamp", out var timestampNode) ? timestampNode.GetString() : null;
+        var botNumberId = valueNode.TryGetProperty("metadata", out var metadata)
+            && metadata.TryGetProperty("phone_number_id", out var phoneNode)
+            ? phoneNode.GetString()
+            : null;
+
+        if (!messageNode.TryGetProperty("text", out var textNode) || !textNode.TryGetProperty("body", out var bodyNode))
+        {
+            var msgType = messageNode.TryGetProperty("type", out var typeNode) ? typeNode.GetString() : "unknown";
+            logger.LogInformation("Received non-text message type '{MessageType}' from {FromNumber}. Ignoring.", msgType, LogMask.Phone(fromNumber));
+            return null;
+        }
+
+        var messageText = bodyNode.GetString();
+        if (string.IsNullOrEmpty(fromNumber) || string.IsNullOrEmpty(messageText) || string.IsNullOrEmpty(messageId) || timestampStr == null || botNumberId == null)
+        {
+            logger.LogWarning("Message payload is missing essential fields (From, Text, MessageId, Timestamp, or BotId). Payload structure might have changed.");
+            return null;
+        }
+
+        var timestamp = DateTimeOffset.FromUnixTimeSeconds(long.Parse(timestampStr));
+        logger.LogInformation("Successfully parsed WhatsApp text message. MessageId: {MessageId}, From: {FromNumber}, BotPhoneNumberId: {BotPhoneNumberId}", messageId, LogMask.Phone(fromNumber), botNumberId);
+        return new ProcessWhatsAppMessage(messageId, botNumberId, fromNumber, messageText, timestamp);
     }
 }
