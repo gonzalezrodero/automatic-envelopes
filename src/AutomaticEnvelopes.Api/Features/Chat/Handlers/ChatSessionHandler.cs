@@ -17,6 +17,14 @@ namespace AutomaticEnvelopes.Api.Features.Chat.Handlers;
 
 public static class ChatSessionHandler
 {
+    public static bool IsDeleteRequest(string combinedText)
+    {
+        var lastLine = combinedText
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .LastOrDefault();
+        return lastLine != null && BotPrompts.DeleteCommands.Contains(lastLine.ToUpperInvariant());
+    }
+
     public static async Task Handle(
         AnalyzeChatSession command,
         IDocumentStore store,
@@ -37,8 +45,7 @@ public static class ChatSessionHandler
             return;
         }
 
-        var userText = command.CombinedText.Trim().ToUpperInvariant();
-        if (BotPrompts.DeleteCommands.Contains(userText))
+        if (IsDeleteRequest(command.CombinedText))
         {
             logger.LogInformation("User requested data deletion. Triggering DeleteChatHistoryCommand for {PhoneNumber}.", LogMask.Phone(command.PhoneNumber));
             await SendDeleteCommandAsync(command, deps, ct);
