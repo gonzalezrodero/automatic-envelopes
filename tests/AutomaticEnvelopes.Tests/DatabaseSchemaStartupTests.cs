@@ -45,6 +45,12 @@ public class DatabaseSchemaStartupTests
         baseline.Should().Contain("-- migrate: apply-if-missing public.mt_streams");
         baseline.Should().Contain("compacted_version");
 
+        var saga = File.ReadAllText(Path.Combine(root, "db/migrations/20261124_001_chat_debounce_saga.sql"));
+        saga.Should().Contain("CREATE TABLE IF NOT EXISTS public.mt_doc_chatdebouncesaga");
+        saga.Should().Contain("mt_version          integer");
+        saga.Should().Contain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.mt_doc_chatdebouncesaga TO marten_app");
+        saga.Should().NotContain("tenant_id");
+
         foreach (var script in new[] { upgrade, baseline })
         {
             script.Should().Contain("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO marten_app");
