@@ -45,7 +45,13 @@ public class DatabaseSchemaStartupTests
         baseline.Should().Contain("-- migrate: apply-if-missing public.mt_streams");
         baseline.Should().Contain("compacted_version");
 
-        var vector = File.ReadAllText(Path.Combine(root, "db/migrations/20261124_001_extract_embedding_and_hnsw.sql"));
+        var saga = File.ReadAllText(Path.Combine(root, "db/migrations/20261124_001_chat_debounce_saga.sql"));
+        saga.Should().Contain("CREATE TABLE IF NOT EXISTS public.mt_doc_chatdebouncesaga");
+        saga.Should().Contain("mt_version          integer");
+        saga.Should().Contain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.mt_doc_chatdebouncesaga TO marten_app");
+        saga.Should().NotContain("tenant_id");
+
+        var vector = File.ReadAllText(Path.Combine(root, "db/migrations/20261124_002_extract_embedding_and_hnsw.sql"));
         vector.Should().Contain("CREATE FUNCTION public.extract_embedding(data jsonb)");
         vector.Should().Contain("GRANT EXECUTE ON FUNCTION public.extract_embedding(jsonb) TO marten_app");
         vector.Should().Contain("mt_doc_documentchunk_idx_embedding");
