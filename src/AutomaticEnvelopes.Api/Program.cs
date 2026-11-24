@@ -31,15 +31,11 @@ builder.Services.AddAWSLambdaHosting(LambdaEventSource.HttpApi);
 
 var app = builder.Build();
 
-if (!args.Contains("codegen"))
+if (!args.Contains("codegen") && DatabaseSchemaStartup.AppliesAtStartup())
 {
-    if (DatabaseSchemaStartup.AppliesAtStartup())
-    {
-        using var scope = app.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
-        await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
-    }
-
+    using var scope = app.Services.CreateScope();
+    var store = scope.ServiceProvider.GetRequiredService<IDocumentStore>();
+    await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
     app.EnsureVectorExtensionExists(connectionString);
 }
 

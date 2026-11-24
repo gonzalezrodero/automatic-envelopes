@@ -6,7 +6,7 @@ public static class VectorSchema
 {
     public const string ExtractEmbeddingFunctionSql = """
         CREATE OR REPLACE FUNCTION public.extract_embedding(data jsonb)
-        RETURNS vector IMMUTABLE PARALLEL SAFE AS $$
+        RETURNS vector(512) IMMUTABLE PARALLEL SAFE AS $$
         BEGIN
             -- Ensure 'Embedding' matches your C# property name exactly
             RETURN CAST(data ->> 'Embedding' AS vector(512));

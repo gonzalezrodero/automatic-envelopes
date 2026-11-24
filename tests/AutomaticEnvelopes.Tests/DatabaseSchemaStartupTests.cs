@@ -51,6 +51,28 @@ public class DatabaseSchemaStartupTests
         saga.Should().Contain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.mt_doc_chatdebouncesaga TO marten_app");
         saga.Should().NotContain("tenant_id");
 
+        var vector = File.ReadAllText(Path.Combine(root, "db/migrations/20261124_002_extract_embedding_and_hnsw.sql"));
+        vector.Should().Contain("CREATE FUNCTION public.extract_embedding(data jsonb)");
+        vector.Should().Contain("GRANT EXECUTE ON FUNCTION public.extract_embedding(jsonb) TO marten_app");
+        vector.Should().Contain("mt_doc_documentchunk_idx_embedding");
+        vector.Should().Contain("::vector(512)");
+        vector.Should().NotContain("REVOKE CREATE");
+
+        var index = File.ReadAllText(Path.Combine(root, "src/AutomaticEnvelopes.Api/Features/Knowledge/HnswIndexCustomizer.cs"));
+        index.Should().Contain("(public.extract_embedding(data)::vector(512)) vector_cosine_ops");
+
+        var program = File.ReadAllText(Path.Combine(root, "src/AutomaticEnvelopes.Api/Program.cs"));
+        var gate = program.IndexOf(
+            "!args.Contains(\"codegen\") && DatabaseSchemaStartup.AppliesAtStartup()",
+            StringComparison.Ordinal);
+        var ensure = program.IndexOf("EnsureVectorExtensionExists", StringComparison.Ordinal);
+        var cors = program.IndexOf("app.UseCors", StringComparison.Ordinal);
+        gate.Should().BeGreaterThanOrEqualTo(0);
+        var blockEnd = program.IndexOf('}', gate);
+        ensure.Should().BeGreaterThan(gate);
+        ensure.Should().BeLessThan(blockEnd);
+        ensure.Should().BeLessThan(cors);
+
         foreach (var script in new[] { upgrade, baseline })
         {
             script.Should().Contain("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO marten_app");
