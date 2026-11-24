@@ -89,4 +89,47 @@ public class DeleteChatHistoryHandlerTests
             (string)item.Args[0] == phone);
         session.Verify(item => item.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task GivenAnEmptyStream_WhenHandledAgain_ThenItStillSendsTheSuccessReply()
+    {
+        const string phone = "34600111222";
+        const string tenantId = "club-a";
+
+        var events = new Mock<Marten.Events.IEventStoreOperations>();
+        events.Setup(item => item.FetchStreamAsync(
+                phone,
+                It.IsAny<long>(),
+                It.IsAny<DateTimeOffset?>(),
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<IEvent>());
+
+        var session = new Mock<IDocumentSession>();
+        session.Setup(item => item.Events).Returns(events.Object);
+
+        var store = new Mock<IDocumentStore>();
+        store.Setup(item => item.LightweightSession(tenantId, It.IsAny<IsolationLevel>())).Returns(session.Object);
+
+        var chat = new Mock<IChatService>();
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(item => item.InvokeAsync(It.IsAny<ReplyGenerated>(), It.IsAny<CancellationToken>(), null))
+            .Returns(Task.CompletedTask);
+        bus.Setup(item => item.InvokeAsync(It.IsAny<ForgetUnansweredConversation>(), It.IsAny<CancellationToken>(), null))
+            .Returns(Task.CompletedTask);
+
+        await DeleteChatHistoryHandler.Handle(
+            new DeleteChatHistoryCommand(phone, tenantId, "wamid.1", "bot-phone"),
+            store.Object,
+            chat.Object,
+            bus.Object,
+            CancellationToken.None);
+
+        chat.Verify(item => item.SanitizeHistoryAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        session.Verify(item => item.Store(It.IsAny<AnonymizedChat[]>()), Times.Never);
+        bus.Verify(item => item.InvokeAsync(
+            It.Is<ReplyGenerated>(reply => reply.Text == BotPrompts.DeleteDataSuccessReply && reply.PhoneNumber == phone),
+            It.IsAny<CancellationToken>(),
+            null), Times.Once);
+    }
 }

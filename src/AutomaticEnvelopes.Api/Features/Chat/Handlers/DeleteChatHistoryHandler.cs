@@ -26,7 +26,11 @@ public static class DeleteChatHistoryHandler
         using var session = store.LightweightSession(command.TenantId);
 
         var streamEvents = await session.Events.FetchStreamAsync(command.PhoneNumber, token: ct);
-        if (streamEvents.Count == 0) return;
+        if (streamEvents.Count == 0)
+        {
+            await SendSuccessReplyAsync(command, bus, ct);
+            return;
+        }
 
         var rawTranscript = string.Join("\n", streamEvents.Select(e => e.Data switch
         {
@@ -48,7 +52,11 @@ public static class DeleteChatHistoryHandler
         session.QueueSqlCommand("DELETE FROM mt_streams WHERE id = ? AND tenant_id = ?", command.PhoneNumber, command.TenantId);
         await session.SaveChangesAsync(ct);
 
-        // 6. Multi-language Confirmation Message
+        await SendSuccessReplyAsync(command, bus, ct);
+    }
+
+    private static Task SendSuccessReplyAsync(DeleteChatHistoryCommand command, IMessageBus bus, CancellationToken ct)
+    {
         var finalConfirmation = new ReplyGenerated(
             MessageId: command.MessageId,
             BotPhoneNumberId: command.BotPhoneNumberId,
@@ -56,6 +64,6 @@ public static class DeleteChatHistoryHandler
             Text: BotPrompts.DeleteDataSuccessReply,
             TenantId: command.TenantId);
 
-        await bus.InvokeAsync(finalConfirmation, ct);
+        return bus.InvokeAsync(finalConfirmation, ct);
     }
 }
