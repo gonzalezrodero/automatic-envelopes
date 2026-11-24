@@ -21,6 +21,7 @@ using JasperFx.Events;
 using JasperFx.Events.Projections;
 using JasperFx.MultiTenancy;
 using Marten;
+using Marten.Schema;
 using Npgsql;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -162,7 +163,9 @@ public static class Config
             opts.Storage.Add(new HnswIndexCustomizer());
             opts.Projections.Add(new ProcessedMessageProjection(), ProjectionLifecycle.Inline);
 
-            opts.Schema.For<TenantProfile>().SingleTenanted();
+            opts.Schema.For<TenantProfile>()
+                .SingleTenanted()
+                .UniqueIndex(UniqueIndexType.Computed, x => x.BotPhoneNumberId);
             opts.Schema.For<ProcessedMessage>().MultiTenanted();
             opts.Schema.For<DocumentChunk>().MultiTenanted();
             opts.Schema.For<WhatsAppRateLimitTracker>().MultiTenanted();

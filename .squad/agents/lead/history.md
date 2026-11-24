@@ -66,3 +66,7 @@ Feature folders opened under `src/AutomaticEnvelopes.Api/Features`: `AdminAuth`,
 `IntegrationAppFixture` sets `ConnectionStrings__Marten` from Testcontainers `pgvector/pgvector:pg16`, starts ElasticMQ, and forces `AutoCreate.All` for the Alba host in environment `Testing`. That auto-create is the test host only. The collection name is `Integration` (`IntegrationCollection`).
 
 Routing rule 8: this Cursor host has no background runs. Scribe cannot be fire-and-forget. Squad state tools were not in this session; `.squad/` files are the backend. No `upstream.json`.
+
+### 2026-11-21 — BotPhoneNumberId uniqueness
+
+`mt_doc_tenantprofile` is SingleTenanted: primary key is `id`, and the table has no `tenant_id`. A Marten unique index is global by default (`TenancyScope.Global`). `TenancyScope.PerTenant` would not stop two tenants sharing a bot number. The dated SQL patch is still required because Lambda uses `AutoCreate.None`. Computed `UniqueIndex` belongs on the existing `Schema.For<TenantProfile>()` chain; do not copy `HnswIndexCustomizer` for this.
