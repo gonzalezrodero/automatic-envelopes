@@ -72,15 +72,18 @@ public class WhatsAppWebhookEndpoint
             return Results.Unauthorized();
         }
 
-        var message = await processor.ExtractMessageAsync(request);
+        var messages = await processor.ExtractMessageAsync(request);
 
-        if (message != null)
+        if (messages.Count > 0)
         {
-            logger.LogInformation("Successfully extracted processable WhatsApp message. Publishing to message bus.");
-            await bus.PublishAsync(message);
+            logger.LogInformation("Successfully extracted {MessageCount} processable WhatsApp message(s). Publishing to message bus.", messages.Count);
+            foreach (var message in messages)
+            {
+                await bus.PublishAsync(message);
+            }
         }
         else
-        { 
+        {
             logger.LogInformation("Received valid WhatsApp webhook payload, but it does not contain a processable user message (e.g., status update or unsupported type). Ignored.");
         }
 
