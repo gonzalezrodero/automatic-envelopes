@@ -27,10 +27,12 @@ resource "aws_db_parameter_group" "postgres" {
   family      = "postgres16"
   description = "Require SSL connections to PostgreSQL 16."
 
+  # AWS reports apply_method as pending-reboot for this parameter.
+  # Pin that value so the plan stays empty; rds.force_ssl remains 1.
   parameter {
     name         = "rds.force_ssl"
     value        = "1"
-    apply_method = "immediate"
+    apply_method = "pending-reboot"
   }
 }
 
