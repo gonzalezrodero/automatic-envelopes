@@ -21,7 +21,7 @@ public class HnswIndexCustomizer : IFeatureSchema
         // We use the public schema explicitly to avoid any search_path issues in Marten
         writer.WriteLine(@"
             CREATE INDEX IF NOT EXISTS mt_doc_documentchunk_idx_embedding 
-            ON public.mt_doc_documentchunk USING hnsw (public.extract_embedding(data) vector_cosine_ops);
+            ON public.mt_doc_documentchunk USING hnsw ((public.extract_embedding(data)::vector(512)) vector_cosine_ops);
         ");
     }
 }
