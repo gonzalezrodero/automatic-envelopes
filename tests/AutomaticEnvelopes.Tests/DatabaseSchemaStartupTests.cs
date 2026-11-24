@@ -56,12 +56,16 @@ public class DatabaseSchemaStartupTests
         index.Should().Contain("(public.extract_embedding(data)::vector(512)) vector_cosine_ops");
 
         var program = File.ReadAllText(Path.Combine(root, "src/AutomaticEnvelopes.Api/Program.cs"));
-        var gate = program.IndexOf("if (DatabaseSchemaStartup.AppliesAtStartup())", StringComparison.Ordinal);
+        var gate = program.IndexOf(
+            "!args.Contains(\"codegen\") && DatabaseSchemaStartup.AppliesAtStartup()",
+            StringComparison.Ordinal);
         var ensure = program.IndexOf("EnsureVectorExtensionExists", StringComparison.Ordinal);
-        var gateEnd = program.IndexOf("app.UseCors", StringComparison.Ordinal);
+        var cors = program.IndexOf("app.UseCors", StringComparison.Ordinal);
         gate.Should().BeGreaterThanOrEqualTo(0);
+        var blockEnd = program.IndexOf('}', gate);
         ensure.Should().BeGreaterThan(gate);
-        ensure.Should().BeLessThan(gateEnd);
+        ensure.Should().BeLessThan(blockEnd);
+        ensure.Should().BeLessThan(cors);
 
         foreach (var script in new[] { upgrade, baseline })
         {
