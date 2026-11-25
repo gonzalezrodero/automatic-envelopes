@@ -66,11 +66,13 @@ public class DeployedDatabaseSchemaTests(IntegrationAppFixture fixture)
             var root = RepoRoot();
             var sql = await File.ReadAllTextAsync(Path.Combine(root, "db/migrations/20261026_001_esquema_inicial_marten_9_51_wolverine_6_51.sql"), cancellation);
             var uniqueBotPhone = await File.ReadAllTextAsync(Path.Combine(root, "db/migrations/20261121_001_unique_bot_phone_number_id.sql"), cancellation);
+            var chatDebounceSaga = await File.ReadAllTextAsync(Path.Combine(root, "db/migrations/20261124_001_chat_debounce_saga.sql"), cancellation);
             await using (var connection = new NpgsqlConnection(baseline))
             {
                 await connection.OpenAsync(cancellation);
                 await ExecuteAsync(connection, sql, cancellation);
                 await ExecuteAsync(connection, uniqueBotPhone, cancellation);
+                await ExecuteAsync(connection, chatDebounceSaga, cancellation);
             }
 
             var previous = Environment.GetEnvironmentVariable("AWS_LAMBDA_FUNCTION_NAME");
