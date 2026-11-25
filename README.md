@@ -16,7 +16,7 @@ Built with the cutting-edge **.NET 10** (Preview) and **C# 14**, Automatic Envel
 
 - **Marten**: Document DB and Event Store on top of PostgreSQL. Every interaction is recorded as a domain event, ensuring a perfect audit trail segregated by tenant.
 - **Wolverine**: The next-gen "Message Bus" and "Mediator". It handles complex asynchronicity with elegant cascading messages and outbox patterns.
-- **Microsoft.Extensions.AI**: A unified, provider-agnostic SDK for LLM integration (Ollama, OpenAI, Gemini).
+- **Amazon Bedrock**: The only model provider. Chat uses the Converse API with the model set in `BedrockSettings`; embeddings use Amazon Titan Text Embeddings V2 at 512 dimensions. `Microsoft.Extensions.AI` supplies only the chat message types.
 - **pgvector**: Integrated directly into Marten for lightning-fast RAG (Retrieval-Augmented Generation). By feeding the AI with **verified, client-specific official documentation**, we ensure the assistants provide factual, accurate information while strictly preventing AI hallucinations—a clinical application of the "Quality-First" philosophy.
 
 ## 🛡️ Quality as a First-Class Citizen
