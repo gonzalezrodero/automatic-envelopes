@@ -1,10 +1,13 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
+using AutomaticEnvelopes.Api.Features.Usage;
+using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
 using AutomaticEnvelopes.Tests.Extensions;
 using AwesomeAssertions;
 using JasperFx;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Wolverine;
 
 namespace AutomaticEnvelopes.Tests.Features.Chat;
@@ -136,6 +139,82 @@ public class ChatDebounceSagaIntegrationTests(IntegrationAppFixture fixture)
 
         (await LoadSagaAsync(sagaId)).Should().BeNull();
         (await ReplyCountAsync(tenantId, phone)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GivenTheSendFails_WhenTheExpiryIsRetried_ThenTheStoredReplyIsResent()
+    {
+        var (tenantId, botPhoneId, phone, sagaId) = await OpenWindowAsync("Hello");
+        await AppendReceivedAsync(tenantId, botPhoneId, phone, "wamid.window", "Hello");
+        var startedAt = await StartedAtAsync(sagaId);
+        var expired = new ChatWindowExpired(sagaId, startedAt);
+        WhatsAppTextRequest? sent = null;
+        FailNextSendTo(phone, request => sent = request);
+        try
+        {
+            var act = () => Invoke(expired);
+            await act.Should().ThrowAsync<HttpRequestException>();
+
+            var stored = await RepliesAsync(tenantId, phone);
+            stored.Should().ContainSingle();
+            (await LoadSagaAsync(sagaId)).Should().NotBeNull();
+            (await LoadMarkerAsync(sagaId)).Should().BeNull();
+
+            var converseCalls = fixture.ConverseTexts.Count;
+            await Invoke(expired);
+
+            (await LoadSagaAsync(sagaId)).Should().BeNull();
+            var resent = await RepliesAsync(tenantId, phone);
+            resent.Should().ContainSingle();
+            resent[0].MessageId.Should().Be(stored[0].MessageId);
+            resent[0].Text.Should().Be(stored[0].Text);
+            sent.Should().NotBeNull();
+            sent!.To.Should().Be(phone);
+            sent.Text.Body.Should().Be(stored[0].Text);
+            stored[0].Text.Should().Contain("asistente de inteligencia artificial");
+            fixture.ConverseTexts.Count.Should().Be(converseCalls);
+
+            using var usageSession = Store().LightweightSession(tenantId);
+            var usage = await usageSession.LoadAsync<TenantMonthUsage>(
+                UsageMonth.Current(),
+                TestContext.Current.CancellationToken);
+            usage!.Responses.Should().Be(1);
+        }
+        finally
+        {
+            RestoreWhatsApp();
+        }
+    }
+
+    [Fact]
+    public async Task GivenANewerMessageAfterAFailedSend_WhenTheExpiryIsRetried_ThenASecondReplyIsGenerated()
+    {
+        var (tenantId, botPhoneId, phone, sagaId) = await OpenWindowAsync("Hello");
+        await AppendReceivedAsync(tenantId, botPhoneId, phone, "wamid.window", "Hello");
+        var startedAt = await StartedAtAsync(sagaId);
+        var expired = new ChatWindowExpired(sagaId, startedAt);
+        FailNextSendTo(phone);
+        try
+        {
+            var act = () => Invoke(expired);
+            await act.Should().ThrowAsync<HttpRequestException>();
+            (await RepliesAsync(tenantId, phone)).Should().ContainSingle();
+            (await LoadSagaAsync(sagaId)).Should().NotBeNull();
+
+            var followUp = await AppendReceivedAsync(
+                tenantId, botPhoneId, phone, "wamid.follow", "A second question");
+            await Invoke(followUp);
+
+            var converseCalls = fixture.ConverseTexts.Count;
+            await Invoke(expired);
+
+            fixture.ConverseTexts.Count.Should().BeGreaterThan(converseCalls);
+            (await RepliesAsync(tenantId, phone)).Should().HaveCount(2);
+        }
+        finally
+        {
+            RestoreWhatsApp();
+        }
     }
 
     [Fact]
@@ -305,5 +384,60 @@ public class ChatDebounceSagaIntegrationTests(IntegrationAppFixture fixture)
             StartedAt = startedAt
         });
         await setup.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private async Task<MessageReceived> AppendReceivedAsync(
+        string tenantId,
+        string botPhoneId,
+        string phone,
+        string messageId,
+        string text)
+    {
+        var received = new MessageReceived(messageId, phone, text, tenantId, botPhoneId, DateTimeOffset.UtcNow);
+        using var session = Store().LightweightSession(tenantId);
+        session.Events.Append(phone, received);
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return received;
+    }
+
+    private async Task<List<ReplyGenerated>> RepliesAsync(string tenantId, string phone)
+    {
+        using var query = Store().LightweightSession(tenantId);
+        var events = await query.Events.FetchStreamAsync(phone, token: TestContext.Current.CancellationToken);
+        return events.Select(item => item.Data).OfType<ReplyGenerated>().ToList();
+    }
+
+    private void FailNextSendTo(string phone, Action<WhatsAppTextRequest>? onSuccess = null)
+    {
+        var attempted = false;
+        fixture.WhatsAppClientMock
+            .Setup(client => client.SendMessageAsync(
+                It.IsAny<string>(),
+                It.Is<WhatsAppTextRequest>(request => request.To == phone),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((string _, WhatsAppTextRequest request, string _, CancellationToken _) =>
+            {
+                if (!attempted)
+                {
+                    attempted = true;
+                    throw new HttpRequestException("whatsapp");
+                }
+
+                onSuccess?.Invoke(request);
+                return Task.FromResult(new WhatsAppResponse("ok", [], []));
+            });
+    }
+
+    private void RestoreWhatsApp()
+    {
+        fixture.WhatsAppClientMock.Reset();
+        fixture.WhatsAppClientMock
+            .Setup(client => client.SendMessageAsync(
+                It.IsAny<string>(),
+                It.IsAny<WhatsAppTextRequest>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppResponse("ok", [], []));
     }
 }

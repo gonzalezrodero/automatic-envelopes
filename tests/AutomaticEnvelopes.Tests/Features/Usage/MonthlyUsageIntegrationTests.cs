@@ -37,6 +37,7 @@ public class MonthlyUsageIntegrationTests(IntegrationAppFixture fixture)
 
         var ask = new AnalyzeChatSession(phone, tenantId, bot, "¿Horario?");
         await fixture.Host.InvokeMessageAndWaitAsync(ask);
+        await AppendReceived("m-second", "¿Precio?");
         await fixture.Host.InvokeMessageAndWaitAsync(ask);
         await using (var session = store.LightweightSession(tenantId))
         {
@@ -61,6 +62,7 @@ public class MonthlyUsageIntegrationTests(IntegrationAppFixture fixture)
         emails[1].Content.Simple.Body.Text.Data.Should().NotContain(tenantId);
 
         var before = ConverseCount();
+        await AppendReceived("m-limit", "¿Dónde?");
         await fixture.Host.InvokeMessageAndWaitAsync(ask);
         ConverseCount().Should().Be(before);
         await using (var session = store.LightweightSession(tenantId))
@@ -100,6 +102,13 @@ public class MonthlyUsageIntegrationTests(IntegrationAppFixture fixture)
             usage!.Notified80.Should().BeFalse();
             usage.Notified100.Should().BeFalse();
             usage.Responses.Should().Be(5);
+        }
+
+        async Task AppendReceived(string messageId, string text)
+        {
+            await using var session = store.LightweightSession(tenantId);
+            session.Events.Append(phone, new MessageReceived(messageId, phone, text, tenantId, bot, DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(ct);
         }
     }
 
