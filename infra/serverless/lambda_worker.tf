@@ -31,9 +31,10 @@ resource "aws_lambda_function" "worker" {
 }
 
 resource "aws_lambda_event_source_mapping" "sqs_trigger" {
-  event_source_arn = aws_sqs_queue.bot_queue.arn
-  function_name    = aws_lambda_function.worker.arn
-  batch_size       = 1
+  event_source_arn        = aws_sqs_queue.bot_queue.arn
+  function_name           = aws_lambda_function.worker.arn
+  batch_size              = 1
+  function_response_types = ["ReportBatchItemFailures"]
 
   scaling_config {
     maximum_concurrency = 5
@@ -41,9 +42,10 @@ resource "aws_lambda_event_source_mapping" "sqs_trigger" {
 }
 
 resource "aws_lambda_event_source_mapping" "system_sqs_trigger" {
-  event_source_arn = aws_sqs_queue.system_queue.arn
-  function_name    = aws_lambda_function.worker.arn
-  batch_size       = 10 # Se pueden procesar más rápido en bloque
+  event_source_arn        = aws_sqs_queue.system_queue.arn
+  function_name           = aws_lambda_function.worker.arn
+  batch_size              = 10 # Se pueden procesar más rápido en bloque
+  function_response_types = ["ReportBatchItemFailures"]
 
   scaling_config {
     maximum_concurrency = 5
