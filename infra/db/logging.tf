@@ -15,6 +15,12 @@ resource "aws_cloudwatch_log_metric_filter" "password_auth_failed" {
   }
 }
 
+# Subscriptions are added by hand outside Terraform so no address lands in this public repo.
+# Unencrypted on purpose: alarms cannot publish to a topic using the alias/aws/sns key.
+resource "aws_sns_topic" "db_alarms" {
+  name = "${var.project_name}-db-alarms"
+}
+
 resource "aws_cloudwatch_metric_alarm" "password_auth_failed" {
   alarm_name          = "${var.project_name}-pg-password-auth-failed"
   comparison_operator = "GreaterThanOrEqualToThreshold"
@@ -25,4 +31,5 @@ resource "aws_cloudwatch_metric_alarm" "password_auth_failed" {
   statistic           = "Sum"
   threshold           = 1
   treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.db_alarms.arn]
 }
