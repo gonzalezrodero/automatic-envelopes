@@ -18,14 +18,22 @@ public class SqsLambdaHandler
 {
     private static readonly Lazy<IServiceProvider> services = new(BuildWorkerProvider);
 
-    private readonly IMessageBus bus;
+    private readonly IMessageBus? bus;
+    private readonly IServiceScopeFactory? scopeFactory;
     private readonly ILogger<SqsLambdaHandler> logger;
     private readonly JsonSerializerOptions jsonOptions;
 
     public SqsLambdaHandler()
+        : this(
+            services.Value.GetRequiredService<IServiceScopeFactory>(),
+            services.Value.GetRequiredService<ILogger<SqsLambdaHandler>>())
     {
-        bus = services.Value.GetRequiredService<IMessageBus>();
-        logger = services.Value.GetRequiredService<ILogger<SqsLambdaHandler>>();
+    }
+
+    public SqsLambdaHandler(IServiceScopeFactory scopeFactory, ILogger<SqsLambdaHandler> logger)
+    {
+        this.scopeFactory = scopeFactory;
+        this.logger = logger;
         jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
     }
 
@@ -79,13 +87,15 @@ public class SqsLambdaHandler
         {
             try
             {
-                if (IsSystemQueue(record))
+                if (scopeFactory is { } factory)
                 {
-                    await ProcessSystemMessageAsync(record, cts.Token);
+                    using var scope = factory.CreateScope();
+                    var scopedBus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+                    await ProcessRecordAsync(record, scopedBus, cts.Token);
                 }
-                else
+                else if (bus is { } injectedBus)
                 {
-                    await ProcessWhatsAppMessageAsync(record, cts.Token);
+                    await ProcessRecordAsync(record, injectedBus, cts.Token);
                 }
             }
             catch (Exception ex)
@@ -104,7 +114,19 @@ public class SqsLambdaHandler
         return record.EventSourceArn?.Contains("system-queue") ?? false;
     }
 
-    private async Task ProcessSystemMessageAsync(SQSMessage record, CancellationToken ct)
+    private async Task ProcessRecordAsync(SQSMessage record, IMessageBus messageBus, CancellationToken ct)
+    {
+        if (IsSystemQueue(record))
+        {
+            await ProcessSystemMessageAsync(record, messageBus, ct);
+        }
+        else
+        {
+            await ProcessWhatsAppMessageAsync(record, messageBus, ct);
+        }
+    }
+
+    private async Task ProcessSystemMessageAsync(SQSMessage record, IMessageBus messageBus, CancellationToken ct)
     {
         logger.LogInformation("Attempting to deserialize internal SYSTEM SQS record. MessageId: {MessageId}", record.MessageId);
 
@@ -113,7 +135,7 @@ public class SqsLambdaHandler
         if (expiredMessage != null && !string.IsNullOrEmpty(expiredMessage.SagaId))
         {
             logger.LogInformation("Successfully deserialized ChatWindowExpired for {SagaId}. Invoking Wolverine bus.", LogMask.Phone(expiredMessage.SagaId));
-            await bus.InvokeAsync(expiredMessage, ct);
+            await messageBus.InvokeAsync(expiredMessage, ct);
         }
         else
         {
@@ -121,7 +143,7 @@ public class SqsLambdaHandler
         }
     }
 
-    private async Task ProcessWhatsAppMessageAsync(SQSMessage record, CancellationToken ct)
+    private async Task ProcessWhatsAppMessageAsync(SQSMessage record, IMessageBus messageBus, CancellationToken ct)
     {
         logger.LogInformation("Attempting to deserialize WHATSAPP SQS record. MessageId: {MessageId}", record.MessageId);
 
@@ -130,7 +152,7 @@ public class SqsLambdaHandler
         if (message != null && !string.IsNullOrEmpty(message.BotPhoneNumberId))
         {
             logger.LogInformation("Successfully deserialized WhatsApp SQS message. BotId: {BotPhoneNumberId}. Invoking Wolverine bus.", message.BotPhoneNumberId);
-            await bus.InvokeAsync(message, ct);
+            await messageBus.InvokeAsync(message, ct);
         }
         else
         {
