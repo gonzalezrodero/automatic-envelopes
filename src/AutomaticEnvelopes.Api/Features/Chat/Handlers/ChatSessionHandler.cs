@@ -8,6 +8,7 @@ using AutomaticEnvelopes.Api.Features.Portal;
 using AutomaticEnvelopes.Api.Features.Tenancy;
 using AutomaticEnvelopes.Api.Features.Usage;
 using JasperFx;
+using JasperFx.Events;
 using Marten;
 using Microsoft.Extensions.AI;
 using System.Text;
@@ -62,13 +63,26 @@ public static class ChatSessionHandler
         Deps deps,
         CancellationToken ct)
     {
-        var chatHistory = await ExtractChatHistory(command.PhoneNumber, session, ct);
+        var streamEvents = await session.Events.FetchStreamAsync(command.PhoneNumber, token: ct);
+        var lastReceived = streamEvents.LastOrDefault(evt => evt.Data is MessageReceived);
+        var replyId = lastReceived == null
+            ? $"wamid.grouped.{Guid.NewGuid():N}"
+            : $"wamid.grouped.{lastReceived.Id:N}";
+        var lastExchange = streamEvents.LastOrDefault(evt => evt.Data is MessageReceived or ReplyGenerated);
+        if (lastExchange?.Data is ReplyGenerated stored && stored.MessageId == replyId)
+        {
+            await deps.Bus.InvokeAsync(stored, ct);
+            return;
+        }
+
+        var chatHistory = ExtractChatHistory(streamEvents);
         var work = new ReplyWork(
             command,
             tenant,
             session,
             !chatHistory.Any(message => message.Role == ChatRole.Assistant),
-            chatHistory.Count > 0);
+            chatHistory.Count > 0,
+            replyId);
         var limit = tenant.EffectiveMonthlyResponseLimit;
         var used = await deps.Usage.ResponseCountAsync(tenant.Id, ct);
         if (used >= limit)
@@ -120,15 +134,16 @@ public static class ChatSessionHandler
             replyText = await PrependNoticeAsync(work.Tenant, replyText, deps, ct);
         }
 
-        var saved = await SaveAndPublishReplyAsync(work, replyText, gate, deps, ct);
-        if (saved)
+        var saved = await SaveReplyAsync(work, replyText, gate, deps, ct);
+        if (saved != null)
         {
             await deps.Usage.RecordAsync(work.Tenant, reply.InputTokens, reply.OutputTokens, ct);
-        }
+            if (unknown)
+            {
+                await TryRecordUnansweredAsync(command, deps, ct);
+            }
 
-        if (unknown && saved)
-        {
-            await TryRecordUnansweredAsync(command, deps, ct);
+            await deps.Bus.InvokeAsync(saved, ct);
         }
     }
 
@@ -176,12 +191,16 @@ public static class ChatSessionHandler
             }
 
             deps.Logger.LogError(failure, "Chat generation failed. Sending a fixed fallback. TenantId: {TenantId}.", work.Tenant.Id);
-            var saved = await SaveAndPublishReplyAsync(work, replyText, gate, deps, ct);
-            if (!saved)
+            var saved = await SaveReplyAsync(work, replyText, gate, deps, ct);
+            if (saved == null)
             {
                 deps.Logger.LogInformation(
                     "The fixed fallback was dropped because the chat was deleted. TenantId: {TenantId}.",
                     work.Tenant.Id);
+            }
+            else
+            {
+                await deps.Bus.InvokeAsync(saved, ct);
             }
         }
         catch (Exception delivery) when (!gate.Stored && delivery is not OperationCanceledException)
@@ -206,7 +225,7 @@ public static class ChatSessionHandler
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            deps.Logger.LogError(ex, "The reply was sent, but the unanswered question was not recorded. TenantId: {TenantId}.", command.TenantId);
+            deps.Logger.LogError(ex, "The reply was saved, but the unanswered question was not recorded. TenantId: {TenantId}.", command.TenantId);
         }
     }
 
@@ -222,8 +241,12 @@ public static class ChatSessionHandler
             replyText = SpanishNotice(work.Tenant) + "\n\n" + replyText;
         }
 
-        await SaveAndPublishReplyAsync(work, replyText, new SaveGate(), deps, ct);
+        var saved = await SaveReplyAsync(work, replyText, new SaveGate(), deps, ct);
         await deps.Usage.NotifyBlockedAsync(work.Tenant, ct);
+        if (saved != null)
+        {
+            await deps.Bus.InvokeAsync(saved, ct);
+        }
     }
 
     private static string SpanishNotice(TenantProfile tenant)
@@ -254,10 +277,8 @@ public static class ChatSessionHandler
         await deps.Bus.InvokeAsync(deleteCommand, ct);
     }
 
-    private static async Task<List<ChatMessage>> ExtractChatHistory(string phoneNumber, IDocumentSession session, CancellationToken ct)
+    private static List<ChatMessage> ExtractChatHistory(IReadOnlyList<IEvent> streamEvents)
     {
-        var streamEvents = await session.Events.FetchStreamAsync(phoneNumber, token: ct);
-
         return [.. streamEvents.Select(evt => evt.Data switch
         {
             MessageReceived userMsg => new ChatMessage(ChatRole.User, userMsg.Text),
@@ -317,7 +338,7 @@ public static class ChatSessionHandler
         return translated.Trim() + "\n\n" + replyText;
     }
 
-    private static async Task<bool> SaveAndPublishReplyAsync(
+    private static async Task<ReplyGenerated?> SaveReplyAsync(
         ReplyWork work,
         string replyText,
         SaveGate gate,
@@ -333,15 +354,14 @@ public static class ChatSessionHandler
                 deps.Logger.LogInformation(
                     "Dropping a reply for a chat stream that was deleted. Phone: {Phone}",
                     LogMask.Phone(command.PhoneNumber));
-                return false;
+                return null;
             }
         }
 
-        var syntheticMessageId = $"wamid.grouped.{Guid.NewGuid():N}";
         var visibleReply = WithoutCustomerMarker(replyText);
 
         var replyEvent = new ReplyGenerated(
-            syntheticMessageId,
+            work.ReplyId,
             command.BotPhoneNumberId,
             command.PhoneNumber,
             visibleReply,
@@ -352,8 +372,7 @@ public static class ChatSessionHandler
         gate.Stored = true;
 
         deps.Logger.LogInformation("Bot reply saved to event stream. Dispatching ReplyGenerated event to Wolverine.");
-        await deps.Bus.InvokeAsync(replyEvent, ct);
-        return true;
+        return replyEvent;
     }
 
     private sealed record Deps(
@@ -368,7 +387,8 @@ public static class ChatSessionHandler
         TenantProfile Tenant,
         IDocumentSession Session,
         bool FirstContact,
-        bool HasHistory);
+        bool HasHistory,
+        string ReplyId);
 
     private sealed class SaveGate
     {
