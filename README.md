@@ -154,7 +154,7 @@ A [Squad](https://github.com/github/squad) team is committed in `.squad/` for lo
 
 Specialists: **Lead** (scope), **Reviewer** (the diff, and not the author), **Backend** (.NET 10, Marten, Wolverine, pgvector, Bedrock, Lambda image), **Infra** (Terraform under `infra/` only), **Tester** (xUnit, Alba, Testcontainers). Scribe, Ralph, Rai, and Fact Checker are Squad's built-in support agents. Standing rules, including the economy model profile, are in `.squad/decisions.md`.
 
-1. Open this repository in Cursor and select the `squad` agent (`.cursor/agents/squad.md`). `.cursor/rules/squad.mdc` stays on demand (`alwaysApply: false`).
+1. Open this repository in Cursor and select the `squad` agent (`.cursor/agents/squad.md`). `.cursor/rules/squad.mdc` loads on every turn in this repo (`alwaysApply: true`).
 2. Once per machine, approve the state server: `cursor-agent mcp enable squad_state`. It is declared in `.cursor/mcp.json`.
 3. Ask the coordinator. It routes from `.squad/routing.md`.
 
