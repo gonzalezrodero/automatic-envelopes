@@ -1,6 +1,5 @@
 ﻿using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
-using AutomaticEnvelopes.Api.Features.Usage;
 using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
 using AutomaticEnvelopes.Tests.Extensions;
 using AwesomeAssertions;
@@ -142,74 +141,46 @@ public class ChatDebounceSagaIntegrationTests(IntegrationAppFixture fixture)
     }
 
     [Fact]
-    public async Task GivenTheSendFails_WhenTheExpiryIsRetried_ThenTheStoredReplyIsResent()
+    public async Task GivenTheSendFails_WhenTheSamePersonWritesAgain_ThenANewWindowAnswers()
     {
         var (tenantId, botPhoneId, phone, sagaId) = await OpenWindowAsync("Hello");
         await AppendReceivedAsync(tenantId, botPhoneId, phone, "wamid.window", "Hello");
         var startedAt = await StartedAtAsync(sagaId);
-        var expired = new ChatWindowExpired(sagaId, startedAt);
-        WhatsAppTextRequest? sent = null;
-        FailNextSendTo(phone, request => sent = request);
-        try
-        {
-            var act = () => Invoke(expired);
-            await act.Should().ThrowAsync<HttpRequestException>();
-
-            var stored = await RepliesAsync(tenantId, phone);
-            stored.Should().ContainSingle();
-            (await LoadSagaAsync(sagaId)).Should().NotBeNull();
-            (await LoadMarkerAsync(sagaId)).Should().BeNull();
-
-            var converseCalls = fixture.ConverseTexts.Count;
-            await Invoke(expired);
-
-            (await LoadSagaAsync(sagaId)).Should().BeNull();
-            var resent = await RepliesAsync(tenantId, phone);
-            resent.Should().ContainSingle();
-            resent[0].MessageId.Should().Be(stored[0].MessageId);
-            resent[0].Text.Should().Be(stored[0].Text);
-            sent.Should().NotBeNull();
-            sent!.To.Should().Be(phone);
-            sent.Text.Body.Should().Be(stored[0].Text);
-            stored[0].Text.Should().Contain("asistente de inteligencia artificial");
-            fixture.ConverseTexts.Count.Should().Be(converseCalls);
-
-            using var usageSession = Store().LightweightSession(tenantId);
-            var usage = await usageSession.LoadAsync<TenantMonthUsage>(
-                UsageMonth.Current(),
-                TestContext.Current.CancellationToken);
-            usage!.Responses.Should().Be(1);
-        }
-        finally
-        {
-            RestoreWhatsApp();
-        }
-    }
-
-    [Fact]
-    public async Task GivenANewerMessageAfterAFailedSend_WhenTheExpiryIsRetried_ThenASecondReplyIsGenerated()
-    {
-        var (tenantId, botPhoneId, phone, sagaId) = await OpenWindowAsync("Hello");
-        await AppendReceivedAsync(tenantId, botPhoneId, phone, "wamid.window", "Hello");
-        var startedAt = await StartedAtAsync(sagaId);
-        var expired = new ChatWindowExpired(sagaId, startedAt);
         FailNextSendTo(phone);
         try
         {
-            var act = () => Invoke(expired);
-            await act.Should().ThrowAsync<HttpRequestException>();
-            (await RepliesAsync(tenantId, phone)).Should().ContainSingle();
-            (await LoadSagaAsync(sagaId)).Should().NotBeNull();
+            var before = fixture.ConverseTexts.Count;
+            await Invoke(new ChatWindowExpired(sagaId, startedAt));
 
-            var followUp = await AppendReceivedAsync(
-                tenantId, botPhoneId, phone, "wamid.follow", "A second question");
-            await Invoke(followUp);
+            (await LoadSagaAsync(sagaId)).Should().BeNull();
+            (await LoadMarkerAsync(sagaId)).Should().BeNull();
+            var stored = await RepliesAsync(tenantId, phone);
+            stored.Should().ContainSingle();
+            stored[0].Text.Should().Contain("asistente de inteligencia artificial");
+            var afterFailure = fixture.ConverseTexts.Count;
+            afterFailure.Should().BeGreaterThan(before);
 
-            var converseCalls = fixture.ConverseTexts.Count;
-            await Invoke(expired);
+            await Invoke(new ChatWindowExpired(sagaId, startedAt));
+            fixture.ConverseTexts.Count.Should().Be(afterFailure);
 
-            fixture.ConverseTexts.Count.Should().BeGreaterThan(converseCalls);
+            await AppendReceivedAsync(tenantId, botPhoneId, phone, "wamid.follow", "A second question");
+            var tracked = await fixture.Host.InvokeMessageAndWaitAsync(
+                new MessageReceived("wamid.follow", phone, "A second question", tenantId, botPhoneId, DateTimeOffset.UtcNow));
+
+            var reopened = await LoadSagaAsync(sagaId);
+            reopened.Should().NotBeNull();
+            reopened!.CombinedText.Should().Be("A second question");
+            reopened.StartedAt.UtcTicks.Should().NotBe(startedAt);
+            var opened = tracked.Sent.MessagesOf<ChatWindowExpired>()
+                .Should().ContainSingle(expired => expired.SagaId == sagaId).Subject;
+            opened.WindowStartedAtTicks.Should().Be(reopened.StartedAt.UtcTicks);
+
+            var calls = fixture.ConverseTexts.Count;
+            await Invoke(opened);
+
+            fixture.ConverseTexts.Count.Should().BeGreaterThan(calls);
             (await RepliesAsync(tenantId, phone)).Should().HaveCount(2);
+            (await LoadSagaAsync(sagaId)).Should().BeNull();
         }
         finally
         {

@@ -1,6 +1,7 @@
 ﻿using AutomaticEnvelopes.Api.Common;
 using AutomaticEnvelopes.Api.Core.Events;
 using AutomaticEnvelopes.Api.Features.Chat;
+using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
 using AwesomeAssertions;
 using JasperFx;
 using Marten;
@@ -185,6 +186,36 @@ public class ChatDebounceSagaTests
     }
 
     [Fact]
+    public async Task GivenTheSendFails_WhenTheExpiryIsHandled_ThenTheWindowIsClosedWithoutAClaim()
+    {
+        var saga = OpenSaga();
+        var order = new List<string>();
+        var session = SessionWith(saga, marker: null, order);
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.InvokeAsync(It.IsAny<object>(), It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()))
+            .Callback(() => WhatsAppSendFailure.Mark())
+            .Returns(Task.CompletedTask);
+
+        try
+        {
+            await ChatWindowExpiredHandler.Handle(
+                new ChatWindowExpired(saga.Id, saga.StartedAt.UtcTicks),
+                session.Object,
+                bus.Object,
+                CancellationToken.None);
+        }
+        finally
+        {
+            WhatsAppSendFailure.Close();
+        }
+
+        order.Should().BeEmpty();
+        session.Verify(s => s.Delete(saga), Times.Once);
+        session.Verify(s => s.Eject(saga), Times.Never);
+        session.Verify(s => s.Insert(It.IsAny<ChatDebounceMarker>()), Times.Never);
+    }
+
+    [Fact]
     public async Task GivenANewerWindow_WhenAnOlderExpiryArrives_ThenTheSagaStaysOpen()
     {
         var saga = OpenSaga();
@@ -253,6 +284,7 @@ public class ChatDebounceSagaTests
             .ReturnsAsync(new List<string> { saga.Id });
         session.Setup(s => s.AdvancedSql).Returns(sql.Object);
         session.Setup(s => s.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns(ValueTask.CompletedTask);
+        session.Setup(s => s.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         session.Setup(s => s.LoadAsync<ChatDebounceSaga>(saga.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(saga);
         session.Setup(s => s.LoadAsync<ChatDebounceMarker>(saga.Id, It.IsAny<CancellationToken>()))

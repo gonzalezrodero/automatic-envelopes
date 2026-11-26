@@ -92,8 +92,8 @@ public static class ChatSessionHandler
         }
 
         // Ordinary failures get one fixed Spanish reply. Throttling, concurrency, and
-        // cancellation keep their exception. A stored reply whose WhatsApp send fails
-        // also continues, so SQS does not treat the message as done.
+        // cancellation keep their exception. A WhatsApp send failure is recorded on
+        // WhatsAppSendFailure and does not throw, so the debounce window can close.
         var gate = new SaveGate();
         try
         {
@@ -118,7 +118,7 @@ public static class ChatSessionHandler
         var command = work.Command;
         deps.Logger.LogInformation("Retrieving relevant context from Vector Database. TenantId: {TenantId}", command.TenantId);
         var context = await GetRelevantContextAsync(deps.Knowledge, command.TenantId, command.CombinedText, ct);
-        var systemMessage = BuildSystemPrompt(work.Tenant, context);
+        var systemMessage = BuildSystemPrompt(work.Tenant, context, work.FirstContact);
 
         deps.Logger.LogInformation("Triggering chat response generation process. TenantId: {TenantId}", command.TenantId);
         var reply = await deps.Chat.GetResponseAsync(
@@ -187,7 +187,7 @@ public static class ChatSessionHandler
             var replyText = UserMessages.Unavailable;
             if (work.FirstContact)
             {
-                replyText = SpanishNotice(work.Tenant) + "\n\n" + replyText;
+                replyText = BotPrompts.JoinFirstContact(SpanishNotice(work.Tenant), replyText);
             }
 
             deps.Logger.LogError(failure, "Chat generation failed. Sending a fixed fallback. TenantId: {TenantId}.", work.Tenant.Id);
@@ -238,7 +238,7 @@ public static class ChatSessionHandler
         var replyText = UsageMessages.Spanish;
         if (work.FirstContact)
         {
-            replyText = SpanishNotice(work.Tenant) + "\n\n" + replyText;
+            replyText = BotPrompts.JoinFirstContact(SpanishNotice(work.Tenant), replyText);
         }
 
         var saved = await SaveReplyAsync(work, replyText, new SaveGate(), deps, ct);
@@ -300,14 +300,15 @@ public static class ChatSessionHandler
         return contextBuilder.ToString();
     }
 
-    private static string BuildSystemPrompt(TenantProfile tenant, string context)
+    private static string BuildSystemPrompt(TenantProfile tenant, string context, bool firstContact)
     {
         var personaPrompt = tenant.SystemPrompt;
         if (string.IsNullOrWhiteSpace(personaPrompt))
             personaPrompt = "You are the official Information Assistant for the organization. Your primary mission is to answer questions using EXCLUSIVELY the retrieved document data inside <untrusted_document_context>.";
 
         var currentDate = DateTimeOffset.UtcNow.ToString("dd MMMM yyyy");
-        return BotPrompts.Compose(personaPrompt, string.Empty, currentDate, context);
+        var greetingRule = firstContact ? BotPrompts.FirstContactGreetingRule : string.Empty;
+        return BotPrompts.Compose(personaPrompt, greetingRule, currentDate, context);
     }
 
     private static async Task<string> PrependNoticeAsync(
@@ -319,13 +320,14 @@ public static class ChatSessionHandler
         var name = string.IsNullOrWhiteSpace(tenant.Name) ? tenant.ShortName : tenant.Name;
         var notice = BotPrompts.FirstContactNotice(name, tenant.PrivacyPolicyUrl);
         var url = BotPrompts.NoticePrivacyUrl(tenant.PrivacyPolicyUrl);
+        var body = BotPrompts.WithoutLeadingGreeting(replyText);
 
         // The reply already chose the language (tenant prompt and the customer-language rule).
         // Translate the notice from that reply so both parts share one language.
         string? translated = null;
         try
         {
-            translated = await deps.Chat.TranslateNoticeAsync(notice, replyText, ct);
+            translated = await deps.Chat.TranslateNoticeAsync(notice, body, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -335,7 +337,7 @@ public static class ChatSessionHandler
         if (!BotPrompts.IsFaithfulTranslation(translated, url))
             translated = notice;
 
-        return translated.Trim() + "\n\n" + replyText;
+        return BotPrompts.JoinFirstContact(translated, body);
     }
 
     private static async Task<ReplyGenerated?> SaveReplyAsync(

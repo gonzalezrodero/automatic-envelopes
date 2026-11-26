@@ -127,19 +127,57 @@ public class UnknownReplyDispatchTests
     {
         var phone = "34600111222";
         var answer = "Hola! En què et puc ajudar?";
+        var body = "En què et puc ajudar?";
         var harness = new HandlerHarness(phone, answer, firstContact: true, translation: FaithfulNotice());
 
         await harness.Run("hola que tal com estas?");
 
         harness.Chat.Verify(item => item.TranslateNoticeAsync(
             It.Is<string>(notice => notice.Contains("¡Hola!") && notice.Contains("BORRAR DATOS")),
-            answer,
+            body,
             It.IsAny<CancellationToken>()), Times.Once);
         harness.Chat.Verify(item => item.TranslateNoticeAsync(
             It.IsAny<string>(),
             "hola que tal com estas?",
             It.IsAny<CancellationToken>()), Times.Never);
-        harness.Appended!.Text.Should().EndWith("\n\n" + answer);
+        harness.Appended!.Text.Should().EndWith("\n\n" + body);
+        harness.Appended.Text.Should().NotContain("Hola! En què");
+    }
+
+    [Fact]
+    public async Task GivenAModelHelloOnFirstContact_WhenHandled_ThenTheNoticeIsTheOnlyGreeting()
+    {
+        var phone = "34600111222";
+        var harness = new HandlerHarness(
+            phone,
+            "¡Hola! 👋 El horario es de 9 a 21.",
+            firstContact: true,
+            translationFails: true);
+
+        await harness.Run("Hola");
+
+        harness.Appended!.Text.Should().StartWith("¡Hola! 👋 Soy un asistente");
+        harness.Appended.Text.Should().EndWith("\n\nEl horario es de 9 a 21.");
+        harness.Appended.Text.Split("¡Hola!").Should().HaveCount(2);
+        harness.SystemPrompt.Should().Contain("Do not greet");
+        harness.SystemPrompt.Should().Contain("Do not start with Hola");
+        var rules = harness.SystemPrompt!.IndexOf("CRITICAL SECURITY RULES", StringComparison.Ordinal);
+        var greeting = harness.SystemPrompt.IndexOf("Do not greet", StringComparison.Ordinal);
+        var block = harness.SystemPrompt.IndexOf(BotPrompts.TenantPromptOpen, StringComparison.Ordinal);
+        greeting.Should().BeGreaterThan(rules);
+        block.Should().BeGreaterThan(greeting);
+    }
+
+    [Fact]
+    public async Task GivenALaterTurn_WhenTheModelGreets_ThenThatGreetingIsKept()
+    {
+        var phone = "34600111222";
+        var harness = new HandlerHarness(phone, "¡Hola! 👋 El horario es de 9 a 21.");
+
+        await harness.Run("Hola");
+
+        harness.Appended!.Text.Should().Be("¡Hola! 👋 El horario es de 9 a 21.");
+        harness.SystemPrompt.Should().NotContain("Do not greet");
     }
 
     [Fact]

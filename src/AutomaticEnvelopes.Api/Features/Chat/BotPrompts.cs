@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Text.RegularExpressions;
 
 namespace AutomaticEnvelopes.Api.Features.Chat;
 
@@ -30,6 +31,16 @@ public static class BotPrompts
         Keep every URL exactly as written. Keep the command {DeleteCommand} exactly as written and untranslated.
         """;
 
+    /// <summary>
+    /// First-contact only. The notice already greets, so the model must not greet again.
+    /// </summary>
+    public const string FirstContactGreetingRule =
+        "9. ONE GREETING: A greeting and privacy notice are placed in front of this reply. Do not greet. Do not start with Hola, Hello, or Hi.";
+
+    private static readonly Regex LeadingGreeting = new(
+        @"^(?:¡\s*)?(?:hola|hello|hi|hey)\b[!.,\s]*",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     public static string FirstContactNotice(string? tenantName, string? privacyPolicyUrl)
     {
         var name = DisplayName(tenantName);
@@ -51,6 +62,33 @@ public static class BotPrompts
             return FallbackPrivacyPolicyUrl;
 
         return trimmed;
+    }
+
+    /// <summary>
+    /// Drops a leading hello so the fixed notice is the only greeting in the saved reply.
+    /// </summary>
+    public static string WithoutLeadingGreeting(string? reply)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return string.Empty;
+
+        var text = reply.Trim();
+        var match = LeadingGreeting.Match(text);
+        if (!match.Success)
+            return text;
+
+        var rest = text[match.Length..].TrimStart();
+        if (rest.StartsWith("👋", StringComparison.Ordinal))
+            rest = rest["👋".Length..].TrimStart().TrimStart('\uFE0F').TrimStart();
+
+        return rest;
+    }
+
+    public static string JoinFirstContact(string notice, string reply)
+    {
+        var body = WithoutLeadingGreeting(reply);
+        var head = notice.Trim();
+        return body.Length == 0 ? head : head + "\n\n" + body;
     }
 
     public static bool IsFaithfulTranslation([NotNullWhen(true)] string? translated, string privacyUrl)
