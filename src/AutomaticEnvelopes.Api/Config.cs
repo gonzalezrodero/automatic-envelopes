@@ -167,6 +167,7 @@ public static class Config
                 .SingleTenanted()
                 .UniqueIndex(UniqueIndexType.Computed, x => x.BotPhoneNumberId);
             opts.Schema.For<ChatDebounceSaga>().SingleTenanted();
+            opts.Schema.For<ChatDebounceMarker>();
             opts.Schema.For<ProcessedMessage>().MultiTenanted();
             opts.Schema.For<DocumentChunk>().MultiTenanted();
             opts.Schema.For<WhatsAppRateLimitTracker>().MultiTenanted();
