@@ -6,7 +6,7 @@ namespace AutomaticEnvelopes.Api.Features.Chat;
 /// <summary>
 /// Centralized store for all AI prompts, system messages, and command constants.
 /// </summary>
-public static class BotPrompts
+public static partial class BotPrompts
 {
     public static readonly string FallbackPrivacyPolicyUrl =
         new UriBuilder(Uri.UriSchemeHttps, "www.core-webhook.eu", -1, "privacy.html").Uri.AbsoluteUri;
@@ -37,9 +37,11 @@ public static class BotPrompts
     public const string FirstContactGreetingRule =
         "9. ONE GREETING: A greeting and privacy notice are placed in front of this reply. Do not greet. Do not start with Hola, Hello, or Hi.";
 
-    private static readonly Regex LeadingGreeting = new(
+    [GeneratedRegex(
         @"^(?:¡\s*)?(?:hola|hello|hi|hey)\b[!.,\s]*",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: 100)]
+    private static partial Regex LeadingGreeting();
 
     public static string FirstContactNotice(string? tenantName, string? privacyPolicyUrl)
     {
@@ -73,7 +75,16 @@ public static class BotPrompts
             return string.Empty;
 
         var text = reply.Trim();
-        var match = LeadingGreeting.Match(text);
+        Match match;
+        try
+        {
+            match = LeadingGreeting().Match(text);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return text;
+        }
+
         if (!match.Success)
             return text;
 
