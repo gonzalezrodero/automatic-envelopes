@@ -10,7 +10,7 @@ namespace AutomaticEnvelopes.Tests;
 public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
 {
     [Fact]
-    public async Task Startup_apply_creates_the_single_tenant_chat_debounce_saga_table()
+    public async Task Startup_apply_creates_the_single_tenant_chat_debounce_tables()
     {
         fixture.Host.Should().NotBeNull();
         const string database = "chat_debounce_saga_fresh";
@@ -40,23 +40,29 @@ public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
 
                 await using var connection = new NpgsqlConnection(fresh);
                 await connection.OpenAsync(cancellation);
-                (await TableExistsAsync(connection, cancellation)).Should().BeTrue();
+                await AssertDocumentTableAsync(
+                    connection,
+                    "mt_doc_chatdebouncesaga",
+                    [
+                        new CatalogColumn("id", "character varying", Nullable: false),
+                        new CatalogColumn("data", "jsonb", Nullable: false),
+                        new CatalogColumn("mt_last_modified", "timestamp with time zone", Nullable: true),
+                        new CatalogColumn("mt_dotnet_type", "character varying", Nullable: true),
+                        new CatalogColumn("mt_version", "integer", Nullable: false)
+                    ],
+                    cancellation);
 
-                var columns = await ReadColumnsAsync(connection, cancellation);
-                columns.Should().BeEquivalentTo(
-                [
-                    new CatalogColumn("id", "character varying", Nullable: false),
-                    new CatalogColumn("data", "jsonb", Nullable: false),
-                    new CatalogColumn("mt_last_modified", "timestamp with time zone", Nullable: true),
-                    new CatalogColumn("mt_dotnet_type", "character varying", Nullable: true),
-                    new CatalogColumn("mt_version", "integer", Nullable: false)
-                ]);
-                columns.Select(column => column.Name).Should().NotContain("tenant_id");
-
-                (await ReadPrimaryKeyColumnsAsync(connection, cancellation)).Should().Equal("id");
-
-                var indexes = await ReadIndexesAsync(connection, cancellation);
-                indexes.Should().ContainSingle().Which.IsPrimary.Should().BeTrue();
+                await AssertDocumentTableAsync(
+                    connection,
+                    "mt_doc_chatdebouncemarker",
+                    [
+                        new CatalogColumn("id", "character varying", Nullable: false),
+                        new CatalogColumn("data", "jsonb", Nullable: false),
+                        new CatalogColumn("mt_last_modified", "timestamp with time zone", Nullable: true),
+                        new CatalogColumn("mt_version", "uuid", Nullable: false),
+                        new CatalogColumn("mt_dotnet_type", "character varying", Nullable: true)
+                    ],
+                    cancellation);
             }
             finally
             {
@@ -76,20 +82,39 @@ public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
         }
     }
 
-    private static async Task<bool> TableExistsAsync(NpgsqlConnection connection, CancellationToken cancellation)
+    private static async Task AssertDocumentTableAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        CatalogColumn[] columns,
+        CancellationToken cancellation)
+    {
+        (await TableExistsAsync(connection, tableName, cancellation)).Should().BeTrue();
+
+        var actual = await ReadColumnsAsync(connection, tableName, cancellation);
+        actual.Should().BeEquivalentTo(columns);
+        actual.Select(column => column.Name).Should().NotContain("tenant_id");
+
+        (await ReadPrimaryKeyColumnsAsync(connection, tableName, cancellation)).Should().Equal("id");
+
+        var indexes = await ReadIndexesAsync(connection, tableName, cancellation);
+        indexes.Should().ContainSingle().Which.IsPrimary.Should().BeTrue();
+    }
+
+    private static async Task<bool> TableExistsAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellation)
     {
         await using var command = new NpgsqlCommand("""
             SELECT EXISTS (
                 SELECT 1
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
-                  AND table_name = 'mt_doc_chatdebouncesaga'
+                  AND table_name = @table
                   AND table_type = 'BASE TABLE');
             """, connection);
+        command.Parameters.AddWithValue("table", tableName);
         return (bool)(await command.ExecuteScalarAsync(cancellation))!;
     }
 
-    private static async Task<List<CatalogColumn>> ReadColumnsAsync(NpgsqlConnection connection, CancellationToken cancellation)
+    private static async Task<List<CatalogColumn>> ReadColumnsAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellation)
     {
         await using var command = new NpgsqlCommand("""
             SELECT column_name,
@@ -97,9 +122,10 @@ public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
                    is_nullable
             FROM information_schema.columns
             WHERE table_schema = 'public'
-              AND table_name = 'mt_doc_chatdebouncesaga'
+              AND table_name = @table
             ORDER BY ordinal_position;
             """, connection);
+        command.Parameters.AddWithValue("table", tableName);
         var columns = new List<CatalogColumn>();
         await using var reader = await command.ExecuteReaderAsync(cancellation);
         while (await reader.ReadAsync(cancellation))
@@ -110,7 +136,7 @@ public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
         return columns;
     }
 
-    private static async Task<List<string>> ReadPrimaryKeyColumnsAsync(NpgsqlConnection connection, CancellationToken cancellation)
+    private static async Task<List<string>> ReadPrimaryKeyColumnsAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellation)
     {
         await using var command = new NpgsqlCommand("""
             SELECT attr.attname
@@ -121,10 +147,11 @@ public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
             JOIN pg_catalog.pg_attribute attr
                 ON attr.attrelid = tbl.oid AND attr.attnum = key.attnum
             WHERE ns.nspname = 'public'
-              AND tbl.relname = 'mt_doc_chatdebouncesaga'
+              AND tbl.relname = @table
               AND idx.indisprimary
             ORDER BY key.ordinality;
             """, connection);
+        command.Parameters.AddWithValue("table", tableName);
         var columns = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(cancellation);
         while (await reader.ReadAsync(cancellation))
@@ -135,7 +162,7 @@ public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
         return columns;
     }
 
-    private static async Task<List<CatalogIndex>> ReadIndexesAsync(NpgsqlConnection connection, CancellationToken cancellation)
+    private static async Task<List<CatalogIndex>> ReadIndexesAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellation)
     {
         await using var command = new NpgsqlCommand("""
             SELECT idx.indisprimary, index_rel.relname
@@ -144,9 +171,10 @@ public class ChatDebounceSagaFreshDatabaseTests(IntegrationAppFixture fixture)
             JOIN pg_catalog.pg_namespace ns ON ns.oid = tbl.relnamespace
             JOIN pg_catalog.pg_class index_rel ON index_rel.oid = idx.indexrelid
             WHERE ns.nspname = 'public'
-              AND tbl.relname = 'mt_doc_chatdebouncesaga'
+              AND tbl.relname = @table
             ORDER BY index_rel.relname;
             """, connection);
+        command.Parameters.AddWithValue("table", tableName);
         var indexes = new List<CatalogIndex>();
         await using var reader = await command.ExecuteReaderAsync(cancellation);
         while (await reader.ReadAsync(cancellation))
