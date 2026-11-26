@@ -49,6 +49,37 @@ public class ReplyGeneratedHandlerTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task GivenTheGraphSendFails_WhenHandled_ThenTheFailureIsRecordedAndNotThrown()
+    {
+        WhatsAppSendFailure.Open();
+        var client = new Mock<IWhatsAppClient>();
+        client.Setup(item => item.SendMessageAsync(
+                It.IsAny<string>(),
+                It.IsAny<WhatsAppTextRequest>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("whatsapp"));
+
+        var reply = new ReplyGenerated("wamid.in", "bot-phone", "34600111222", "Hola", "club-a");
+
+        try
+        {
+            await ReplyGeneratedHandler.Handle(
+                reply,
+                client.Object,
+                new RecordingTokenSource("test-token"),
+                NullLogger.Instance,
+                CancellationToken.None);
+
+            WhatsAppSendFailure.Occurred.Should().BeTrue();
+        }
+        finally
+        {
+            WhatsAppSendFailure.Close();
+        }
+    }
+
     private sealed class RecordingTokenSource(string token) : IWhatsAppAccessTokenSource
     {
         public string? TenantId { get; private set; }

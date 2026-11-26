@@ -51,6 +51,45 @@ public class FirstContactNoticeTests
     }
 
     [Fact]
+    public void JoinFirstContact_KeepsTheNoticeHelloAndDropsTheModelHello()
+    {
+        var notice = BotPrompts.FirstContactNotice("Club", "https://club.example/p");
+        var joined = BotPrompts.JoinFirstContact(notice, "¡Hola! 👋 El horario es de 9 a 21.");
+
+        joined.Split("¡Hola!").Should().HaveCount(2);
+        joined.Should().StartWith("¡Hola! 👋 Soy un asistente de inteligencia artificial y escribo en nombre de Club.");
+        joined.Should().EndWith("\n\nEl horario es de 9 a 21.");
+        joined.Should().NotContain("¡Hola! 👋 El horario");
+    }
+
+    [Theory]
+    [InlineData("El horario es de 9 a 21.", "El horario es de 9 a 21.")]
+    [InlineData("¡Hola! 👋", "")]
+    [InlineData("¡Hola! 👋 ¿En qué puedo ayudarte?", "¿En qué puedo ayudarte?")]
+    [InlineData("Hola! En què et puc ajudar?", "En què et puc ajudar?")]
+    [InlineData("Hello, the pool opens at 9.", "the pool opens at 9.")]
+    [InlineData("Holanda es un país.", "Holanda es un país.")]
+    public void WithoutLeadingGreeting_DropsOnlyALeadingHello(string reply, string expected)
+    {
+        BotPrompts.WithoutLeadingGreeting(reply).Should().Be(expected);
+    }
+
+    [Fact]
+    public void FirstContactGreetingRule_SitsWithTheSecurityRules()
+    {
+        BotPrompts.FirstContactGreetingRule.Should().Contain("Do not greet");
+        BotPrompts.FirstContactGreetingRule.Should().Contain("Do not start with Hola");
+
+        var prompt = BotPrompts.Compose("persona", BotPrompts.FirstContactGreetingRule, "26 November 2026", "doc");
+        var rules = prompt.IndexOf("CRITICAL SECURITY RULES", StringComparison.Ordinal);
+        var greeting = prompt.IndexOf("Do not greet", StringComparison.Ordinal);
+        var block = prompt.IndexOf(BotPrompts.TenantPromptOpen, StringComparison.Ordinal);
+
+        greeting.Should().BeGreaterThan(rules);
+        block.Should().BeGreaterThan(greeting);
+    }
+
+    [Fact]
     public void NoticeTranslationPrompt_MatchesTheReplyAndKeepsSpanishWhenUnclear()
     {
         var prompt = BotPrompts.NoticeTranslationPrompt;

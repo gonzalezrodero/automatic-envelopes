@@ -1,3 +1,4 @@
+using AutomaticEnvelopes.Api.Features.WhatsAppDispatcher;
 using JasperFx;
 using Marten;
 using Marten.Linq.LastModified;
@@ -105,13 +106,30 @@ public static class ChatWindowExpiredHandler
             session.Delete(marker);
         }
 
-        // The reply stays inside this SQS attempt. The claim commits only after it succeeds.
-        await bus.InvokeAsync(
-            new AnalyzeChatSession(saga.PhoneNumber, saga.TenantId, saga.BotPhoneNumberId, saga.CombinedText),
-            ct);
+        // The reply runs in this attempt. The claim is written only after the send succeeds.
+        // A Graph failure is recorded instead of thrown, so this transaction can still commit.
+        WhatsAppSendFailure.Open();
+        try
+        {
+            await bus.InvokeAsync(
+                new AnalyzeChatSession(saga.PhoneNumber, saga.TenantId, saga.BotPhoneNumberId, saga.CombinedText),
+                ct);
 
-        await DeleteSagaAsync(session, saga, locked[0], ct);
-        session.Insert(new ChatDebounceMarker { Id = saga.Id, ClaimedVersion = saga.Version });
+            if (WhatsAppSendFailure.Occurred)
+            {
+                // A pending delete commits with this session. A raw delete with nothing
+                // else pending is rolled back, and the tracked saga is saved again.
+                session.Delete(saga);
+                return;
+            }
+
+            await DeleteSagaAsync(session, saga, locked[0], ct);
+            session.Insert(new ChatDebounceMarker { Id = saga.Id, ClaimedVersion = saga.Version });
+        }
+        finally
+        {
+            WhatsAppSendFailure.Close();
+        }
     }
 
     private static async Task DeleteSagaAsync(

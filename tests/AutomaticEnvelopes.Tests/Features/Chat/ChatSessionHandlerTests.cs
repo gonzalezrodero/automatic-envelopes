@@ -55,6 +55,7 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         replyGenerated.PhoneNumber.Should().Be(userPhone);
         replyGenerated.TenantId.Should().Be(tenantId);
         replyGenerated.Text.Should().StartWith("¡Hola! 👋");
+        replyGenerated.Text.Split("¡Hola!").Should().HaveCount(2);
         replyGenerated.Text.Should().Contain(PrivacyPolicyUrl);
         replyGenerated.Text.Should().Contain("BORRAR DATOS");
         replyGenerated.Text.Should().EndWith("\n\nThis is a mocked response.");
@@ -70,6 +71,8 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         var answerPrompt = requests[0].System != null ? string.Join(" ", requests[0].System.Select(s => s.Text)) : "";
         answerPrompt.Should().NotContain("POLITICA+DE+PRIVACIDAD.pdf");
         answerPrompt.Should().NotContain("FIRST CONTACT");
+        answerPrompt.Should().Contain("Do not greet");
+        answerPrompt.Should().Contain("Do not start with Hola");
 
         var translationPrompt = requests[1].System != null ? string.Join(" ", requests[1].System.Select(s => s.Text)) : "";
         translationPrompt.Should().Contain(PrivacyPolicyUrl);
@@ -129,6 +132,7 @@ public class ChatSessionHandlerTests(IntegrationAppFixture fixture)
         // Assert 3: Returning users should NOT get the privacy policy again
         var systemPrompt = request.System != null ? string.Join(" ", request.System.Select(s => s.Text)) : "";
         systemPrompt.Should().NotContain("POLITICA+DE+PRIVACIDAD.pdf", "Returning users should not receive the privacy policy repeatedly.");
+        systemPrompt.Should().NotContain("Do not greet");
 
         // Assert 4: Chat History must be properly loaded
         var allText = request.Messages != null ? string.Join(" ", request.Messages.SelectMany(m => m.Content).Select(c => c.Text)) : "";
